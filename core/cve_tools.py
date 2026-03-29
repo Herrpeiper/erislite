@@ -1,14 +1,15 @@
 # Project: ErisLITE
 # Module: cve_tools.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.6
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
+# Last Updated: 2026-03-29
 # Description:
 #   This module provides tools for searching and displaying CVE information from a local cache. It
-#   is designed to be used in offline mode, allowing users to query CVEs by ID, keyword, or tag and 
-#   view details in a readable format. The CVE cache is expected to be a JSON file containing relevant CVE data.
+#   is designed to be used in offline mode, allowing users to query CVEs by ID, keyword, or tag and
+#   view details in a readable format. The CVE cache is expected to be a JSON file containing relevant
+#   CVE data. If the cache is missing or empty the user is guided on how to populate it.
 
 import json, os
 
@@ -17,17 +18,34 @@ from rich.table import Table
 
 console = Console()
 
-# Load CVE cache from local JSON file
-def load_cve_cache(path="data/cve/cve_cache.json"):
+CVE_CACHE_PATH = "data/cve/cve_cache.json"
+
+# Load CVE cache from local JSON file.
+# Returns an empty list and prints actionable guidance if the cache is missing or empty.
+def load_cve_cache(path=CVE_CACHE_PATH):
     if not os.path.exists(path):
         console.print("[bold red]CVE cache not found.[/bold red]")
+        console.print(
+            f"[yellow]To build the cache, run the CVE Version Scanner (option 14 in Security Tools).\n"
+            f"Expected location: [bold]{path}[/bold][/yellow]"
+        )
         return []
+
     try:
         with open(path, "r") as f:
-            return json.load(f)
+            data = json.load(f)
     except Exception as e:
         console.print(f"[bold red]Error loading CVE cache:[/bold red] {e}")
         return []
+
+    if not data:
+        console.print(
+            "[yellow]CVE cache is empty. Run the CVE Version Scanner from the Security Tools menu "
+            "to populate it before searching.[/yellow]"
+        )
+        return []
+
+    return data
 
 # Search CVEs based on query (CVE ID, keyword, or tag)
 def search_cves(query, cache):
