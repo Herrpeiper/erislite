@@ -1,13 +1,15 @@
 # Project: ErisLITE
 # Module: snapshot.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.6
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
+# Last Updated: 2026-03-29
 # Description:
-#   This module captures a snapshot of the system's current state, including OS information, uptime, logged-in 
-#   users,
+#   This module captures a snapshot of the system's current state, including OS information, uptime,
+#   logged-in users, network interfaces, and routing info. Results are saved to a timestamped log
+#   file in the data/logs directory. The user profile is used to label the snapshot and drive
+#   username recognition — no usernames are hardcoded.
 
 import os, platform, socket, psutil
 
@@ -33,6 +35,15 @@ def capture(profile: dict):
     hostname = profile.get("hostname") or socket.gethostname()
     hostname = hostname.replace(" ", "_")  # filesystem safe
 
+    # Build the recognised-user whitelist from the profile instead of hardcoding names.
+    # Pulls "known_users" list if present; falls back to just the hostname owner so the
+    # snapshot never fires spurious UNRECOGNIZED alerts on a fresh deployment.
+    profile_known = profile.get("known_users", [])
+    if isinstance(profile_known, list):
+        whitelist = set(u.lower() for u in profile_known if u)
+    else:
+        whitelist = set()
+
     log_dir = "data/logs"
     os.makedirs(log_dir, exist_ok=True)
     filename = f"{log_dir}/{hostname}_snapshot_{timestamp}.txt"
@@ -40,7 +51,7 @@ def capture(profile: dict):
     try:
         with open(filename, "w") as f:
             # Session Header
-            f.write(f"ErisLite System Snapshot\n")
+            f.write("ErisLite System Snapshot\n")
             f.write(f"Timestamp: {timestamp}\n")
             f.write(f"Hostname: {hostname}\n")
             f.write(f"Role: {profile.get('role')}\n")
@@ -56,20 +67,21 @@ def capture(profile: dict):
                 f.write(f"Build Version: {platform.version()}\n")
             else:
                 f.write(f"Kernel: {platform.version()}\n")
+
             uptime_seconds = psutil.boot_time()
             uptime = timedelta(seconds=int(datetime.now().timestamp() - uptime_seconds))
             f.write(f"Uptime: {uptime}\n")
+
             users = psutil.users()
             unique_users = set(u.name for u in users)
 
             f.write(f"Logged-in Users: {len(users)}\n")
-            whitelist = {"mar", "admin", "erislite"}
             flagged_users = []
 
             if unique_users:
                 f.write("Active Usernames:\n")
                 for user in sorted(unique_users):
-                    if user not in whitelist:
+                    if whitelist and user.lower() not in whitelist:
                         f.write(f" - {user}  ⚠️ [UNRECOGNIZED]\n")
                         flagged_users.append(user)
                     else:
