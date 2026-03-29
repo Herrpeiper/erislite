@@ -92,9 +92,6 @@ def run_sweep(user_profile, sweep_profile="standard"):
 
     console.print(Panel.fit("[bold red]🚨 Running Consolidated Threat Sweep...[/bold red]"))
 
-    # FIX #8: "quick" was listener-only which is too sparse for useful triage.
-    # Now includes users and login so a fast sweep still catches the most common
-    # indicators of compromise without taking much longer.
     profiles = {
         "quick":    ["listeners", "users", "login"],
         "standard": ["integrity", "listeners", "users", "login", "cve"],
@@ -134,8 +131,6 @@ def run_sweep(user_profile, sweep_profile="standard"):
     if "docker" in profiles[sweep_profile]:
         results["docker"] = docker_check.run_docker_scan(silent=True)
 
-    # FIX #7: suid was in the weights dict and in the full profile list but was never
-    # assigned to results{}, so it could never contribute to the risk score. Wired in now.
     if "suid" in profiles[sweep_profile]:
         results["suid"] = suid_check.run_suid_scan(silent=True)
 
