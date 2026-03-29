@@ -1,6 +1,14 @@
-# /tools/suid_check.py
-# Description: Scans the filesystem for SUID/SGID binaries and identifies potentially dangerous ones.
-# This tool is designed to be run on Linux systems and will check for common SUID/SGID binaries as well as flag any that are found in unusual locations or have suspicious names.
+# Project: ErisLITE
+# Module: suid_check.py
+# Author: Liam Piper-Brandon
+# Version: 0.6
+# License: MIT
+# Created: 2025-06-01
+# Last Updated: 2026-03-29
+# Description:
+#   Scans the filesystem for SUID/SGID binaries and identifies potentially dangerous ones.
+#   Designed for Linux systems. Skips virtual, noisy, and container-managed paths to avoid
+#   hangs and false positives — exclusion list now matches world_writable_check.py.
 
 import os, stat, json
 
@@ -14,7 +22,14 @@ from ui.utils import clear_screen, show_header, pause_return
 
 console = Console()
 
-# Common SUID/SGID binaries that are generally considered safe and are often required for normal system operation. These will be ignored in the scan results.
+# Paths to skip entirely during the filesystem walk.
+# Matches the exclusion set used in world_writable_check.py for consistency.
+SKIP_PREFIXES = (
+    "/proc", "/sys", "/dev", "/run",
+    "/snap", "/var/lib/docker", "/var/lib/snapd",
+)
+
+# Common SUID binaries that are generally considered safe and required for normal system operation.
 WHITELISTED_SUID = {
     "/usr/bin/su",
     "/usr/bin/passwd",
@@ -31,7 +46,7 @@ WHITELISTED_SUID = {
     "/bin/ping6",
 }
 
-# Some SGID binaries are also commonly used and generally safe, but they can still be abused if misconfigured or if they have vulnerabilities. This list includes some of the more common ones that are typically not a concern.
+# Common SGID binaries that are generally considered safe.
 WHITELISTED_SGID = {
     "/usr/bin/wall",
     "/usr/bin/write",
@@ -39,13 +54,21 @@ WHITELISTED_SGID = {
     "/usr/bin/ssh-agent",
 }
 
-# The main function that performs the SUID/SGID scan. It walks through the filesystem, checks each file's permissions, and collects information about any files that have SUID or SGID bits set. It also applies some heuristics to identify potentially dangerous files based on their location and name.
+
 def find_suid_sgid():
     flagged = []
 
     for root, dirs, files in os.walk("/", topdown=True):
-        if root.startswith(("/proc", "/sys", "/dev")):
+        # Prune virtual/noisy directory trees in-place so os.walk won't descend into them
+        if root.startswith(SKIP_PREFIXES):
+            dirs[:] = []
             continue
+
+        # Also prune any subdirectory that starts with a skip prefix
+        dirs[:] = [
+            d for d in dirs
+            if not os.path.join(root, d).startswith(SKIP_PREFIXES)
+        ]
 
         for name in files:
             path = os.path.join(root, name)
@@ -72,7 +95,7 @@ def find_suid_sgid():
 
     return flagged
 
-# This function runs the SUID/SGID scan and processes the results. It identifies any suspicious files based on their location and name, and then either returns a structured result for silent mode or displays an interactive report in the terminal.
+
 def run_suid_scan(silent=False):
     results = find_suid_sgid()
     suspicious = []
@@ -157,4 +180,3 @@ def run_suid_scan(silent=False):
         "details": [f"{len(suspicious)} suspicious SUID/SGID binaries found"] if suspicious else [],
         "tags": sorted(list(tags)) if tags else []
     }
-
