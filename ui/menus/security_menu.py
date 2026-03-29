@@ -1,6 +1,8 @@
 # ui/menus/security_menu.py
 # Security Menu
-# This module implements the security tools menu for ErisLite, providing access to various security audits and checks. It includes a dashboard showing the last sweep summary and a menu of available security tools,
+# This module implements the security tools menu for ErisLite, providing access to various security
+# audits and checks. It includes a dashboard showing the last sweep summary and a menu of available
+# security tools.
 
 import json
 from pathlib import Path
@@ -75,7 +77,6 @@ def _render_last_sweep_panel(summary: dict | None) -> None:
 
     color = _score_color(score)
 
-    # keep tags readable in one line; you still save full tags in JSON
     tag_str = ", ".join(tags) if tags else "None"
     tag_str = shorten(tag_str, width=110, placeholder=" …")
 
@@ -122,7 +123,7 @@ def _build_menu() -> Table:
     menu.add_row("", "")
     menu.add_row("", "[bold]Hotkeys[/bold]")
     menu.add_row("[q]", "⚡ Quick Sweep")
-    menu.add_row("[s]", "🛡️ Standard Sweep")                     
+    menu.add_row("[s]", "🛡️ Standard Sweep")
     menu.add_row("[f]", "🔬 Full Sweep")
     menu.add_row("[r]", "🔁 Rerun last sweep profile (if available)")
     menu.add_row("[b]", "↩️ Back")
@@ -190,13 +191,12 @@ def run(profile: dict):
         elif choice == "12":
             login_audit.run_login_audit()
         elif choice == "13":
-            # Profile chooser (still available for discoverability)
             clear_screen()
             show_header("THREAT SWEEP")
             sweep_menu = Table(show_header=False, box=None, padding=(0, 1))
-            sweep_menu.add_row("[1]", "⚡  Quick – Only checks for open listeners")
-            sweep_menu.add_row("[2]", "🛡️  Standard – Listeners, users, login, CVE version")
-            sweep_menu.add_row("[3]", "🔬  Full – Extended checks")
+            sweep_menu.add_row("[1]", "⚡  Quick – Listeners, users, and login")
+            sweep_menu.add_row("[2]", "🛡️  Standard – Integrity, listeners, users, login, CVE")
+            sweep_menu.add_row("[3]", "🔬  Full – All checks including SUID, SSH, Docker, kernel")
             sweep_menu.add_row("[4]", "↩️  Back")
             console.print(sweep_menu)
 
