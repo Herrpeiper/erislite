@@ -11,6 +11,7 @@ from rich.align import Align
 from rich import box
 
 from ui.utils import clear_screen
+from core.version import VERSION, BUILD_DATE
 
 console = Console()
 
@@ -24,11 +25,11 @@ logo = r"""[cyan]
 [/]"""
 
 quotes = [
-    "‘You don't win by playing fair.’ — Eris Doctrine",
-    "‘Amateurs hack systems. Professionals hack people.’ — Bruce Schneier",
-    "‘Security is not a product, but a process.’ — Bruce Schneier",
-    "‘There’s no patch for human stupidity.’ — Kevin Mitnick",
-    "‘In war, the first casualty is truth.’ — Aeschylus"
+    "'You don't win by playing fair.' — Eris Doctrine",
+    "'Amateurs hack systems. Professionals hack people.' — Bruce Schneier",
+    "'Security is not a product, but a process.' — Bruce Schneier",
+    "'There's no patch for human stupidity.' — Kevin Mitnick",
+    "'In war, the first casualty is truth.' — Aeschylus"
 ]
 
 def get_kernel_version():
@@ -49,7 +50,10 @@ def show_splash(profile: dict):
     segment = profile.get("segment", "unknown-segment")
     analyst_id = profile.get("analyst_id", "N/A")
     edge_fw = profile.get("edge_firewall", "N/A")
-    version_tag = "[bold blue]ErisLite v0.6.0 - Beta Release[/] [dim]| Build: 14JUN25[/dim]"
+
+    # Version string pulled from core.version — no hardcoded strings here
+    version_tag = f"[bold blue]ErisLite v{VERSION} - Beta Release[/] [dim]| Build: {BUILD_DATE}[/dim]"
+
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     kernel = get_kernel_version()
