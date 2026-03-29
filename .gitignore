@@ -1,8 +1,54 @@
+# ErisLITE .gitignore
+# -----------------------------------------------
+# Generated files and sensitive runtime data that
+# must never be committed to the repository.
+
+# ── Python ──────────────────────────────────────
 __pycache__/
-*.pyc
-.venv/
-.env
-*.log
-node_modules/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
 dist/
-*.db
+build/
+
+# ── Virtual environments ─────────────────────────
+venv/
+.venv/
+env/
+.env
+
+# ── FIX #3: User profile ─────────────────────────
+# Contains real hostname and system metadata.
+# Regenerated automatically on first run by core/user_profile.py.
+user_profile.json
+config/user_profile.json
+
+# ── FIX #2: Integrity baseline ───────────────────
+# Contains SHA-256 hashes of files on YOUR machine.
+# Committing this leaks system fingerprint data and
+# causes every other deployment to show false-positive
+# integrity failures. Always generate locally via
+# Security Tools → File Integrity Monitor → Create Baseline.
+data/integrity/
+
+# ── Sweep & snapshot logs ────────────────────────
+# Runtime output — personal to each deployment.
+data/logs/
+
+# ── Last sweep cache ─────────────────────────────
+# Written to ~/.erislite/ at runtime.
+.erislite/
+
+# ── CVE cache ────────────────────────────────────
+# Populated at runtime by the CVE Version Scanner.
+data/cve/
+
+# ── OS / editor noise ────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
