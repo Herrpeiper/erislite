@@ -44,6 +44,8 @@ THREAT_TAG_MAP = {
     "suspicious_cron": "Automated task may indicate persistence or backdoor.",
     "unauthorized_key": "Unexpected SSH key found under a user profile.",
     "suid_sgid": "SUID or SGID binaries can allow privilege escalation if misconfigured.",
+    "suid_dangerous_path": "SUID/SGID binary found in a high-risk path (tmp, home, shm).",
+    "suid_interpreter": "SUID/SGID set on a script interpreter — extremely dangerous.",
     "ssh_keys_suspicious": "SSH key(s) found in user authorized_keys files.",
     "ssh_keys_user_root": "SSH key found under root's account — may allow privileged backdoor access.",
     "ssh_keys_multiple_users": "Multiple users have SSH authorized_keys — review for lateral movement risks.",
@@ -64,7 +66,7 @@ def calculate_risk_score(results: dict):
         "docker": 15,
         "firewall": 15,
         "cve": 20,
-        "suid": 10 
+        "suid": 10,
     }
 
     total_score = 0
@@ -90,13 +92,15 @@ def run_sweep(user_profile, sweep_profile="standard"):
 
     console.print(Panel.fit("[bold red]🚨 Running Consolidated Threat Sweep...[/bold red]"))
 
+    # FIX #8: "quick" was listener-only which is too sparse for useful triage.
+    # Now includes users and login so a fast sweep still catches the most common
+    # indicators of compromise without taking much longer.
     profiles = {
-        "quick": ["listeners"],
+        "quick":    ["listeners", "users", "login"],
         "standard": ["integrity", "listeners", "users", "login", "cve"],
-        "full": ["integrity", "listeners", "users", "kernel", "sshkeys", "worldwritable", "cron", "login", "sshconfig", "docker", "cve"]
+        "full":     ["integrity", "listeners", "users", "kernel", "sshkeys",
+                     "worldwritable", "cron", "login", "sshconfig", "docker", "suid", "cve"],
     }
-
-
 
     results = {}
 
@@ -124,54 +128,70 @@ def run_sweep(user_profile, sweep_profile="standard"):
     if "login" in profiles[sweep_profile]:
         results["login"] = login_audit.run_login_audit(silent=True)
 
-    if "suid" in profiles[sweep_profile]:
-        results["suid"] = suid_check.run_suid_scan(silent=True)
-
     if "sshconfig" in profiles[sweep_profile]:
         results["sshconfig"] = ssh_config_check.run_ssh_config_check(silent=True)
 
     if "docker" in profiles[sweep_profile]:
         results["docker"] = docker_check.run_docker_scan(silent=True)
 
-    if "firewall" in profiles[sweep_profile]:
-        results["firewall"] = firewall_check.run_firewall_check(silent=True)
+    # FIX #7: suid was in the weights dict and in the full profile list but was never
+    # assigned to results{}, so it could never contribute to the risk score. Wired in now.
+    if "suid" in profiles[sweep_profile]:
+        results["suid"] = suid_check.run_suid_scan(silent=True)
 
     if "cve" in profiles[sweep_profile]:
         results["cve"] = cve_checker.run_cve_check(silent=True)
 
+    # Firewall check is always run as a baseline signal
+    try:
+        results["firewall"] = firewall_check.run_firewall_check(silent=True)
+    except Exception:
+        pass
 
-    # 🧾 Summary table
-    table = Table(title="Sweep Results Summary", show_lines=True)
-    table.add_column("Module", style="cyan")
-    table.add_column("Status", style="bold")
-    table.add_column("Details")
+    _display_results(results, sweep_profile, user_profile)
+    _save_sweep(results, sweep_profile, user_profile)
 
-    def status_row(label, result):
-        status_map = {
-            "ok": ("✅", "OK"),
-            "warning": ("⚠️", "WARNING"),
-            "error": ("❌", "ERROR"),
-            "unsupported": ("🚫", "UNSUPPORTED")
-        }
-        emoji, status_text = status_map.get(result["status"].lower(), ("❔", result["status"].upper()))
-        detail = result.get("details", ["None"])[0] if result.get("details") else "No issues detected"
-        return [label, f"{emoji} {status_text}", detail]
 
+def _display_results(results, sweep_profile, user_profile):
     label_map = {
-        "integrity": "Integrity",
-        "firewall": "Firewall Status",
-        "listeners": "Listeners",
-        "users": "User Accounts",
-        "kernel": "Kernel Modules",
-        "sshkeys": "SSH Keys",
+        "integrity":     "Integrity",
+        "firewall":      "Firewall Status",
+        "listeners":     "Listeners",
+        "users":         "User Accounts",
+        "kernel":        "Kernel Modules",
+        "sshkeys":       "SSH Keys",
         "worldwritable": "World-Writable Files",
-        "cron": "Cron Jobs / Timers",
-        "login": "Login/Auth Logs",
-        "sshconfig": "SSH Config Audit",
-        "docker": "Docker Security",
-        "cve": "CVE Version Check"
+        "cron":          "Cron Jobs / Timers",
+        "login":         "Login/Auth Logs",
+        "sshconfig":     "SSH Config Audit",
+        "docker":        "Docker Security",
+        "cve":           "CVE Version Check",
+        "suid":          "SUID/SGID Binaries",
     }
 
+    table = Table(title="Threat Sweep Results", show_lines=True)
+    table.add_column("Module", style="cyan")
+    table.add_column("Status", justify="center")
+    table.add_column("Detail", style="dim")
+
+    def status_row(label, result):
+        status = result.get("status", "unknown").lower()
+        if status == "ok":
+            emoji = "✅"
+            status_text = "[green]OK[/green]"
+        elif status in ("warning", "issue"):
+            emoji = "⚠️"
+            status_text = "[yellow]WARNING[/yellow]"
+        elif status == "error":
+            emoji = "❌"
+            status_text = "[red]ERROR[/red]"
+        else:
+            emoji = "❓"
+            status_text = f"[dim]{status.upper()}[/dim]"
+
+        detail = result.get("details", ["None"])
+        detail_str = detail[0] if detail else "No issues detected"
+        return [label, f"{emoji} {status_text}", detail_str]
 
     for module, result in results.items():
         label = label_map.get(module, module.title())
@@ -181,12 +201,10 @@ def run_sweep(user_profile, sweep_profile="standard"):
     console.print(Align.center(table))
     console.print(Align.center("[grey62]Legend: ✅ OK   ⚠️ WARNING   ❌ ERROR[/]"))
 
-
-    # 📊 Calculate and show risk score
+    # 📊 Risk score
     score, breakdown, max_possible = calculate_risk_score(results)
     percent = round((score / max_possible) * 100) if max_possible else 0
 
-    # Optional nuance: show "Secure" but acknowledge informational findings
     info_present = any(
         (r.get("status", "").lower() == "ok") and (r.get("details") and len(r.get("details")) > 0)
         for r in results.values()
@@ -214,26 +232,24 @@ def run_sweep(user_profile, sweep_profile="standard"):
         border_style=color
     )))
 
-    # Optional note on raw score
     if max_possible < 100:
         console.print(Align.center(f"[dim]Scanned modules contributed {score}/{max_possible} to score[/dim]"))
 
-
-    # 🧮 Display module-by-module risk breakdown
+    # 🧮 Risk breakdown table
     breakdown_table = Table(title="Risk Score Breakdown", show_lines=True)
     breakdown_table.add_column("Module", style="cyan", justify="left")
     breakdown_table.add_column("Points", style="bold yellow", justify="right")
 
     for module, value in breakdown.items():
         if value > 0:
-            label = label_map.get(module, module.title())
-            breakdown_table.add_row(label, str(value))
+            lbl = label_map.get(module, module.title())
+            breakdown_table.add_row(lbl, str(value))
 
-    if any(score > 0 for score in breakdown.values()):
+    if any(v > 0 for v in breakdown.values()):
         console.print("\n")
         console.print(Align.center(breakdown_table))
 
-    # 🧠 Display threat insights
+    # 🧠 Threat insights
     all_tags = set()
     for result in results.values():
         all_tags.update(result.get("tags", []))
@@ -253,54 +269,45 @@ def run_sweep(user_profile, sweep_profile="standard"):
             f"• [bold]{tag}[/bold]: {THREAT_TAG_MAP.get(tag, 'No description.')}"
             for tag in sorted(all_tags)
         )
-
         console.print("\n")
-        console.print(Align.center(Panel(
-            insights,
-            title="🧠 Threat Insights",
-            border_style="magenta"
-        )))
-
-
-   # 💾 JSON log export
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    filename_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    log_data = {
-        "timestamp": timestamp,
-        "hostname": user_profile.get("hostname", "unknown"),
-        "role": user_profile.get("role", "unknown"),
-        "sweep_profile": sweep_profile.lower(),
-        "risk_score": percent,
-        "risk_score_raw": score,
-        "risk_score_max": max_possible,
-        "results": results
-    }
-
-    # 🔄 Save lightweight summary to last_sweep.json
-    summary_path = Path.home() / ".erislite" / "last_sweep.json"
-    summary_path.parent.mkdir(exist_ok=True)
-
-    quick_summary = {
-        "timestamp": timestamp,
-        "risk_score": percent,
-        "profile": sweep_profile,
-        "tags": sorted(list(all_tags))
-    }
-
-    with open(summary_path, "w") as f:
-        json.dump(quick_summary, f)
-
-    # 📁 Structured export directory
-    log_type = "threat_sweeps"  # or dynamically set based on context
-    log_dir = Path("data/logs") / log_type
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    log_path = log_dir / f"sweep_log_{filename_ts}.json"
-
-    with open(log_path, 'w') as f:
-        json.dump(log_data, f, indent=4)
-
-    console.print(f"\n[green]✅ Threat Sweep results saved to:[/] [bold]{log_path}[/]")
+        console.print(Panel.fit(insights, title="🧠 Threat Insights", border_style="cyan"))
 
     pause_return()
+
+
+def _save_sweep(results, sweep_profile, user_profile):
+    """Persist the sweep summary to ~/.erislite/last_sweep.json for the dashboard panel."""
+    try:
+        all_tags = []
+        for r in results.values():
+            all_tags.extend(r.get("tags", []))
+
+        score, _, _ = calculate_risk_score(results)
+
+        summary = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "profile": sweep_profile,
+            "risk_score": score,
+            "tags": sorted(set(all_tags)),
+            "results": results,
+            "sweep_profile": sweep_profile,
+        }
+
+        save_dir = Path.home() / ".erislite"
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        with open(save_dir / "last_sweep.json", "w") as f:
+            json.dump(summary, f, indent=2, default=str)
+
+        # Also write a dated log to data/logs/
+        hostname = user_profile.get("hostname", "unknown")
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        log_dir = Path("data/logs")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / f"{hostname}_sweep_{ts}.json"
+
+        with open(log_path, "w") as f:
+            json.dump(summary, f, indent=2, default=str)
+
+    except Exception as e:
+        console.print(f"[yellow]Warning: could not save sweep log: {e}[/]")
