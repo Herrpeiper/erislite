@@ -48,7 +48,11 @@ def launch_cli(profile: dict):
 
         console.print(menu)
 
-        choice = input("\nSelect an option: ").strip()
+        choice = Prompt.ask(
+            "\nSelect an option",
+            default="",
+            show_default=False
+        ).strip()
 
         if choice == "1":
             system_menu.run(profile)
@@ -67,3 +71,5 @@ def launch_cli(profile: dict):
         elif choice == "8":
             console.print("\n[bold yellow]Exiting ErisLite. Stay frosty.[/]\n")
             break
+        else:
+            console.print("[red]Invalid option.[/]")
