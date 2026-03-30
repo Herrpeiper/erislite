@@ -1,4 +1,11 @@
-# ui/util.py
+# Project: ErisLITE
+# Module: utils.py
+# Author: Liam Piper-Brandon
+# Version: 0.7
+# License: MIT
+# Created: 2025-06-01
+# Last Updated: 2026-03-29
+# Description: Shared UI utilities: clear_screen, show_header, pause_return, get_os.
 
 import os, platform, json
 

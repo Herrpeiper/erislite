@@ -1,59 +1,28 @@
+# Project: ErisLITE
+# Module: job_worker.py
+# Author: Liam Piper-Brandon
+# Version: 0.7
+# License: MIT
+# Created: 2025-06-01
+# Last Updated: 2026-03-29
+# Description: Compatibility shim — delegates to agent_loop.run().
+
 # agent/job_worker.py
+# NOTE: This file is kept only as a compatibility shim.
+#
+# job_worker.py was an early prototype that duplicated the logic now in
+# agent_loop.py. It had two problems:
+#   - AGENT_ID and BASE_URL were fully hardcoded (no env var support)
+#   - It skipped heartbeating entirely
+#
+# agent_loop.py is the canonical implementation. Use that instead:
+#
+#   python -m agent.agent_loop
+#
+# If something in the codebase still imports from job_worker, those call
+# sites should be updated to import from agent.agent_loop or agent.dispatcher.
 
-import time
-import requests
+from agent.agent_loop import run
 
-from agent.dispatcher import execute_job
-
-BASE_URL = "http://localhost:8000"
-AGENT_ID = "erislite-legion"
-
-
-def fetch_next_job():
-    r = requests.get(f"{BASE_URL}/api/jobs/next/{AGENT_ID}", timeout=10)
-    r.raise_for_status()
-    return r.json().get("job")
-
-
-def submit_result(job_id, status, result=None, error=None):
-    payload = {
-        "status": status,
-        "result": result,
-        "error": error,
-    }
-
-    r = requests.post(
-        f"{BASE_URL}/api/jobs/{job_id}/result",
-        json=payload,
-        timeout=15,
-    )
-    r.raise_for_status()
-
-
-def worker_loop(interval=5):
-    while True:
-        try:
-            job = fetch_next_job()
-
-            if not job:
-                time.sleep(interval)
-                continue
-
-            print(f"[AGENT] Executing: {job['module']}")
-
-            try:
-                result = execute_job(
-                    module=job["module"],
-                    action=job["action"],
-                    args=job.get("args", {}),
-                )
-
-                submit_result(job["job_id"], "complete", result=result)
-
-            except Exception as e:
-                submit_result(job["job_id"], "failed", error=str(e))
-
-        except Exception as e:
-            print(f"[AGENT ERROR] {e}")
-
-        time.sleep(interval)
+if __name__ == "__main__":
+    run()

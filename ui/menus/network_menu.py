@@ -1,4 +1,11 @@
-# ui/menus/network_menu.py
+# Project: ErisLITE
+# Module: network_menu.py
+# Author: Liam Piper-Brandon
+# Version: 0.7
+# License: MIT
+# Created: 2025-06-01
+# Last Updated: 2026-03-29
+# Description: Network tools menu.
 
 from rich.console import Console
 from rich.prompt import Prompt

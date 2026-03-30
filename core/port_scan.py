@@ -1,13 +1,11 @@
 # Project: ErisLITE
 # Module: port_scan.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   This module provides functionality for performing TCP port scans on specified targets.
-#   It includes features for scanning common ports, identifying services, and generating reports.
+# Last Updated: 2026-03-29
+# Description: TCP port scanner: scans common ports, identifies services, generates reports.
 
 import socket
 

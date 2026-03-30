@@ -1,15 +1,11 @@
 # Project: ErisLITE
 # Module: soc_mode.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   SOC Mode: A simplified Security Operations Center (SOC) posture assessment tool for Linux systems. It 
-#   collects and analyzes recent system logs to provide a high-level overview of the security posture, focusing 
-#   on key signals like SSH activity, sudo usage, and system warnings. The module is designed to be accessible and 
-#   informative for users without deep security expertise, while still providing actionable insights and context.
+# Last Updated: 2026-03-29
+# Description: SOC Mode: 15-minute rolling log snapshot and posture assessment.
 
 import subprocess, shutil, json, os, re
 

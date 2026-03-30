@@ -1,13 +1,11 @@
 # Project: ErisLITE
-# Module: susytem_info.py
+# Module: system_info.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   This module provides functionality for gathering and displaying detailed system information.
-#   It includes features for retrieving OS details, hardware specifications, uptime, and logged-in users
+# Last Updated: 2026-03-29
+# Description: System information display: OS, CPU, RAM, uptime, logged-in users.
 
 import os, platform, psutil, getpass, time
 

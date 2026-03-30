@@ -1,14 +1,11 @@
 # Project: ErisLITE
 # Module: cron_timer_check.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   This module checks for suspicious cron jobs and scheduled tasks on the system. It scans common cron directories, 
-#   user-specific crontabs, and systemd timers (on Linux) as well as Windows scheduled tasks. The module looks for 
-#   patterns indicative of potential persistence mechanisms or malicious activity and flags them for review.
+# Last Updated: 2026-03-29
+# Description: Cron job and systemd timer inspection for suspicious scheduled tasks.
 
 import os, stat, pwd, subprocess, re
 

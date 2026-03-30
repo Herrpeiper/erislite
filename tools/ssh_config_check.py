@@ -1,14 +1,11 @@
 # Project: ErisLITE
 # Module: ssh_config_check.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   This module checks the SSH server configuration for common security issues. It reads the /etc/ssh/sshd_config 
-#   file and audits specific settings against secure defaults. The results are displayed in a user-friendly format 
-#   using the Rich library, and any issues are flagged for further review.
+# Last Updated: 2026-03-29
+# Description: sshd_config audit against secure defaults.
 
 import os
 

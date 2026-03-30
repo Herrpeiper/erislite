@@ -1,3 +1,12 @@
+# Project: ErisLITE
+# Module: help_menu.py
+# Author: Liam Piper-Brandon
+# Version: 0.7
+# License: MIT
+# Created: 2025-06-01
+# Last Updated: 2026-03-29
+# Description: Help / About panel.
+
 from rich.console import Console
 from rich.panel import Panel
 from ui.utils import clear_screen, pause_return

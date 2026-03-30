@@ -1,14 +1,11 @@
 # Project: ErisLITE
 # Module: security_audit.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   This module provides functionality for performing a security posture snapshot on the local system.
-#   It includes checks for firewall status, suspicious processes, world-writable files, SSH keys
-#   and recent failed login attempts. The results are displayed in a rich table and logged for later review.
+# Last Updated: 2026-03-29
+# Description: Snapshot-style security posture check: firewall, SSH keys, world-writable, failed logins.
 
 import os, re, stat, shutil, subprocess
 from pathlib import Path

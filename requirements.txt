@@ -1,0 +1,27 @@
+# ErisLITE — Python dependencies
+# Install with: pip install -r requirements.txt
+#
+# Sections:
+#   [CLI]   Required to run the interactive CLI (main.py)
+#   [Agent] Required to run the Basalt agent (agent/agent_loop.py or agent_ws_loop.py)
+#
+# All agent deps are also needed on any host running both the CLI and the agent.
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+# Terminal UI — tables, panels, colour output used throughout the CLI
+rich>=13.0.0
+
+# System metrics — CPU, memory, uptime, logged-in users (snapshot, agent heartbeat)
+psutil>=5.9.0
+
+# Version string parsing — used by cve_checker to compare kernel/sudo/glibc versions
+packaging>=23.0
+
+# ── Agent ─────────────────────────────────────────────────────────────────────
+
+# HTTP client — agent registration, heartbeats, job polling, result submission
+requests>=2.31.0
+
+# WebSocket client — agent_ws_loop.py connects to the Basalt Controller WS endpoint
+websockets>=12.0

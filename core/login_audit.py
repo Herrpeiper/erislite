@@ -1,15 +1,11 @@
 # Project: ErisLITE
 # Module: login_audit.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   This module performs a login and authentication audit on Linux systems. It checks for failed login attempts
-#   in auth logs or journalctl, retrieves recent login history using the "last" command, and identifies any shell
-#   sessions running as UID 0 (root). The results are displayed in an interactive format using the Rich library, 
-#   and any anomalies are flagged for further investigation.
+# Last Updated: 2026-03-29
+# Description: Login and auth audit: failed logins, root shells, recent login history.
 
 import subprocess, re
 

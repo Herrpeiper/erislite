@@ -1,18 +1,11 @@
 # Project: ErisLITE
 # Module: kernel_module_check.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   This module checks for suspicious kernel modules on Linux systems. It looks for:
-#   1) Modules with known-bad names (based on a small curated list).
-#   2) Modules that fail to resolve with modinfo or have paths that don't match
-#      the expected kernel module directory structure.
-#   3) Modules that are loaded but not currently used by any other module (informational).
-#   The results are displayed in a rich table and also exported to a JSON log file for further analysis
-#   Note: This is a basic heuristic check and should be used as part of a broader security assessment. It may produce false positives, especially if the system has custom or third-party modules that are not malicious.
+# Last Updated: 2026-03-29
+# Description: Kernel module inspection: known-bad names, untracked modules, unusual paths.
 
 import subprocess
 import os

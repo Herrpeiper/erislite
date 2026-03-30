@@ -30,6 +30,7 @@ from tools import (
     suid_check,
     docker_check,
     soc_mode,
+    process_check,
 )
 
 console = Console()
@@ -62,6 +63,7 @@ def _build_menu():
     _item("7",  "Cron & Timer Inspection")
     _item("12", "Login / Auth Log Check")
     _item("14", "CVE Version Scanner")
+    _item("18", "Process Anomaly Scan")
 
     _section("HARDENING SURFACES")
     _item("5",  "World-Writable File Scan")
@@ -212,6 +214,8 @@ def run(profile):
             clear_screen()
             show_header("CVE VERSION CHECK")
             cve_checker.run_cve_check()
+        elif choice == "18":
+            process_check.run_process_scan()
         elif choice == "15":
             sweep_viewer.sweep_viewer_menu()
         elif choice == "16":

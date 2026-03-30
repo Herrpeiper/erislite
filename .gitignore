@@ -19,11 +19,10 @@ venv/
 env/
 .env
 
-# ── FIX #3: User profile ─────────────────────────
+# ── User profile ─────────────────────────────────
 # Contains real hostname and system metadata.
 # Regenerated automatically on first run by core/user_profile.py.
-user_profile.json
-config/user_profile.json
+data/user_profile.json
 
 # ── FIX #2: Integrity baseline ───────────────────
 # Contains SHA-256 hashes of files on YOUR machine.

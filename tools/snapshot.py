@@ -1,15 +1,11 @@
 # Project: ErisLITE
 # Module: snapshot.py
 # Author: Liam Piper-Brandon
-# Version: 0.6
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
 # Last Updated: 2026-03-29
-# Description:
-#   This module captures a snapshot of the system's current state, including OS information, uptime,
-#   logged-in users, network interfaces, and routing info. Results are saved to a timestamped log
-#   file in the data/logs directory. The user profile is used to label the snapshot and drive
-#   username recognition — no usernames are hardcoded.
+# Description: Captures a system snapshot to a timestamped log file in data/logs/.
 
 import os, platform, socket, psutil
 

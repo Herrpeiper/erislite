@@ -1,15 +1,11 @@
 # Project: ErisLITE
 # Module: network_scan.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   This module performs a network listener scan on Linux systems. It uses the 'ss'
-#   command to retrieve active TCP and UDP listeners, parses the output to extract details about each listener,
-#   and applies basic risk classification based on known ports and other heuristics. The results are returned
-#   in a structured format suitable for use in the Basalt agent or ErisLite CLI wrappers.
+# Last Updated: 2026-03-29
+# Description: Network listener scan using 'ss'; risk classification by port and process.
 
 from __future__ import annotations
 

@@ -1,16 +1,11 @@
 # Project: ErisLITE
 # Module: network_tools.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   This module provides various network-related tools and utilities for the Basalt agent and ErisLite CLI. 
-#   It includes functions to display network interfaces, default gateway, DNS servers, perform ping and trace 
-#   route operations, show active connections, and perform WHOIS lookups. These tools are designed to help users 
-#   gather information about the network environment of the system and perform basic diagnostics and reconnaissance 
-#   tasks.
+# Last Updated: 2026-03-29
+# Description: Network utility tools: IPs, gateway, DNS, ping, traceroute, WHOIS, connections.
 
 import psutil, socket, platform, subprocess, os, re
 

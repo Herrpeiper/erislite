@@ -1,14 +1,11 @@
 # Project: ErisLITE
 # Module: cve_checker.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   This module checks for specific CVEs based on local software versions 
-#   (kernel, sudo, glibc). It is designed to be read-only and does not attempt 
-#   to verify patch levels or exploit vulnerabilities.
+# Last Updated: 2026-03-29
+# Description: Offline CVE version check for kernel, sudo, and glibc.
 
 import platform, subprocess, re
 

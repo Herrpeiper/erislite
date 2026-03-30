@@ -1,17 +1,11 @@
 # Project: ErisLITE
 # Module: integrity_tools.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   This module provides tools for monitoring the integrity of critical system files. It allows users to create 
-#   a baseline of file hashes, scan for changes against that baseline, and check for potential tampering or 
-#   unauthorized modifications. The module is designed to be cross-platform, with specific monitored files and 
-#   scan profiles tailored for both Linux and Windows systems. It also includes functionality to detect suspicious 
-#   copies of monitored files in common temporary locations, which could indicate an attacker attempting to bypass 
-#   integrity checks or exfiltrate data.
+# Last Updated: 2026-03-29
+# Description: File integrity monitor: SHA-256 baseline creation and change detection.
 
 import os, json, hashlib, glob
 

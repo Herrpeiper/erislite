@@ -1,38 +1,37 @@
 # Project: ErisLITE
 # Module: security_log.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   This module handles logging of security audit results. It creates a log file for each audit, storing details 
-#   such as the hostname, analyst ID, timestamp, and the findings of the audit. The logs are saved in a structured 
-#   format for easy review by analysts.
+# Last Updated: 2026-03-29
+# Description: Security audit log writer: saves findings to data/logs/.
+
+from __future__ import annotations  # FIX #11: enables List[str] shorthand on Python 3.9
 
 import os
-
 from datetime import datetime
+from typing import List
 
 LOG_DIR = "data/logs"
 
-# Writes the audit results to a log file in the data/logs directory. The filename includes the hostname and timestamp for easy identification.
-def write_audit_log(profile: dict, results: list[str]) -> str:
-    # Ensure log directory exists
+
+# FIX #11: was list[str] which requires Python 3.10+ — changed to List[str] from typing
+def write_audit_log(profile: dict, results: List[str]) -> str:
     os.makedirs(LOG_DIR, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    hostname = profile.get("hostname", "unknown-host")
-    analyst = profile.get("analyst_id", "N/A")
+    hostname  = profile.get("hostname", "unknown-host")
+    analyst   = profile.get("analyst_id", "N/A")
 
     filename = f"{LOG_DIR}/security_audit_{hostname}_{timestamp}.txt"
 
     with open(filename, "w") as log:
-        log.write(f"ErisLite Security Audit Log\n")
+        log.write("ErisLite Security Audit Log\n")
         log.write(f"Timestamp: {timestamp}\n")
         log.write(f"Hostname: {hostname}\n")
         log.write(f"Analyst ID: {analyst}\n")
-        log.write(f"{'-'*40}\n\n")
+        log.write(f"{'-' * 40}\n\n")
 
         if results:
             log.write("Audit Findings:\n")
@@ -41,4 +40,4 @@ def write_audit_log(profile: dict, results: list[str]) -> str:
         else:
             log.write("No issues found.\n")
 
-    return filename  # Can be shown to analyst in console
+    return filename

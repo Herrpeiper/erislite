@@ -1,15 +1,11 @@
 # Project: ErisLITE
 # Module: firewall_check.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   This module performs a security check on the system's firewall configuration. It checks for the presence and
-#   status of common firewall solutions like UFW and firewalld, as well as the presence of iptables rules. The results
-#   are displayed in an interactive table format using the Rich library, and can also be returned
-#   as structured data for integration with other tools or reports.
+# Last Updated: 2026-03-29
+# Description: Firewall status check: UFW, firewalld, nftables, iptables.
 
 import subprocess
 

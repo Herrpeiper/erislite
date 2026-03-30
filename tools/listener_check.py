@@ -1,15 +1,11 @@
 # Project: ErisLITE
 # Module: listener_check.py
 # Author: Liam Piper-Brandon
-# Version: 0.5
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-17
-# Description:
-#   This module checks for active network listeners on the system, identifies the associated processes, 
-#   and applies heuristics to flag potentially suspicious listeners. It focuses on Linux systems and uses 
-#   "ss" to gather information about listening sockets. The output is designed to highlight unexpected or 
-#   potentially malicious listeners while filtering out common services.
+# Last Updated: 2026-03-29
+# Description: Heuristic suspicious network listener detection.
 
 import subprocess, re
 

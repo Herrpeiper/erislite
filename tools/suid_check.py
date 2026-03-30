@@ -1,14 +1,11 @@
 # Project: ErisLITE
 # Module: suid_check.py
 # Author: Liam Piper-Brandon
-# Version: 0.6
+# Version: 0.7
 # License: MIT
 # Created: 2025-06-01
 # Last Updated: 2026-03-29
-# Description:
-#   Scans the filesystem for SUID/SGID binaries and identifies potentially dangerous ones.
-#   Designed for Linux systems. Skips virtual, noisy, and container-managed paths to avoid
-#   hangs and false positives — exclusion list now matches world_writable_check.py.
+# Description: SUID/SGID binary scan: flags unexpected or dangerous binaries.
 
 import os, stat, json
 
