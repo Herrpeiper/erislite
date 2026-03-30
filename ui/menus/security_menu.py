@@ -31,6 +31,9 @@ from tools import (
     docker_check,
     soc_mode,
     process_check,
+    hosts_check,
+    backdoor_check,
+    rapid_response,
 )
 
 console = Console()
@@ -64,6 +67,8 @@ def _build_menu():
     _item("12", "Login / Auth Log Check")
     _item("14", "CVE Version Scanner")
     _item("18", "Process Anomaly Scan")
+    _item("19", "/etc/hosts Tamper Check")
+    _item("20", "Backdoor Detection")
 
     _section("HARDENING SURFACES")
     _item("5",  "World-Writable File Scan")
@@ -75,6 +80,7 @@ def _build_menu():
     _section("OPS")
     _item("15", "View Recent Threat Sweeps")
     _item("16", "SOC Mode  (15-min snapshot)")
+    _item("21", "Rapid Response")
     _item("17", "Back to Main Menu")
 
     console.print()
@@ -216,6 +222,12 @@ def run(profile):
             cve_checker.run_cve_check()
         elif choice == "18":
             process_check.run_process_scan()
+        elif choice == "19":
+            hosts_check.run_hosts_check()
+        elif choice == "20":
+            backdoor_check.run_backdoor_check()
+        elif choice == "21":
+            rapid_response.run_rapid_response_menu()
         elif choice == "15":
             sweep_viewer.sweep_viewer_menu()
         elif choice == "16":

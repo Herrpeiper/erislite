@@ -86,7 +86,20 @@ def _is_deleted(proc) -> bool:
         return False
 
 
-def _cmdline_str(proc) -> str:
+def _is_kernel_thread(proc) -> bool:
+    """
+    Kernel threads have no executable path and an empty cmdline.
+    They are not suspicious — skip them entirely.
+    """
+    try:
+        cmdline = proc.cmdline()
+        exe     = proc.exe()
+        return not cmdline and not exe
+    except (psutil.AccessDenied, psutil.NoSuchProcess):
+        # If we can't read either, assume kernel thread and skip
+        return True
+    except Exception:
+        return False
     try:
         parts = proc.cmdline()
         return " ".join(parts) if parts else proc.name()
@@ -101,20 +114,25 @@ def scan_processes():
     """
     flagged = []
 
-    for proc in psutil.process_iter(["pid", "name", "uids", "exe", "cmdline", "ppid"]):
+    for proc in psutil.process_iter(["pid", "name", "uids", "cmdline", "ppid"]):
         try:
             info   = proc.info
             pid    = info["pid"]
             name   = (info["name"] or "").strip()
-            uids   = info["uids"]
+            uids   = info.get("uids")
             uid    = uids.real if uids else -1
-            exe    = _get_exe_path(proc)
             cmdline = _cmdline_str(proc)
+            # Fetch exe lazily — process_iter won't catch AccessDenied for exe on all kernels
+            exe       = _get_exe_path(proc)
             base_name = os.path.basename(exe or name).lower().split()[0]
 
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
         except Exception:
+            continue
+
+        # Skip kernel threads — they have no exe or cmdline by design
+        if _is_kernel_thread(proc):
             continue
 
         reasons = []

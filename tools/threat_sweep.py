@@ -1,11 +1,4 @@
-# Project: ErisLITE
-# Module: threat_sweep.py
-# Author: Liam Piper-Brandon
-# Version: 0.7
-# License: MIT
-# Created: 2025-06-01
-# Last Updated: 2026-03-29
-# Description: Threat sweep orchestrator: runs selected modules, scores risk, saves results.
+# tools/threat_sweep.py
 
 import os, json
 
@@ -26,7 +19,10 @@ from tools import (
     cron_timer_check,
     suid_check,
     firewall_check,
-    docker_check
+    docker_check,
+    process_check,
+    hosts_check,
+    backdoor_check,
 )
 
 from ui.utils import clear_screen, show_header, pause_return
@@ -57,6 +53,21 @@ THREAT_TAG_MAP = {
     "ssh_keys_user_root": "SSH key found under root's account — may allow privileged backdoor access.",
     "ssh_keys_multiple_users": "Multiple users have SSH authorized_keys — review for lateral movement risks.",
     "ssh_keys_system_user": "SSH key assigned to system-level user — uncommon and may be suspicious.",
+    "proc_root_suspicious_path": "Root process spawned from a high-risk path (tmp, shm, home).",
+    "proc_deleted_exe": "Process running from a deleted executable — common rootkit indicator.",
+    "proc_known_bad": "Process name matches a known offensive or post-exploitation tool.",
+    "proc_root_interpreter": "Script interpreter running as root without a named service wrapper.",
+    "proc_hidden_name": "Process name starts with a dot — may be intentionally hidden.",
+    "proc_no_exe": "Root process with no resolvable executable path.",
+    "hosts_critical_redirect":  "A critical domain (update server, CA, security tool) has been redirected in /etc/hosts.",
+    "hosts_loopback_redirect":  "A non-localhost hostname is redirected to loopback — may block security or update tools.",
+    "hosts_suspicious_entry":   "Suspicious hostname pattern detected in /etc/hosts.",
+    "hosts_duplicate_mapping":  "A hostname maps to multiple different IPs — possible hijack.",
+    "hosts_unreadable":         "/etc/hosts could not be read.",
+    "backdoor_init_file":       "Suspicious command found in a shell init or profile file.",
+    "backdoor_ld_preload":      "Library injected via /etc/ld.so.preload — high-confidence rootkit indicator.",
+    "backdoor_ld_preload_env":  "LD_PRELOAD is active in a running process environment.",
+    "backdoor_read_error":      "Could not read a file during backdoor scan.",
 }
 
 def calculate_risk_score(results: dict):
@@ -74,6 +85,9 @@ def calculate_risk_score(results: dict):
         "firewall": 15,
         "cve": 20,
         "suid": 10,
+        "processes": 20,
+        "hosts": 20,
+        "backdoor": 25,
     }
 
     total_score = 0
@@ -99,11 +113,15 @@ def run_sweep(user_profile, sweep_profile="standard"):
 
     console.print(Panel.fit("[bold red]🚨 Running Consolidated Threat Sweep...[/bold red]"))
 
+    # FIX #8: "quick" was listener-only which is too sparse for useful triage.
+    # Now includes users and login so a fast sweep still catches the most common
+    # indicators of compromise without taking much longer.
     profiles = {
         "quick":    ["listeners", "users", "login"],
         "standard": ["integrity", "listeners", "users", "login", "cve"],
         "full":     ["integrity", "listeners", "users", "kernel", "sshkeys",
-                     "worldwritable", "cron", "login", "sshconfig", "docker", "suid", "cve"],
+                     "worldwritable", "cron", "login", "sshconfig", "docker",
+                     "suid", "processes", "hosts", "backdoor", "cve"],
     }
 
     results = {}
@@ -138,8 +156,19 @@ def run_sweep(user_profile, sweep_profile="standard"):
     if "docker" in profiles[sweep_profile]:
         results["docker"] = docker_check.run_docker_scan(silent=True)
 
+    # FIX #7: suid was in the weights dict and in the full profile list but was never
+    # assigned to results{}, so it could never contribute to the risk score. Wired in now.
     if "suid" in profiles[sweep_profile]:
         results["suid"] = suid_check.run_suid_scan(silent=True)
+
+    if "processes" in profiles[sweep_profile]:
+        results["processes"] = process_check.run_process_scan(silent=True)
+
+    if "hosts" in profiles[sweep_profile]:
+        results["hosts"] = hosts_check.run_hosts_check(silent=True)
+
+    if "backdoor" in profiles[sweep_profile]:
+        results["backdoor"] = backdoor_check.run_backdoor_check(silent=True)
 
     if "cve" in profiles[sweep_profile]:
         results["cve"] = cve_checker.run_cve_check(silent=True)
@@ -169,6 +198,9 @@ def _display_results(results, sweep_profile, user_profile):
         "docker":        "Docker Security",
         "cve":           "CVE Version Check",
         "suid":          "SUID/SGID Binaries",
+        "processes":     "Process Anomaly Scan",
+        "hosts":         "/etc/hosts Tamper Check",
+        "backdoor":      "Backdoor Detection",
     }
 
     table = Table(title="Threat Sweep Results", show_lines=True)

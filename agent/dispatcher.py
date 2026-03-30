@@ -59,6 +59,9 @@ from tools.docker_check import run_docker_scan
 from tools.firewall_check import run_firewall_check
 from tools.integrity_tools import scan_integrity
 from tools.process_check import run_process_scan
+from tools.hosts_check import run_hosts_check
+from tools.backdoor_check import run_backdoor_check
+from tools.rapid_response import run_rapid_response
 
 
 # ── Envelope helper ────────────────────────────────────────────────────────────
@@ -141,6 +144,91 @@ def _run_cve(args: Dict[str, Any]) -> Dict[str, Any]:
 def _run_processes(args: Dict[str, Any]) -> Dict[str, Any]:
     return _wrap("security.processes", run_process_scan(silent=True))
 
+def _run_hosts(args: Dict[str, Any]) -> Dict[str, Any]:
+    return _wrap("security.hosts", run_hosts_check(silent=True))
+
+def _run_backdoor(args: Dict[str, Any]) -> Dict[str, Any]:
+    return _wrap("security.backdoor", run_backdoor_check(silent=True))
+
+def _run_rapid_response(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Remote rapid response via the controller.
+    Pass {"dry_run": true} in args for a safe triage-only run.
+    Defaults to dry_run=True for safety — must explicitly pass
+    {"dry_run": false} to execute live actions remotely.
+    """
+    dry_run = args.get("dry_run", True)
+
+    # Run the triage scan and return findings without executing actions
+    # The actual execution path (run_rapid_response) is interactive-only
+    # so we call the triage functions directly here and return structured data.
+    import psutil, pwd, os, shutil
+    from tools.rapid_response import (
+        _triage_suspicious_processes,
+        _triage_suspicious_connections,
+        _triage_flagged_users,
+        _triage_writable_crons,
+        _build_action_plan,
+        _execute_action,
+        _log_path,
+    )
+    import json
+    from datetime import datetime
+
+    procs = _triage_suspicious_processes()
+    conns = _triage_suspicious_connections()
+    users = _triage_flagged_users()
+    crons = _triage_writable_crons()
+
+    actions = _build_action_plan(procs, conns, users, crons)
+
+    summary = {
+        "suspicious_processes": len(procs),
+        "suspicious_connections": len(conns),
+        "flagged_users": len(users),
+        "writable_crons": len(crons),
+        "total_actions": len(actions),
+        "dry_run": dry_run,
+    }
+
+    if dry_run or not actions:
+        return _wrap("security.rapid_response", {
+            "status":  "warning" if actions else "ok",
+            "details": [a["label"] for a in actions] or ["No immediate threats detected"],
+            "tags":    ["rapid_response_dry_run"] if actions else [],
+            "summary": summary,
+        })
+
+    # Live execution
+    action_log = []
+    success = 0
+    failed  = 0
+    for action in actions:
+        if _execute_action(action, action_log):
+            success += 1
+        else:
+            failed += 1
+
+    log_path = _log_path()
+    log_data = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "mode":      "live_remote",
+        "summary":   {"success": success, "failed": failed, "total": len(actions)},
+        "actions":   action_log,
+    }
+    with open(log_path, "w") as f:
+        json.dump(log_data, f, indent=2)
+
+    details = [e.get("result", "") for e in action_log]
+
+    return _wrap("security.rapid_response", {
+        "status":  "warning" if failed else "ok",
+        "details": details[:15],
+        "tags":    ["rapid_response_executed"],
+        "summary": {**summary, "success": success, "failed": failed,
+                    "log": str(log_path)},
+    })
+
 
 # ── Module map ─────────────────────────────────────────────────────────────────
 # Maps the dotted module name (sent by the controller) to its handler function.
@@ -165,6 +253,9 @@ MODULE_MAP: Dict[str, Any] = {
     "security.login":          _run_login,
     "security.cve":            _run_cve,
     "security.processes":      _run_processes,
+    "security.hosts":          _run_hosts,
+    "security.backdoor":       _run_backdoor,
+    "security.rapid_response": _run_rapid_response,
 }
 
 

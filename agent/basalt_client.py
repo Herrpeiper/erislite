@@ -27,7 +27,6 @@ class BasaltClient:
         self.hostname       = socket.gethostname()
         self.agent_key      = agent_key
         self.auth           = auth
-        # FIX #9: store profile so register() can pull segment/role from it
         self._profile       = profile or {}
         self.debug          = os.getenv("BASALT_DEBUG", "0") == "1"
         self.log_empty_polls = os.getenv("BASALT_LOG_EMPTY_POLLS", "0") == "1"
@@ -64,8 +63,6 @@ class BasaltClient:
     def register(self):
         url = f"{self.controller_url}/api/agents/register"
 
-        # FIX #9: pull segment and role from user_profile.json via self._profile
-        # instead of hardcoding "default" / "workstation" for every deployment
         segment = self._profile.get("segment", "default")
         role    = self._profile.get("role", "workstation")
 
@@ -79,7 +76,7 @@ class BasaltClient:
                 "version":  1,
                 "protocol": {"version": 1},
             },
-            "display_name": self.hostname,
+            "display_name": os.getenv("BASALT_DISPLAY_NAME", self.agent_id),
             "segment":      segment,
             "role":         role,
             "tags":         ["erislite"],
