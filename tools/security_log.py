@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: security_log.py
 # Author: Liam Piper-Brandon
-# Version: 0.7
+# Version: 1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-29
+# Last Updated: 2026-04-05
 # Description: Security audit log writer: saves findings to data/logs/.
 
 from __future__ import annotations  # FIX #11: enables List[str] shorthand on Python 3.9

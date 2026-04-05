@@ -12,6 +12,7 @@ VERSION = "1.0"
 
 # (relative_path, module_name, description)
 FILES = [
+    ("main.py", "main.py", "ErisLITE entry point — initialises user profile and launches the CLI."),
     # core
     ("core/version.py",         "version.py",           "Single source of truth for version string and build date."),
     ("core/user_profile.py",    "user_profile.py",      "Manages user_profile.json: creation, locking, and forward-migration of missing fields."),
@@ -41,12 +42,10 @@ FILES = [
     ("tools/security_log.py",       "security_log.py",          "Security audit log writer: saves findings to data/logs/."),
     ("tools/sweep_viewer.py",       "sweep_viewer.py",          "Threat sweep log viewer: browse and inspect past sweep results."),
     ("tools/soc_mode.py",           "soc_mode.py",              "SOC Mode: 15-minute rolling log snapshot and posture assessment."),
-    # agent
-    ("agent/agent_loop.py",     "agent_loop.py",        "HTTP polling agent loop: registers, heartbeats, polls jobs, submits results."),
-    ("agent/agent_ws_loop.py",  "agent_ws_loop.py",     "WebSocket agent loop: lower-latency alternative to the HTTP polling loop."),
-    ("agent/basalt_client.py",  "basalt_client.py",     "HTTP client for all Basalt Controller communication."),
-    ("agent/dispatcher.py",     "dispatcher.py",        "Routes controller jobs to ErisLITE modules via MODULE_MAP."),
-    ("agent/job_worker.py",     "job_worker.py",        "Compatibility shim — delegates to agent_loop.run()."),
+    ("tools/backdoor_check.py",  "backdoor_check.py",  "Shell init files, profile.d, LD_PRELOAD persistence indicators."),
+    ("tools/hosts_check.py",     "hosts_check.py",      "/etc/hosts entries that redirect critical domains or look malicious."),
+    ("tools/process_check.py",   "process_check.py",    "Root processes from suspicious paths, deleted executables, bad tool names."),
+    ("tools/rapid_response.py",  "rapid_response.py",   "Triage scan with dry-run and live containment modes."),
     # ui
     ("ui/cli.py",               "cli.py",               "Main CLI menu loop."),
     ("ui/splash.py",            "splash.py",            "Startup splash screen with system profile and version info."),
@@ -56,7 +55,6 @@ FILES = [
     ("ui/menus/system_menu.py",     "system_menu.py",   "System info menu."),
     ("ui/menus/network_menu.py",    "network_menu.py",  "Network tools menu."),
     ("ui/menus/cve_tools_menu.py",  "cve_tools_menu.py","CVE tools menu."),
-    ("ui/menus/sweep_viewer.py",    "sweep_viewer.py",  "Sweep log viewer menu."),
 ]
 
 HEADER_PATTERN = re.compile(

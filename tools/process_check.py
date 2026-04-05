@@ -1,13 +1,11 @@
 # Project: ErisLITE
 # Module: process_check.py
 # Author: Liam Piper-Brandon
-# Version: 0.7
+# Version: 1.0
 # License: MIT
-# Created: 2026-03-29
-# Last Updated: 2026-03-29
-# Description: Process anomaly scan: flags suspicious processes running as root,
-#   spawned from unusual paths, using interpreter names, or with hidden/deleted
-#   executables. Compatible with silent=True for Threat Sweep integration.
+# Created: 2025-06-01
+# Last Updated: 2026-04-05
+# Description: Root processes from suspicious paths, deleted executables, bad tool names.
 
 import os
 import re

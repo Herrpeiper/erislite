@@ -6,22 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
-## [0.7.0] - 2026-03-29
+## [1.0.0] - 2026-04-05
 
 ### Added
-- `agent/` subsystem — allows ErisLITE to operate as a remote agent for the Basalt Controller
-  - `agent_loop.py` — registers with controller, sends heartbeats, polls for jobs, submits results
-  - `agent_ws_loop.py` — WebSocket-based equivalent for lower-latency deployments
-  - `basalt_client.py` — HTTP client handling all controller communication
-  - `dispatcher.py` — routes incoming jobs to ErisLITE modules; all 14 security modules wired up with a consistent `_wrap()` response envelope
-- `dispatcher.py` module map covers: `network.listeners`, `security.listeners`, `security.users`, `security.kernel`, `security.ssh_keys`, `security.ssh_config`, `security.world_writable`, `security.cron`, `security.suid`, `security.docker`, `security.firewall`, `security.integrity`, `security.login`, `security.cve`
+- `tools/backdoor_check.py` — shell init files, profile.d, LD_PRELOAD persistence indicators
+- `tools/hosts_check.py` — /etc/hosts entries that redirect critical domains or look malicious
+- `tools/process_check.py` — root processes from suspicious paths, deleted executables, bad tool names
+- `tools/rapid_response.py` — triage scan with dry-run and live containment modes
+- `infra/systemd/erislite-agent.service` — systemd unit file for running ErisLITE as a managed service
+
+### Changed
+- `tools/suid_check.py` — whitelist expanded to cover common legitimate SUID/SGID binaries; findings now include per-binary path and reason
+- `core/version.py` — version bumped to 1.0.0
+- README updated for stable release
 
 ### Fixed
-- `agent_loop.py`, `agent_ws_loop.py`, `job_worker.py` — hardcoded `AGENT_ID = "erislite-legion"` replaced with dynamic resolution: env var → `user_profile.json` → hostname fallback
-- `basalt_client.py` — `register()` now pulls `segment` and `role` from `user_profile.json` instead of hardcoding `"default"` / `"workstation"`
-- `job_worker.py` — hardcoded controller URL replaced with env var; file reduced to a compatibility shim delegating to `agent_loop.run()`
-- `dispatcher.py` — `sys.path` fix added so ErisLITE modules resolve correctly regardless of the directory the agent process is launched from
-- `agent_loop.py` — `tuple[float, float, int]` return hint replaced with `Tuple` from `typing` for Python 3.9 compatibility
+- `tools/suid_check.py` — silent mode now returns full binary list in `details` instead of a count string
+- Status badge updated from `beta` to `stable`
 
 ---
 

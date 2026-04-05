@@ -2,23 +2,11 @@
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Status](https://img.shields.io/badge/status-beta-orange)
+![Status](https://img.shields.io/badge/status-stable-green)
 
-*A modular security monitoring and analysis toolkit with a centralised agent-controller architecture.*
+*A modular Linux security monitoring toolkit for analysts, students and system administrators.*
 
-ErisLITE is a cybersecurity utility designed for analysts, students, and system administrators. It provides a local CLI for interactive security auditing, and a Basalt Controller that aggregates results from multiple remote agents via a web dashboard.
-
----
-
-## Overview
-
-ErisLITE has two modes of operation:
-
-**Standalone CLI** — run directly on any Linux host for interactive security checks, threat sweeps, and snapshot logging. No other software required.
-
-**Agent mode** — deploy ErisLITE alongside the Basalt Controller (a separate project). ErisLITE's `agent/` subsystem registers with the controller, receives job dispatch commands, executes the appropriate modules, and returns structured results. The Basalt Controller provides the web dashboard, job queue, and multi-agent visibility.
-
-The two projects are fully independent — ErisLITE works without Basalt, and Basalt can work with any agent that speaks its protocol.
+ErisLITE is a standalone CLI tool for interactive security auditing on Linux hosts. Run threat sweeps, inspect system configuration, and review findings — no external dependencies or infrastructure required.
 
 ---
 
@@ -51,12 +39,6 @@ The two projects are fully independent — ErisLITE works without Basalt, and Ba
 - Sweep log viewer with previous result browsing
 - SOC Mode: 15-minute rolling log snapshot
 
-### Basalt Controller (separate project)
-
-The Basalt Controller is a separate application that ErisLITE can connect to as an agent. It provides a FastAPI backend, WebSocket hub, SQLite result store, and a React web dashboard for managing multiple ErisLITE agents from one place.
-
-See the [Basalt Controller repository](https://github.com/herrpeiper/basalt-controller) for its own setup instructions.
-
 ---
 
 ## Requirements
@@ -64,7 +46,6 @@ See the [Basalt Controller repository](https://github.com/herrpeiper/basalt-cont
 - Python 3.9+
 - Linux (most security modules are Linux-only)
 - `sudo` / root access recommended for full scan coverage
-
 ```bash
 pip install -r requirements.txt
 ```
@@ -72,7 +53,6 @@ pip install -r requirements.txt
 ---
 
 ## Installation
-
 ```bash
 git clone https://github.com/herrpeiper/ErisLITE.git
 cd ErisLITE
@@ -82,9 +62,6 @@ pip install -r requirements.txt
 ---
 
 ## Usage
-
-### Standalone CLI
-
 ```bash
 sudo python3 main.py
 ```
@@ -96,43 +73,22 @@ Typical workflow:
 4. Review findings and risk score
 5. Open **View Recent Threat Sweeps** to review past results
 
-### Running as a Basalt Agent
-
-If you have a Basalt Controller running elsewhere, ErisLITE can connect to it as an agent:
-
-```bash
-export BASALT_CONTROLLER_URL=http://<controller-ip>:8000
-export BASALT_AGENT_KEY=<your-key>
-python3 -m agent.agent_loop
-```
-
-Once connected, the controller can dispatch any of the 14 security modules to this host remotely and view results in the web dashboard.
-
-See the [Basalt Controller repository](https://github.com/herrpeiper/basalt-controller) for controller setup instructions.
-
 ---
 
 ## Project Structure
-
 ```
 ErisLITE/
 │
-├── agent/                   # Basalt agent subsystem
-│   ├── agent_loop.py        # HTTP polling agent loop
-│   ├── agent_ws_loop.py     # WebSocket agent loop
-│   ├── basalt_client.py     # Controller HTTP client
-│   └── dispatcher.py        # Routes controller jobs to modules
+├── core/                    
+│   ├── network_scan.py      
+│   ├── login_audit.py       
+│   ├── cve_checker.py       
+│   ├── security_audit.py    
+│   ├── user_profile.py      
+│   └── version.py           
 │
-├── core/                    # Core system utilities
-│   ├── network_scan.py      # Raw network listener data
-│   ├── login_audit.py       # Auth log checks
-│   ├── cve_checker.py       # CVE version matching
-│   ├── security_audit.py    # Snapshot-style audit checks
-│   ├── user_profile.py      # Profile load/create
-│   └── version.py           # Version constant
-│
-├── tools/                   # Security scan modules
-│   ├── threat_sweep.py      # Sweep orchestrator
+├── tools/                   
+│   ├── threat_sweep.py      
 │   ├── listener_check.py
 │   ├── user_anomaly.py
 │   ├── integrity_tools.py
@@ -146,16 +102,21 @@ ErisLITE/
 │   ├── firewall_check.py
 │   └── snapshot.py
 │
-├── ui/                      # CLI interface
-│   ├── cli.py               # Main menu loop
-│   ├── splash.py            # Startup screen
-│   └── menus/               # Submenu modules
+├── ui/                      
+│   ├── cli.py               
+│   ├── splash.py            
+│   └── menus/               
+│       ├── security_menu.py 
+│       ├── network_menu.py  
+│       ├── system_menu.py   
+│       ├── cve_tools_menu.py
+│       └── help_menu.py     
 │
 ├── data/
-│   └── logs/                # Sweep and snapshot logs (gitignored)
+│   └── logs/                
 │
-├── main.py                  # CLI entry point
-├── requirements.txt         # Python dependencies
+├── main.py                  
+├── requirements.txt         
 └── README.md
 ```
 
@@ -169,6 +130,8 @@ ErisLITE/
 
 **Root access** — some modules (kernel modules, world-writable scan, SUID scan, auth logs) require root to return complete results. Run with `sudo` for full coverage.
 
+**Known limitations** — security modules are Linux-only. Windows and macOS are not supported. Some checks may return partial results without root access.
+
 ---
 
 ## Development
@@ -178,7 +141,6 @@ ErisLITE is designed for modular extension. Adding a new security module:
 1. Create `tools/my_check.py` with a `run_my_check(silent=False)` function that returns `{"status": ..., "details": [...], "tags": [...]}`
 2. Add it to the `security_menu.py` menu
 3. Add it to the `profiles` dict in `tools/threat_sweep.py`
-4. Add it to `agent/dispatcher.py` MODULE_MAP to make it available remotely
 
 ---
 

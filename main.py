@@ -1,6 +1,11 @@
-# main.py
-# ErisLITE entry point.
-# Loads the user profile, shows the splash screen, and launches the CLI.
+# Project: ErisLITE
+# Module: main.py
+# Author: Liam Piper-Brandon
+# Version: 1.0
+# License: MIT
+# Created: 2025-06-01
+# Last Updated: 2026-04-05
+# Description: ErisLITE entry point — initialises user profile and launches the CLI.
 
 import os
 

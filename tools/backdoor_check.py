@@ -1,13 +1,11 @@
 # Project: ErisLITE
 # Module: backdoor_check.py
 # Author: Liam Piper-Brandon
-# Version: 0.7
+# Version: 1.0
 # License: MIT
-# Created: 2026-03-29
-# Last Updated: 2026-03-29
-# Description: Backdoor and persistence detection: scans shell init files,
-#   profile.d, LD_PRELOAD, /etc/ld.so.preload, and other common red-team
-#   persistence locations. Designed for CCDC and incident response use.
+# Created: 2025-06-01
+# Last Updated: 2026-04-05
+# Description: Shell init files, profile.d, LD_PRELOAD persistence indicators.
 
 import os
 import re

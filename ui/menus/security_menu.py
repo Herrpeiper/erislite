@@ -1,3 +1,12 @@
+# Project: ErisLITE
+# Module: security_menu.py
+# Author: Liam Piper-Brandon
+# Version: 1.0
+# License: MIT
+# Created: 2025-06-01
+# Last Updated: 2026-04-05
+# Description: Security tools menu with last-sweep dashboard panel.
+
 # ui/menus/security_menu.py
 
 import json

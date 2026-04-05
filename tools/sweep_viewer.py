@@ -4,7 +4,7 @@
 # Version: 1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-04
+# Last Updated: 2026-04-05
 # Description: Threat sweep log viewer: browse and inspect past sweep results.
 
 import os, json

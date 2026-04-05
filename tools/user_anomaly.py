@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: user_anomaly.py
 # Author: Liam Piper-Brandon
-# Version: 0.7
+# Version: 1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-03-29
+# Last Updated: 2026-04-05
 # Description: Suspicious user account scan: UID 0 clones, bad shells, hidden accounts.
 
 import pwd, os, json
