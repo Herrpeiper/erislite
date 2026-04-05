@@ -1,5 +1,9 @@
 # ErisLITE
 
+<p align="center">
+  <img src="assets/erislite_logo_v2.svg" alt="ErisLITE" width="600"/>
+</p>
+
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-stable-green)
