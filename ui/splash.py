@@ -61,7 +61,7 @@ def show_splash(profile: dict):
     edge_fw = profile.get("edge_firewall", "N/A")
 
     # Version string pulled from core.version — no hardcoded strings here
-version_tag = f"[bold blue]{VERSION_LABEL}[/] [dim]| Build: {BUILD_DATE}[/dim]"
+    version_tag = f"[bold blue]{VERSION_LABEL}[/] [dim]| Build: {BUILD_DATE}[/dim]"
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
