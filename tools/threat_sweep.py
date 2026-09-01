@@ -14,13 +14,16 @@ import os, json
 from datetime import datetime
 from pathlib import Path
 
-from core import login_audit, cve_checker
+from core import cve_checker
+from erislite.accounts import (
+    login_audit,
+    users,
+    ssh_keys,
+    ssh_config,
+)
 
 from tools import (
-    user_anomaly,
     threat_sweep,
-    ssh_key_check,
-    ssh_config_check,
     world_writable_check,
     cron_timer_check,
     suid_check,
@@ -140,13 +143,13 @@ def run_sweep(user_profile, sweep_profile="standard"):
         results["listeners"] = listeners.run_listener_scan(silent=True)
 
     if "users" in profiles[sweep_profile]:
-        results["users"] = user_anomaly.run_user_scan(silent=True)
+        results["users"] = users.run_user_scan(silent=True)
 
     if "kernel" in profiles[sweep_profile]:
         results["kernel"] = kernel_modules.run_kernel_module_check(silent=True)
 
     if "sshkeys" in profiles[sweep_profile]:
-        results["sshkeys"] = ssh_key_check.run_ssh_key_check(silent=True)
+        results["sshkeys"] = ssh_keys.run_ssh_key_check(silent=True)
 
     if "worldwritable" in profiles[sweep_profile]:
         results["worldwritable"] = world_writable_check.run_world_writable_check(silent=True)
@@ -158,7 +161,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
         results["login"] = login_audit.run_login_audit(silent=True)
 
     if "sshconfig" in profiles[sweep_profile]:
-        results["sshconfig"] = ssh_config_check.run_ssh_config_check(silent=True)
+        results["sshconfig"] = ssh_config.run_ssh_config_check(silent=True)
 
     if "docker" in profiles[sweep_profile]:
         results["docker"] = docker_check.run_docker_scan(silent=True)

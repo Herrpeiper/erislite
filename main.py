@@ -11,7 +11,7 @@ import os
 
 from rich.console import Console
 
-from core.user_profile import load_or_create_profile
+from erislite.accounts.profile import load_or_create_profile
 from ui.splash import show_splash
 from ui.cli import launch_cli
 

@@ -21,15 +21,11 @@ from erislite.ui.utils import clear_screen, show_header, pause_return
 
 from core import (
     security_audit,
-    login_audit,
     cve_checker,
 )
 
 from tools import (
-    user_anomaly,
     threat_sweep,
-    ssh_key_check,
-    ssh_config_check,
     world_writable_check,
     cron_timer_check,
     sweep_viewer,
@@ -49,6 +45,13 @@ from erislite.system import (
 from erislite.network import (
     listeners,
     hosts,
+)
+
+from erislite.accounts import (
+    login_audit,
+    users,
+    ssh_keys,
+    ssh_config,
 )
 
 console = Console()
@@ -192,9 +195,9 @@ def run(profile):
         elif choice == "2":
             listeners.run_listener_scan()
         elif choice == "3":
-            user_anomaly.run_user_scan()
+            users.run_user_scan()
         elif choice == "4":
-            ssh_key_check.run_ssh_key_check()
+            ssh_keys.run_ssh_key_check()
         elif choice == "5":
             world_writable_check.run_world_writable_check()
         elif choice == "6":
@@ -206,7 +209,7 @@ def run(profile):
         elif choice == "9":
             suid_check.run_suid_scan()
         elif choice == "10":
-            ssh_config_check.run_ssh_config_check()
+            ssh_config.run_ssh_config_check()
         elif choice == "11":
             docker_check.run_docker_scan()
         elif choice == "12":
