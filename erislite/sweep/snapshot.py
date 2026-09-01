@@ -16,7 +16,7 @@ from rich.panel import Panel
 
 from erislite.ui.utils import clear_screen, show_header, pause_return
 
-from core.security_audit import check_firewall_status
+from erislite.system.security_audit import check_firewall_status
 
 console = Console()
 

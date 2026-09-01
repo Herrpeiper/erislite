@@ -19,10 +19,6 @@ from rich.prompt import Prompt
 
 from erislite.ui.utils import clear_screen, show_header, pause_return
 
-from core import (
-    security_audit,
-)
-
 from erislite.sweep import (
     threat_sweep,
     viewer,
@@ -33,6 +29,7 @@ from erislite.system import (
     integrity,
     kernel_modules,
     processes,
+    security_audit,
 )
 
 from erislite.network import (

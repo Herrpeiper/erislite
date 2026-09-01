@@ -20,7 +20,7 @@ from rich.align import Align
 from rich import box
 
 from erislite.ui.utils import clear_screen
-from core.version import VERSION, BUILD_DATE, VERSION_LABEL
+from erislite.version import VERSION, BUILD_DATE, VERSION_LABEL
 
 console = Console()
 
@@ -60,7 +60,7 @@ def show_splash(profile: dict):
     analyst_id = profile.get("analyst_id", "N/A")
     edge_fw = profile.get("edge_firewall", "N/A")
 
-    # Version string pulled from core.version — no hardcoded strings here
+    # Version string pulled from erislite.version — no hardcoded strings here
     version_tag = f"[bold blue]{VERSION_LABEL}[/] [dim]| Build: {BUILD_DATE}[/dim]"
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

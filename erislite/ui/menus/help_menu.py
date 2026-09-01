@@ -10,7 +10,7 @@
 from rich.console import Console
 from rich.panel import Panel
 from erislite.ui.utils import clear_screen, pause_return
-from core.version import VERSION
+from erislite.version import VERSION
 
 console = Console()
 
