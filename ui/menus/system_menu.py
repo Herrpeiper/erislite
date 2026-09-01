@@ -11,9 +11,9 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
-from core import system_info
+from erislite.system import info
 
-from ui.utils import clear_screen, show_header, pause_return
+from erislite.ui.utils import clear_screen, show_header, pause_return
 
 console = Console()
 
@@ -22,22 +22,22 @@ def run(profile: dict):
     show_header("SYSTEM INFO")
 
     try:
-        os_name = system_info.get_os_info()
+        os_name = info.get_os_info()
     except Exception:
         os_name = "Unavailable"
 
     try:
-        kernel = system_info.get_kernel_version()
+        kernel = info.get_kernel_version()
     except Exception:
         kernel = "Unavailable"
 
     try:
-        uptime = system_info.get_uptime()
+        uptime = info.get_uptime()
     except Exception:
         uptime = "Unavailable"
 
     try:
-        users = system_info.get_logged_in_users()
+        users = info.get_logged_in_users()
     except Exception:
         users = "Unavailable"
 

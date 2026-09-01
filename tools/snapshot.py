@@ -14,7 +14,7 @@ from datetime import timedelta, datetime
 from rich.console import Console
 from rich.panel import Panel
 
-from ui.utils import clear_screen, show_header, pause_return
+from erislite.ui.utils import clear_screen, show_header, pause_return
 
 from core.security_audit import check_firewall_status
 

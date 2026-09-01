@@ -11,7 +11,7 @@ import subprocess, json
 from rich.console import Console
 from rich.table import Table
 from rich.align import Align
-from ui.utils import clear_screen, show_header, pause_return
+from erislite.ui.utils import clear_screen, show_header, pause_return
 
 console = Console()
 

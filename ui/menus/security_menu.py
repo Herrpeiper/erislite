@@ -17,7 +17,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
 
-from ui.utils import clear_screen, show_header, pause_return
+from erislite.ui.utils import clear_screen, show_header, pause_return
 
 from core import (
     security_audit,
@@ -26,11 +26,9 @@ from core import (
 )
 
 from tools import (
-    integrity_tools,
     listener_check,
     user_anomaly,
     threat_sweep,
-    kernel_module_check,
     ssh_key_check,
     ssh_config_check,
     world_writable_check,
@@ -39,10 +37,15 @@ from tools import (
     suid_check,
     docker_check,
     soc_mode,
-    process_check,
     hosts_check,
     backdoor_check,
     rapid_response,
+)
+
+from erislite.system import (
+    integrity,
+    kernel_modules,
+    processes,
 )
 
 console = Console()
@@ -192,11 +195,11 @@ def run(profile):
         elif choice == "5":
             world_writable_check.run_world_writable_check()
         elif choice == "6":
-            kernel_module_check.run_kernel_module_check(silent=False)
+            kernel_modules.run_kernel_module_check(silent=False)
         elif choice == "7":
             cron_timer_check.run_cron_timer_scan()
         elif choice == "8":
-            integrity_tools.integrity_menu()
+            integrity.integrity_menu()
         elif choice == "9":
             suid_check.run_suid_scan()
         elif choice == "10":
@@ -230,7 +233,7 @@ def run(profile):
             show_header("CVE VERSION CHECK")
             cve_checker.run_cve_check()
         elif choice == "18":
-            process_check.run_process_scan()
+            processes.run_process_scan()
         elif choice == "19":
             hosts_check.run_hosts_check()
         elif choice == "20":

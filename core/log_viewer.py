@@ -15,7 +15,7 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.align import Align
 
-from ui.utils import clear_screen, show_header, pause_return
+from erislite.ui.utils import clear_screen, show_header, pause_return
 
 LOG_DIR = "data/logs"
 console = Console()

@@ -17,7 +17,7 @@ from rich.table import Table
 from rich.align import Align
 
 from tools.security_log import write_audit_log
-from ui.utils import clear_screen, show_header, pause_return
+from erislite.ui.utils import clear_screen, show_header, pause_return
 
 console = Console()
 

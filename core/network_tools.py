@@ -17,7 +17,7 @@ from rich.prompt import Prompt
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from ui.utils import clear_screen, show_header, pause_return
+from erislite.ui.utils import clear_screen, show_header, pause_return
 
 
 console = Console()

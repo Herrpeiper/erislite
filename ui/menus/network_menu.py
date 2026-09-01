@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.prompt import Prompt
 from rich.table import Table
 
-from ui.utils import clear_screen, show_header
+from erislite.ui.utils import clear_screen, show_header
 
 from core import network_tools
 

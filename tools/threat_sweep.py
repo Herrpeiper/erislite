@@ -17,11 +17,9 @@ from pathlib import Path
 from core import login_audit, cve_checker
 
 from tools import (
-    integrity_tools,
     listener_check,
     user_anomaly,
     threat_sweep,
-    kernel_module_check,
     ssh_key_check,
     ssh_config_check,
     world_writable_check,
@@ -29,12 +27,17 @@ from tools import (
     suid_check,
     firewall_check,
     docker_check,
-    process_check,
     hosts_check,
     backdoor_check,
 )
 
-from ui.utils import clear_screen, show_header, pause_return
+from erislite.system import (
+    integrity,
+    kernel_modules,
+    processes,
+)
+
+from erislite.ui.utils import clear_screen, show_header, pause_return
 
 from rich.console import Console
 from rich.panel import Panel
@@ -136,7 +139,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
     results = {}
 
     if "integrity" in profiles[sweep_profile]:
-        results["integrity"] = integrity_tools.scan_integrity(silent=True)
+        results["integrity"] = integrity.scan_integrity(silent=True)
 
     if "listeners" in profiles[sweep_profile]:
         results["listeners"] = listener_check.run_listener_scan(silent=True)
@@ -145,7 +148,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
         results["users"] = user_anomaly.run_user_scan(silent=True)
 
     if "kernel" in profiles[sweep_profile]:
-        results["kernel"] = kernel_module_check.run_kernel_module_check(silent=True)
+        results["kernel"] = kernel_modules.run_kernel_module_check(silent=True)
 
     if "sshkeys" in profiles[sweep_profile]:
         results["sshkeys"] = ssh_key_check.run_ssh_key_check(silent=True)
@@ -171,7 +174,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
         results["suid"] = suid_check.run_suid_scan(silent=True)
 
     if "processes" in profiles[sweep_profile]:
-        results["processes"] = process_check.run_process_scan(silent=True)
+        results["processes"] = processes.run_process_scan(silent=True)
 
     if "hosts" in profiles[sweep_profile]:
         results["hosts"] = hosts_check.run_hosts_check(silent=True)

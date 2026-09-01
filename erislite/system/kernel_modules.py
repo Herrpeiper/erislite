@@ -10,13 +10,14 @@
 import subprocess
 import os
 import json
+import shutil 
 from datetime import datetime
 
 from rich.console import Console
 from rich.table import Table
 from rich.align import Align
 
-from ui.utils import clear_screen, show_header, pause_return, get_os
+from erislite.ui.utils import clear_screen, show_header, pause_return, get_os
 
 console = Console()
 
@@ -46,19 +47,59 @@ def get_module_path(modname: str) -> str:
 # This function gets the list of currently loaded kernel modules by parsing the output of lsmod. It returns a list of tuples containing the module name, size, and used_by count.
 def get_loaded_modules():
     """
-    Returns list of (name, size, used_by)
+    Return loaded kernel modules.
+
+    Returns:
+        tuple[list[tuple[str, str, str]], str | None]
+
+        First value:
+            List of (name, size, used_by)
+
+        Second value:
+            Error message if collection failed, otherwise None.
     """
+
+    if shutil.which("lsmod") is None:
+        return [], "lsmod is not available on this system"
+
     try:
-        result = subprocess.run(["lsmod"], capture_output=True, text=True)
-        lines = result.stdout.strip().split("\n")[1:]  # skip header
+        result = subprocess.run(
+            ["lsmod"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode != 0:
+            error = result.stderr.strip() or f"lsmod exited with code {result.returncode}"
+            return [], error
+
+        lines = result.stdout.strip().splitlines()
+
+        if len(lines) <= 1:
+            return [], None
+
         modules = []
-        for line in lines:
+
+        for line in lines[1:]:
             parts = line.split()
+
             if len(parts) >= 3:
-                modules.append((parts[0], parts[1], parts[2]))
-        return modules
-    except Exception as e:
-        return [("Error", "-", str(e))]
+                modules.append(
+                    (
+                        parts[0],
+                        parts[1],
+                        parts[2],
+                    )
+                )
+
+        return modules, None
+
+    except subprocess.TimeoutExpired:
+        return [], "lsmod timed out"
+
+    except Exception as exc:
+        return [], str(exc)
 
 # Main function to run the kernel module check. If silent=True, it returns a structured result instead of printing to the console. The profile parameter is included in the exported JSON for context.
 def run_kernel_module_check(silent: bool = False, profile: str = "default"):
@@ -75,7 +116,28 @@ def run_kernel_module_check(silent: bool = False, profile: str = "default"):
     krel = _kernel_release()
     expected_prefix = f"/lib/modules/{krel}/" if krel else "/lib/modules/"
 
-    modules = get_loaded_modules()
+    modules, collection_error = get_loaded_modules()
+
+    if collection_error:
+        result = {
+            "status": "unsupported",
+            "details": [collection_error],
+            "tags": [],
+        }
+
+        if silent:
+            return result
+
+        clear_screen()
+        show_header("KERNEL MODULE CHECK")
+
+        console.print(
+            f"[yellow]Kernel module inspection unavailable:[/] "
+            f"{collection_error}"
+        )
+
+        pause_return()
+        return result
 
     bad_named = []      # KNOWN_BAD_MODULES
     rogue = []          # modinfo fails OR path not under expected prefix
@@ -94,10 +156,6 @@ def run_kernel_module_check(silent: bool = False, profile: str = "default"):
     table.add_column("Path")
 
     for name, size, used_by in modules:
-        if name == "Error":
-            table.add_row(name, size, used_by, "[red]Error[/]", "-")
-            continue
-
         path = get_module_path(name)
         status_flags = []
         status = "[green]OK[/]"

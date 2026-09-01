@@ -12,7 +12,7 @@ import os, stat, pwd, subprocess, re
 from rich.console import Console
 from rich.table import Table
 
-from ui.utils import clear_screen, show_header, pause_return, get_os
+from erislite.ui.utils import clear_screen, show_header, pause_return, get_os
 
 console = Console()
 

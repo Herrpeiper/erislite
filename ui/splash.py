@@ -19,7 +19,7 @@ from rich.panel import Panel
 from rich.align import Align
 from rich import box
 
-from ui.utils import clear_screen
+from erislite.ui.utils import clear_screen
 from core.version import VERSION, BUILD_DATE, VERSION_LABEL
 
 console = Console()

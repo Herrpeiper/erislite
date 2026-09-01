@@ -9,7 +9,7 @@
 
 from rich.console import Console
 from rich.panel import Panel
-from ui.utils import clear_screen, pause_return
+from erislite.ui.utils import clear_screen, pause_return
 from core.version import VERSION
 
 console = Console()

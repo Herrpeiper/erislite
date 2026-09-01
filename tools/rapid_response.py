@@ -27,7 +27,7 @@ from rich.table import Table
 from rich.align import Align
 from rich.prompt import Prompt, Confirm
 
-from ui.utils import clear_screen, show_header, pause_return, get_os
+from erislite.ui.utils import clear_screen, show_header, pause_return, get_os
 
 console = Console()
 

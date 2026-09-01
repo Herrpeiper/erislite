@@ -12,7 +12,7 @@ import platform, subprocess, re
 from packaging import version
 from rich.console import Console
 from rich.table import Table
-from ui.utils import pause_return
+from erislite.ui.utils import pause_return
 
 console = Console()
 
