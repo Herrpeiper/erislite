@@ -24,16 +24,12 @@ from erislite.accounts import (
 
 from tools import (
     threat_sweep,
-    world_writable_check,
-    cron_timer_check,
-    suid_check,
     docker_check,
-    backdoor_check,
 )
 
 from erislite.system import integrity, kernel_modules, processes
-
 from erislite.network import listeners, firewall, hosts
+from erislite.persistence import world_writable, cron, suid, backdoors
 
 from erislite.ui.utils import clear_screen, show_header, pause_return
 
@@ -152,10 +148,10 @@ def run_sweep(user_profile, sweep_profile="standard"):
         results["sshkeys"] = ssh_keys.run_ssh_key_check(silent=True)
 
     if "worldwritable" in profiles[sweep_profile]:
-        results["worldwritable"] = world_writable_check.run_world_writable_check(silent=True)
+        results["worldwritable"] = world_writable.run_world_writable_check(silent=True)
 
     if "cron" in profiles[sweep_profile]:
-        results["cron"] = cron_timer_check.run_cron_timer_scan(silent=True)
+        results["cron"] = cron.run_cron_timer_scan(silent=True)
 
     if "login" in profiles[sweep_profile]:
         results["login"] = login_audit.run_login_audit(silent=True)
@@ -169,7 +165,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
     # FIX #7: suid was in the weights dict and in the full profile list but was never
     # assigned to results{}, so it could never contribute to the risk score. Wired in now.
     if "suid" in profiles[sweep_profile]:
-        results["suid"] = suid_check.run_suid_scan(silent=True)
+        results["suid"] = suid.run_suid_scan(silent=True)
 
     if "processes" in profiles[sweep_profile]:
         results["processes"] = processes.run_process_scan(silent=True)
@@ -178,7 +174,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
         results["hosts"] = hosts.run_hosts_check(silent=True)
 
     if "backdoor" in profiles[sweep_profile]:
-        results["backdoor"] = backdoor_check.run_backdoor_check(silent=True)
+        results["backdoor"] = backdoors.run_backdoor_check(silent=True)
 
     if "cve" in profiles[sweep_profile]:
         results["cve"] = cve_checker.run_cve_check(silent=True)

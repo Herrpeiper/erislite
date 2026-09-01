@@ -26,13 +26,9 @@ from core import (
 
 from tools import (
     threat_sweep,
-    world_writable_check,
-    cron_timer_check,
     sweep_viewer,
-    suid_check,
     docker_check,
     soc_mode,
-    backdoor_check,
     rapid_response,
 )
 
@@ -52,6 +48,13 @@ from erislite.accounts import (
     users,
     ssh_keys,
     ssh_config,
+)
+
+from erislite.persistence import (
+    world_writable,
+    cron,
+    suid,
+    backdoors,
 )
 
 console = Console()
@@ -199,15 +202,15 @@ def run(profile):
         elif choice == "4":
             ssh_keys.run_ssh_key_check()
         elif choice == "5":
-            world_writable_check.run_world_writable_check()
+            world_writable.run_world_writable_check()
         elif choice == "6":
             kernel_modules.run_kernel_module_check(silent=False)
         elif choice == "7":
-            cron_timer_check.run_cron_timer_scan()
+            cron.run_cron_timer_scan()
         elif choice == "8":
             integrity.integrity_menu()
         elif choice == "9":
-            suid_check.run_suid_scan()
+            suid.run_suid_scan()
         elif choice == "10":
             ssh_config.run_ssh_config_check()
         elif choice == "11":
@@ -243,7 +246,7 @@ def run(profile):
         elif choice == "19":
             hosts.run_hosts_check()
         elif choice == "20":
-            backdoor_check.run_backdoor_check()
+            backdoors.run_backdoor_check()
         elif choice == "21":
             rapid_response.run_rapid_response_menu()
         elif choice == "15":
