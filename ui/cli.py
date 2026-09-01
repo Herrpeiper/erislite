@@ -16,8 +16,7 @@ from rich.table import Table
 from ui.menus import cve_tools_menu, help_menu, network_menu, security_menu, system_menu
 from erislite.ui.utils import clear_screen, show_header
 
-from tools import snapshot
-from core import log_viewer
+from erislite.sweep import snapshot, log_viewer
 from erislite.vulnerability import cve_checker
 
 console = Console()

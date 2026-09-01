@@ -22,10 +22,6 @@ from erislite.accounts import (
     ssh_config,
 )
 
-from tools import (
-    threat_sweep,
-)
-
 from erislite.containers import docker
 
 from erislite.system import integrity, kernel_modules, processes

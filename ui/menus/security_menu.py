@@ -23,9 +23,9 @@ from core import (
     security_audit,
 )
 
-from tools import (
+from erislite.sweep import (
     threat_sweep,
-    sweep_viewer,
+    viewer,
     soc_mode,
 )
 
@@ -251,7 +251,7 @@ def run(profile):
         elif choice == "21":
             rapid_response.run_rapid_response_menu()
         elif choice == "15":
-            sweep_viewer.sweep_viewer_menu()
+            viewer.sweep_viewer_menu()
         elif choice == "16":
             clear_screen()
             show_header("ERISLITE SOC MODE")
