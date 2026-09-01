@@ -7,20 +7,24 @@
 # Last Updated: 2026-04-05
 # Description: SOC Mode: 15-minute rolling log snapshot and posture assessment.
 
-import subprocess, shutil, json, os, re
+import json, os, re, shutil, subprocess
 
-from datetime import datetime
 from collections import Counter
+from datetime import datetime
 
-from rich.console import Console
-from rich.table import Table
+from rich import box
 from rich.panel import Panel
+from rich.prompt import Prompt
+from rich.table import Table
+from rich.text import Text
+
+from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.ui.console import console
+from erislite.ui.utils import clear_screen, pause_return
 
 WINDOW_MINUTES = 15
 EXPORT_DIR = "./data/logs/soc_mode"
 MAX_DETAIL = 5
-
-console = Console()
 
 # --- Regex (best-effort, stable across common sshd/sudo formats) ---
 RE_SSH_FAIL = re.compile(r"Failed password for .* from (?P<ip>\d{1,3}(?:\.\d{1,3}){3})")
@@ -240,12 +244,23 @@ def export_snapshot(snapshot):
 # --- Main Interactive Function ---
 # This function is the main entry point for the SOC Mode feature. It collects logs, parses them, computes the posture status and score, and displays an interactive report to the user. The user can view details about root activity and auth events, or export a snapshot of the current posture for later analysis.
 def interactive_soc_mode():
+    clear_screen()
+
     logs = collect_journal_logs()
     warn_logs = collect_warning_logs()
     warning_count = len(warn_logs)
 
     if logs is None:
-        console.print(Panel("[red]No journal logs available.[/red]\nTry running ErisLITE with elevated permissions.", title="SOC MODE"))
+        console.print(
+            Panel(
+                "[yellow]No journal logs available.[/]\n"
+                "[dim]Try running ErisLITE with elevated permissions.[/]",
+                title="[bold cyan]SOC MODE[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+        pause_return()
         return
 
     parsed = parse_logs(logs)
@@ -253,81 +268,141 @@ def interactive_soc_mode():
     score = compute_score(parsed, warning_count)
     attention = build_attention(parsed, warning_count)
 
-    # Color posture
-    if status == "STABLE":
-        status_color = "green"
-    elif status == "WATCH":
-        status_color = "yellow"
-    else:
-        status_color = "red"
+    status_color = {
+        "STABLE": "green",
+        "WATCH": "yellow",
+        "ACTION REQUIRED": "red",
+    }.get(status, "white")
 
-    header = (
-        f"[bold]Window:[/bold] Last {WINDOW_MINUTES} Minutes\n"
-        f"[bold]Timestamp:[/bold] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        f"[bold]SOC STATUS:[/bold] [{status_color}]{status}[/{status_color}]"
+    header = Panel(
+        Text.from_markup(
+            f"[dim]Window:[/] [white]Last {WINDOW_MINUTES} minutes[/]   "
+            f"[dim]Timestamp:[/] [white]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/]"
+        ),
+        title="[bold cyan]ERISLITE SOC MODE[/]",
+        subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
+        border_style="cyan",
+        box=box.SQUARE,
+        padding=(0, 1),
     )
-    console.print(Panel(header, title="ERISLITE SOC MODE", expand=False))
 
-    # Summary table
-    t = Table(show_header=True, header_style="bold cyan")
-    t.add_column("SECTION")
-    t.add_column("METRIC")
-    t.add_column("VALUE")
+    console.print(header)
+    console.print()
 
-    # AUTH
-    top_ips_str = "None"
-    if parsed["failed_ips_top"]:
-        top_ips_str = ", ".join([f"{ip}({cnt})" for ip, cnt in parsed["failed_ips_top"]])
+    console.print(
+        Panel.fit(
+            f"[dim]Status:[/] [bold {status_color}]{status}[/]   "
+            f"[dim]Score:[/] [bold {status_color}]{score}/100[/]",
+            title="[bold cyan]SOC Posture[/]",
+            border_style=status_color,
+            box=box.ROUNDED,
+        )
+    )
+    console.print()
 
-    t.add_row("AUTH", "Failed SSH", f"{parsed['failed_ssh']} (top: {top_ips_str})")
-    t.add_row("AUTH", "SSH Success", str(parsed["ssh_success_count"]))
-    t.add_row("AUTH", "Sudo Events", str(parsed["sudo_events"]))
+    top_ips = (
+        ", ".join(f"{ip} ({count})" for ip, count in parsed["failed_ips_top"])
+        if parsed["failed_ips_top"]
+        else "None"
+    )
 
-    # ROOT ACTIVITY
-    t.add_row("ROOT", "Root SSH", str(parsed["root_ssh_success"]))
-    t.add_row("ROOT", "su → root", str(parsed["su_to_root"]))
-    t.add_row("ROOT", "sudo → root", str(parsed["sudo_to_root"]))
+    table = Table(
+        title="[italic cyan]Activity Summary[/]",
+        box=box.SIMPLE_HEAVY,
+        header_style="bold cyan",
+        show_edge=False,
+        padding=(0, 1),
+    )
+    table.add_column("Section", style="cyan", no_wrap=True)
+    table.add_column("Metric", style="white")
+    table.add_column("Value", style="white")
 
-    # SYSTEM
-    t.add_row("SYSTEM", "Warnings+", str(warning_count))
+    table.add_row("AUTH", "Failed SSH", str(parsed["failed_ssh"]))
+    table.add_row("AUTH", "Top Failed IPs", top_ips)
+    table.add_row("AUTH", "SSH Success", str(parsed["ssh_success_count"]))
+    table.add_row("AUTH", "Sudo Events", str(parsed["sudo_events"]))
+    table.add_row("ROOT", "Root SSH", str(parsed["root_ssh_success"]))
+    table.add_row("ROOT", "su → root", str(parsed["su_to_root"]))
+    table.add_row("ROOT", "sudo → root", str(parsed["sudo_to_root"]))
+    table.add_row("SYSTEM", "Warnings+", str(warning_count))
 
-    console.print(t)
+    console.print(table)
+    console.print()
 
-    # Attention block
     if attention:
-        att_text = "\n".join([f"- {x}" for x in attention])
+        attention_text = "\n".join(f"[yellow]•[/] {item}" for item in attention)
+        border = "yellow" if status != "ACTION REQUIRED" else "red"
     else:
-        att_text = "- None"
-    console.print(Panel(att_text, title="ATTENTION", expand=False))
+        attention_text = "[dim]No immediate attention items.[/]"
+        border = "grey37"
 
-    # Score
-    console.print(f"[bold]SOC SCORE:[/bold] {score}/100\n")
+    console.print(
+        Panel.fit(
+            attention_text,
+            title="[bold cyan]Attention[/]",
+            border_style=border,
+            box=box.ROUNDED,
+        )
+    )
+    console.print()
 
-    console.print("[1] View Root Details   [2] View Auth Details   [3] Export Snapshot   [4] Return")
-    choice = input("> ").strip()
+    menu = Table(show_header=False, box=None, padding=(0, 1), collapse_padding=True)
+    menu.add_column(no_wrap=True)
+    menu.add_column()
+
+    menu.add_row("[bold cyan]DETAILS[/]", "")
+    menu.add_row("[cyan][1][/]", "View Root Details")
+    menu.add_row("[cyan][2][/]", "View Auth Details")
+    menu.add_row("[cyan][3][/]", "Export Snapshot")
+    menu.add_row("", "")
+    menu.add_row("[cyan][0][/]", "Back")
+
+    console.print(menu)
+
+    choice = Prompt.ask(
+        "\n[cyan]Select an option[/]",
+        default="0",
+        show_default=False,
+    ).strip()
 
     if choice == "1":
-        console.print(Panel(
-            "\n".join(
-                (["[bold]Root SSH:[/bold]"] + (parsed["root_ssh_details"] or ["(none)"]) + [""] +
-                 ["[bold]su → root:[/bold]"] + (parsed["su_to_root_details"] or ["(none)"]) + [""] +
-                 ["[bold]sudo → root:[/bold]"] + (parsed["sudo_to_root_details"] or ["(none)"]))
-            ),
-            title="ROOT DETAILS",
-            expand=False
-        ))
-        input("\nPress Enter to return...")
+        console.print()
+        console.print(
+            Panel(
+                "\n".join(
+                    ["[bold cyan]Root SSH[/]"]
+                    + (parsed["root_ssh_details"] or ["[dim]None[/]"])
+                    + [""]
+                    + ["[bold cyan]su → root[/]"]
+                    + (parsed["su_to_root_details"] or ["[dim]None[/]"])
+                    + [""]
+                    + ["[bold cyan]sudo → root[/]"]
+                    + (parsed["sudo_to_root_details"] or ["[dim]None[/]"])
+                ),
+                title="[bold cyan]Root Details[/]",
+                border_style="cyan",
+                box=box.ROUNDED,
+            )
+        )
+        pause_return()
 
     elif choice == "2":
-        console.print(Panel(
-            "\n".join(
-                (["[bold]Recent SSH Successes:[/bold]"] + (parsed["ssh_success_raw"] or ["(none)"]) + [""] +
-                 ["[bold]Recent sudo events:[/bold]"] + (parsed["sudo_details"] or ["(none)"]))
-            ),
-            title="AUTH DETAILS",
-            expand=False
-        ))
-        input("\nPress Enter to return...")
+        console.print()
+        console.print(
+            Panel(
+                "\n".join(
+                    ["[bold cyan]Recent SSH Successes[/]"]
+                    + (parsed["ssh_success_raw"] or ["[dim]None[/]"])
+                    + [""]
+                    + ["[bold cyan]Recent sudo Events[/]"]
+                    + (parsed["sudo_details"] or ["[dim]None[/]"])
+                ),
+                title="[bold cyan]Auth Details[/]",
+                border_style="cyan",
+                box=box.ROUNDED,
+            )
+        )
+        pause_return()
 
     elif choice == "3":
         snapshot = {
@@ -349,11 +424,12 @@ def interactive_soc_mode():
                 "sudo_to_root": parsed["sudo_to_root"],
             },
             "system": {
-                "warning_count": warning_count
-            }
+                "warning_count": warning_count,
+            },
         }
+
         path = export_snapshot(snapshot)
-        console.print(f"\n[green]Exported to:[/green] {path}\n")
-        input("Press Enter to return...")
+        console.print(f"\n[green]Snapshot exported:[/] {path}")
+        pause_return()
 
     # choice "4" or anything else: return to menu

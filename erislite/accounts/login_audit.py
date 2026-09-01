@@ -21,13 +21,19 @@ console = Console()
 # Get failed login attempts from auth logs or journalctl
 def get_failed_logins():
     try:
-        output = subprocess.check_output(["journalctl", "-u", "ssh", "-n", "100"], text=True)
+        result = subprocess.run(
+            ["journalctl", "-u", "ssh", "-n", "100"],
+            capture_output=True,
+            text=True,
+        )
+        output = result.stdout
     except Exception:
         try:
-            with open("/var/log/auth.log", "r") as f:
+            with open("/var/log/auth.log", "r", encoding="utf-8", errors="ignore") as f:
                 output = f.read()
-        except:
+        except Exception:
             return []
+
     return re.findall(r"Failed password for.*? from .*? port \d+", output)
 
 # Get recent login history using the "last" command

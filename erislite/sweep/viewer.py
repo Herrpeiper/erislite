@@ -1,149 +1,200 @@
 # Project: ErisLITE
 # Module: sweep_viewer.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
+# Last Updated: 2026-09-01
 # Description: Threat sweep log viewer: browse and inspect past sweep results.
 
-import os, json
-from datetime import datetime
+import json, os
 
-from rich.console import Console
-from rich.table import Table
+from rich import box
 from rich.panel import Panel
-from rich.align import Align
-from rich.markdown import Markdown
+from rich.prompt import Prompt
+from rich.table import Table
+from rich.text import Text
 
-from erislite.ui.utils import clear_screen, show_header, pause_return
+from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.ui.console import console
+from erislite.ui.utils import clear_screen, pause_return
 
 LOG_DIR = "data/logs/threat_sweeps"
-console = Console()
+
+
+def _header(title: str) -> None:
+    console.print(
+        Panel(
+            Text.from_markup("[dim]Threat sweep history and report viewer[/]"),
+            title=f"[bold cyan]{title}[/]",
+            subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
+            border_style="cyan",
+            box=box.SQUARE,
+            padding=(0, 1),
+        )
+    )
+    console.print()
+
 
 def load_sweep_logs(limit=5):
     if not os.path.exists(LOG_DIR):
-        console.print("[red]No sweep logs found.[/]")
         return []
 
     logs = []
 
-    for file in os.listdir(LOG_DIR):
-        if file.startswith("sweep_log_") and file.endswith(".json"):
-            path = os.path.join(LOG_DIR, file)
-            try:
-                with open(path, 'r') as f:
-                    data = json.load(f)
-                    logs.append((data.get("timestamp", "Unknown"), data, file))
-            except Exception:
-                continue
+    for filename in os.listdir(LOG_DIR):
+        if not filename.startswith("sweep_log_") or not filename.endswith(".json"):
+            continue
 
-    logs.sort(key=lambda x: x[0], reverse=True)
+        path = os.path.join(LOG_DIR, filename)
+
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                data = json.load(file)
+                logs.append((data.get("timestamp", "Unknown"), data, filename))
+        except Exception:
+            continue
+
+    logs.sort(key=lambda item: item[0], reverse=True)
     return logs[:limit]
+
 
 def show_recent_sweeps(limit=5):
     logs = load_sweep_logs(limit)
 
     if not logs:
-        console.print("[red]No recent sweep logs found.[/]")
+        console.print("[yellow]No recent sweep logs found.[/]")
         return []
 
-    table = Table(title=f"Last {len(logs)} Threat Sweeps", show_lines=True)
-    table.add_column("Timestamp", style="cyan")
-    table.add_column("Profile", style="magenta")
-    table.add_column("Risk Score", style="bold")
-    table.add_column("Tags Detected", style="yellow")
+    table = Table(
+        title=f"[italic cyan]Last {len(logs)} Threat Sweeps[/]",
+        box=box.SIMPLE_HEAVY,
+        header_style="bold cyan",
+        show_edge=False,
+        padding=(0, 1),
+    )
+    table.add_column("Timestamp", style="white")
+    table.add_column("Profile", style="cyan")
+    table.add_column("Risk", justify="right")
+    table.add_column("Tags", style="dim")
 
-    for timestamp, data, filename in logs:
-        profile = data.get("sweep_profile", "unknown")
-        score = str(data.get("risk_score", "N/A"))
-        results = data.get("results", {})
+    for timestamp, data, _ in logs:
         tag_set = set()
-        for module_result in results.values():
-            tag_set.update(module_result.get("tags", []))
+
+        for result in data.get("results", {}).values():
+            tag_set.update(result.get("tags", []))
+
         tags = ", ".join(sorted(tag_set)) if tag_set else "None"
 
-        table.add_row(timestamp, profile, score, tags)
-
-    console.print("\n")
-    console.print(Align.center(table))
-    console.print("\n")
-    return logs
-
-def view_full_report():
-    logs = load_sweep_logs(limit=5)
-    if not logs:
-        console.print("[red]No recent sweep logs found.[/]")
-        pause_return()
-        return
-
-    clear_screen()
-    show_header("FULL THREAT SWEEP REPORT")
-
-    table = Table(title="Select a Sweep Log", show_lines=True)
-    table.add_column("Index", style="cyan", justify="center")
-    table.add_column("Timestamp", style="magenta")
-    table.add_column("Profile", style="green")
-    table.add_column("Score", style="yellow")
-
-    for i, (timestamp, data, filename) in enumerate(logs):
         table.add_row(
-            str(i + 1),
             timestamp,
-            data.get("sweep_profile", "unknown"),
-            str(data.get("risk_score", "N/A"))
+            str(data.get("sweep_profile", "unknown")).capitalize(),
+            str(data.get("risk_score", "N/A")),
+            tags,
         )
 
     console.print(table)
-    idx = input("\nSelect a log by index: ").strip()
+    return logs
 
-    if not idx.isdigit() or not (1 <= int(idx) <= len(logs)):
-        console.print("[red]Invalid selection.[/]")
+
+def view_full_report():
+    logs = load_sweep_logs(limit=5)
+
+    if not logs:
+        console.print("[yellow]No recent sweep logs found.[/]")
         pause_return()
         return
 
-    selected_data = logs[int(idx) - 1][1]  # JSON dict
-    timestamp = selected_data.get("timestamp", "unknown")
-
     clear_screen()
-    show_header(f"FULL REPORT – {timestamp}")
+    _header("FULL THREAT SWEEP REPORT")
 
-    # Metadata panel
-    profile = selected_data.get("sweep_profile", "N/A").capitalize()
-    score = selected_data.get("risk_score", "N/A")
-    console.print(
-        Panel.fit(
-            f"[bold magenta]Profile:[/] {profile}   "
-            f"[bold yellow]Risk Score:[/] {score}",
-            title="Sweep Metadata"
+    table = Table(
+        title="[italic cyan]Select a Sweep Log[/]",
+        box=box.SIMPLE_HEAVY,
+        header_style="bold cyan",
+        show_edge=False,
+        padding=(0, 1),
+    )
+    table.add_column("Index", style="cyan", justify="center")
+    table.add_column("Timestamp")
+    table.add_column("Profile", style="cyan")
+    table.add_column("Risk", justify="right")
+
+    for index, (timestamp, data, _) in enumerate(logs, start=1):
+        table.add_row(
+            str(index),
+            timestamp,
+            str(data.get("sweep_profile", "unknown")).capitalize(),
+            str(data.get("risk_score", "N/A")),
         )
+
+    console.print(table)
+
+    choice = Prompt.ask(
+        "\n[cyan]Select a log[/]",
+        choices=[str(i) for i in range(1, len(logs) + 1)] + ["0"],
+        default="0",
     )
 
-    # Tags
-    all_tags = set()
-    for result in selected_data.get("results", {}).values():
-        all_tags.update(result.get("tags", []))
-    if all_tags:
-        tag_str = ", ".join(sorted(all_tags))
-        console.print(f"[bold red]Tags Detected:[/] {tag_str}\n")
+    if choice == "0":
+        return
 
-    # Module Results
-    for module, result in selected_data.get("results", {}).items():
-        module_title = module.replace("_", " ").title()
-        status = result.get("status", "UNKNOWN").upper()
+    selected = logs[int(choice) - 1][1]
+    timestamp = selected.get("timestamp", "Unknown")
+
+    clear_screen()
+    _header(f"FULL REPORT — {timestamp}")
+
+    profile = str(selected.get("sweep_profile", "N/A")).capitalize()
+    score = selected.get("risk_score", "N/A")
+
+    console.print(
+        Panel.fit(
+            f"[dim]Profile:[/] [white]{profile}[/]   "
+            f"[dim]Risk Score:[/] [white]{score}[/]",
+            title="[bold cyan]Sweep Metadata[/]",
+            border_style="cyan",
+            box=box.ROUNDED,
+        )
+    )
+    console.print()
+
+    all_tags = set()
+
+    for result in selected.get("results", {}).values():
+        all_tags.update(result.get("tags", []))
+
+    if all_tags:
+        console.print(
+            f"[dim]Tags:[/] [cyan]{', '.join(sorted(all_tags))}[/]\n"
+        )
+
+    for module, result in selected.get("results", {}).items():
+        status = result.get("status", "unknown").lower()
         details = result.get("details", ["No details."])
 
-        # Emoji + status formatting
-        emoji = "✅" if status == "OK" else "⚠️" if status == "WARNING" else "❌"
-        header = f"### {emoji} {module_title} – [{status}]"
+        if status == "ok":
+            status_text = "[green]OK[/]"
+        elif status in ("warning", "issue"):
+            status_text = "[yellow]WARNING[/]"
+        elif status == "error":
+            status_text = "[red]ERROR[/]"
+        elif status == "unsupported":
+            status_text = "[magenta]UNSUPPORTED[/]"
+        else:
+            status_text = f"[dim]{status.upper()}[/]"
 
-        # Compose markdown
-        markdown_block = f"{header}\n"
-        for line in details:
-            markdown_block += f"- {line}\n"
-        markdown_block += "\n"
+        body = "\n".join(f"[dim]•[/] {line}" for line in details)
 
-        console.print(Markdown(markdown_block))
+        console.print(
+            Panel.fit(
+                body,
+                title=f"[bold cyan]{module.replace('_', ' ').title()}[/]  {status_text}",
+                border_style="cyan",
+                box=box.ROUNDED,
+            )
+        )
+        console.print()
 
     pause_return()
 
@@ -151,28 +202,35 @@ def view_full_report():
 def sweep_viewer_menu():
     while True:
         clear_screen()
-        show_header("SWEEP LOG VIEWER")
+        _header("SWEEP LOG VIEWER")
 
-        menu = Table(show_header=False, box=None, padding=(0, 1))
-        menu.add_row("[1]", "📂  View Recent Threat Sweeps")
+        menu = Table(show_header=False, box=None, padding=(0, 1), collapse_padding=True)
+        menu.add_column(no_wrap=True)
+        menu.add_column()
+
+        menu.add_row("[bold cyan]REVIEW[/]", "")
+        menu.add_row("[cyan][1][/]", "View Recent Threat Sweeps")
+        menu.add_row("[cyan][2][/]", "View Full Report")
         menu.add_row("", "")
-        menu.add_row("[2]", "📄  View Full Report (Select by Timestamp)")
-        menu.add_row("", "")
-        menu.add_row("[3]", "↩️  Back to Security Tools Menu")
+        menu.add_row("[cyan][0][/]", "Back")
+
         console.print(menu)
 
-        choice = input("\nSelect an option: ").strip()
+        choice = Prompt.ask(
+            "\n[cyan]Select an option[/]",
+            default="0",
+            show_default=False,
+        ).strip()
 
         if choice == "1":
             clear_screen()
-            show_header("RECENT SWEEP RESULTS")
+            _header("RECENT SWEEP RESULTS")
             show_recent_sweeps()
             pause_return()
         elif choice == "2":
             view_full_report()
-        elif choice == "3":
+        elif choice == "0":
             break
         else:
             console.print("[red]Invalid selection.[/]")
             pause_return()
-

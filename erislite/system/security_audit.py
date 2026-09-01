@@ -12,20 +12,19 @@ from pathlib import Path
 from datetime import datetime
 
 import psutil
-from rich.console import Console
+from rich import box
+from rich.panel import Panel
 from rich.table import Table
-from rich.align import Align
+from rich.text import Text
 
+from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.response.security_log import write_audit_log
-from erislite.ui.utils import clear_screen, show_header, pause_return
-
-console = Console()
-
+from erislite.ui.console import console
+from erislite.ui.utils import clear_screen, pause_return
 
 #----------------------------
 # Helpers
 #----------------------------
-
 def _have(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
@@ -34,11 +33,9 @@ def _safe_run(args: list[str]) -> subprocess.CompletedProcess:
     # Avoid throwing on nonzero return codes; we interpret stdout/stderr ourselves.
     return subprocess.run(args, capture_output=True, text=True)
 
-
 # ----------------------------
 # Checks
 # ----------------------------
-
 def check_firewall_status():
     """
     Snapshot-style: identify an active firewall mechanism quickly.
@@ -321,14 +318,31 @@ def check_login_events():
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
 
-
 # ----------------------------
 # Runner
 # ----------------------------
-
-def run(profile: dict):
+def run(profile: dict) -> None:
     clear_screen()
-    show_header("POSTURE SNAPSHOT")  # rename the header to match behavior
+
+    hostname = profile.get("hostname", "unknown-host")
+    role = profile.get("role", "unknown-role")
+    analyst_id = profile.get("analyst_id", "N/A")
+
+    header = Panel(
+        Text.from_markup(
+            f"[dim]Host:[/] [white]{hostname}[/]   "
+            f"[dim]Role:[/] [white]{role}[/]   "
+            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+        ),
+        title="[bold cyan]POSTURE SNAPSHOT[/]",
+        subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
+        border_style="cyan",
+        box=box.SQUARE,
+        padding=(0, 1),
+    )
+
+    console.print(header)
+    console.print()
 
     findings = []
 
@@ -341,7 +355,6 @@ def run(profile: dict):
         findings.append(f"Processes: {proc_status}")
 
     ssh_key_status = check_ssh_keys()
-    # Presence is noteworthy but not necessarily "bad"; still include in findings as INFO
     if ssh_key_status.startswith(("🟡", "⚠️")):
         findings.append(f"SSH Keys: {ssh_key_status}")
 
@@ -356,20 +369,28 @@ def run(profile: dict):
     if "⚠️" in login_status or "Error" in login_status:
         findings.append(f"Auth Logs: {login_status}")
 
-    table = Table(title="Posture Snapshot (Fast)", show_lines=True)
-    table.add_column("Check", style="cyan", no_wrap=True)
-    table.add_column("Status", style="green")
+    table = Table(
+        title="[italic cyan]Posture Snapshot — Fast[/]",
+        box=box.SIMPLE_HEAVY,
+        header_style="bold cyan",
+        show_edge=False,
+        padding=(0, 1),
+    )
+    table.add_column("Check", style="cyan", no_wrap=True, min_width=24)
+    table.add_column("Status", style="white")
 
     table.add_row("Firewall", firewall_status)
     table.add_row("Suspicious Processes", proc_status)
     table.add_row("SSH Authorized Keys", ssh_key_status)
     table.add_row("High-Risk World-Writable", writable_status)
-    table.add_row("Failed SSH Logins (Today)", login_status)
+    table.add_row("Failed SSH Logins", login_status)
 
-    console.print(Align.center(table))
+    console.print(table)
 
-    # Log the findings (will be mostly actionable or notable info now)
     log_path = write_audit_log(profile, findings)
-    console.print(f"\n[green]Snapshot saved to:[/] {log_path}")
+
+    console.print()
+    console.print(f"[dim]Snapshot saved:[/] [white]{log_path}[/]")
+    console.print()
 
     pause_return()

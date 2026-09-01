@@ -9,27 +9,22 @@
 
 from __future__ import annotations
 
-import json
-import os
-import pwd
-import shutil
-import subprocess
-import time
+import json, os, pwd, shutil, subprocess, time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from typing import Any, Dict, List, Tuple
 
 import psutil
 
-from rich.console import Console
+from rich import box
 from rich.panel import Panel
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
-from rich.align import Align
-from rich.prompt import Prompt, Confirm
+from rich.text import Text
 
-from erislite.ui.utils import clear_screen, show_header, pause_return, get_os
-
-console = Console()
+from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.ui.console import console
+from erislite.ui.utils import clear_screen, get_os, pause_return
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 LOG_DIR    = _REPO_ROOT / "data" / "logs" / "rapid_response"
@@ -372,12 +367,28 @@ def run_rapid_response(dry_run: bool = False) -> None:
         return
 
     clear_screen()
-    show_header("RAPID RESPONSE MODE")
+    _header("RAPID RESPONSE", "[dim]Triage and containment workflow[/]")
 
-    mode_label = "[yellow]DRY RUN — no changes will be made[/]" if dry_run else \
-                 "[bold red]LIVE MODE — changes will be applied[/]"
-    console.print(Panel.fit(mode_label, border_style="red" if not dry_run else "yellow"))
-    console.print("\n[bold]Running triage scan...[/]\n")
+    if dry_run:
+        console.print(
+            Panel.fit(
+                "[bold yellow]DRY RUN[/]   [dim]No system changes will be made.[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+    else:
+        console.print(
+            Panel.fit(
+                "[bold red]LIVE MODE[/]   [white]Containment actions will modify this system.[/]",
+                border_style="red",
+                box=box.ROUNDED,
+            )
+        )
+
+    console.print()
+    console.print("[dim]Running triage scan...[/]")
+    console.print()
 
     # ── Triage ────────────────────────────────────────────────────────────────
     procs = _triage_suspicious_processes()
@@ -395,21 +406,44 @@ def run_rapid_response(dry_run: bool = False) -> None:
 
     # ── Display findings ──────────────────────────────────────────────────────
     if procs:
-        t = Table(title=f"Suspicious Processes ({len(procs)})", show_lines=True)
-        t.add_column("PID",  style="cyan",    no_wrap=True)
-        t.add_column("Name", style="magenta", no_wrap=True)
-        t.add_column("Path", style="yellow")
-        for p in procs:
-            t.add_row(str(p["pid"]), p["name"], p["exe"])
-        console.print(Align.center(t))
+        table = Table(
+            title=f"[italic cyan]Suspicious Processes ({len(procs)})[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+        table.add_column("PID", style="cyan", no_wrap=True)
+        table.add_column("Name", style="white", no_wrap=True)
+        table.add_column("Path", style="white")
+
+        for proc in procs:
+            table.add_row(str(proc["pid"]), proc["name"], proc["exe"])
+
+        console.print(table)
+        console.print()
 
     if conns:
-        t = Table(title=f"Suspicious Connections ({len(conns)})", show_lines=True)
-        t.add_column("Local",  style="cyan")
-        t.add_column("Remote", style="red")
-        for c in conns:
-            t.add_row(c["laddr"], c["raddr"])
-        console.print(Align.center(t))
+        table = Table(
+            title=f"[italic cyan]Suspicious Connections ({len(conns)})[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+        table.add_column("Local", style="white")
+        table.add_column("Remote", style="red")
+        table.add_column("Process", style="cyan")
+
+        for conn in conns:
+            table.add_row(
+                conn["laddr"],
+                conn["raddr"],s
+                conn.get("proc", "unknown"),
+            )
+
+        console.print(table)
+        console.print()
 
     if users:
         console.print(f"\n[bold red]Flagged accounts:[/] {', '.join(users)}")
@@ -422,10 +456,27 @@ def run_rapid_response(dry_run: bool = False) -> None:
     # ── Action plan ───────────────────────────────────────────────────────────
     actions = _build_action_plan(procs, conns, users, crons)
 
-    console.print(f"\n[bold]Proposed actions ({len(actions)}):[/]\n")
-    for i, a in enumerate(actions, 1):
-        undo_note = "[dim](reversible)[/dim]" if a["undo"] else "[dim](irreversible)[/dim]"
-        console.print(f"  [{i}] {a['label']} {undo_note}")
+    action_table = Table(
+        title=f"[italic cyan]Proposed Actions ({len(actions)})[/]",
+        box=box.SIMPLE_HEAVY,
+        header_style="bold cyan",
+        show_edge=False,
+        padding=(0, 1),
+    )
+    action_table.add_column("#", style="cyan", justify="right")
+    action_table.add_column("Action", style="white")
+    action_table.add_column("Recovery", no_wrap=True)
+
+    for index, action in enumerate(actions, start=1):
+        recovery = (
+            "[green]Reversible[/]"
+            if action["undo"]
+            else "[yellow]Irreversible[/]"
+        )
+        action_table.add_row(str(index), action["label"], recovery)
+
+    console.print(action_table)
+    console.print()
 
     console.print()
 
@@ -480,26 +531,39 @@ def run_rapid_response(dry_run: bool = False) -> None:
 
 
 def run_rapid_response_menu() -> None:
-    """Menu wrapper called from security_menu.py."""
     while True:
         clear_screen()
-        show_header("RAPID RESPONSE")
+        _header("RAPID RESPONSE")
 
-        console.print(Panel.fit(
-            "[bold red]WARNING:[/] Rapid Response makes live changes to this system.\n"
-            "Always run a Dry Run first to review proposed actions.\n"
-            "All actions are logged and reversible actions can be undone.",
-            border_style="red"
-        ))
-
-        console.print()
-        console.print("  [1]  Dry Run       — scan and show proposed actions (no changes)")
-        console.print("  [2]  Live Run      — scan and execute containment actions")
-        console.print("  [3]  Undo          — reverse actions from a previous live run")
-        console.print("  [4]  Back")
+        console.print(
+            Panel.fit(
+                "[bold red]CAUTION[/]\n"
+                "[white]Rapid Response can modify system state.[/]\n"
+                "[dim]Review proposed actions with Dry Run before executing Live Run.[/]",
+                border_style="red",
+                box=box.ROUNDED,
+            )
+        )
         console.print()
 
-        choice = Prompt.ask("Select", choices=["1", "2", "3", "4"], default="1")
+        menu = Table(show_header=False, box=None, padding=(0, 1), collapse_padding=True)
+        menu.add_column(no_wrap=True)
+        menu.add_column()
+
+        menu.add_row("[bold cyan]ACTIONS[/]", "")
+        menu.add_row("[cyan][1][/]", "Dry Run", "[dim]Scan and preview actions[/]")
+        menu.add_row("[red][2][/]", "[red]Live Run[/]", "[dim]Execute containment actions[/]")
+        menu.add_row("[yellow][3][/]", "Undo Previous Run", "[dim]Reverse supported actions[/]")
+        menu.add_row("", "")
+        menu.add_row("[cyan][0][/]", "Back", "")
+
+        console.print(menu)
+
+        choice = Prompt.ask(
+            "\n[cyan]Select an option[/]",
+            choices=["0", "1", "2", "3"],
+            default="1",
+        )
 
         if choice == "1":
             run_rapid_response(dry_run=True)
@@ -507,14 +571,13 @@ def run_rapid_response_menu() -> None:
             run_rapid_response(dry_run=False)
         elif choice == "3":
             _select_and_undo()
-        elif choice == "4":
+        elif choice == "0":
             break
 
 
 def _select_and_undo() -> None:
-    """Let the user pick a previous rapid response log to undo."""
     clear_screen()
-    show_header("RAPID RESPONSE — SELECT LOG TO UNDO")
+    _header("RAPID RESPONSE — UNDO")
 
     if not LOG_DIR.exists():
         console.print("[yellow]No rapid response logs found.[/]")
@@ -522,35 +585,44 @@ def _select_and_undo() -> None:
         return
 
     logs = sorted(LOG_DIR.glob("rapid_response_*.json"), reverse=True)
+
     if not logs:
         console.print("[yellow]No rapid response logs found.[/]")
         pause_return()
         return
 
-    t = Table(title="Available Logs", show_lines=True)
-    t.add_column("Index", style="cyan", no_wrap=True)
-    t.add_column("File",  style="white")
-    t.add_column("Time",  style="dim")
+    table = Table(
+        title="[italic cyan]Available Response Logs[/]",
+        box=box.SIMPLE_HEAVY,
+        header_style="bold cyan",
+        show_edge=False,
+        padding=(0, 1),
+    )
+    table.add_column("Index", style="cyan", justify="right")
+    table.add_column("File", style="white")
+    table.add_column("Timestamp", style="dim")
 
-    for i, log in enumerate(logs, 1):
+    for index, log in enumerate(logs, start=1):
         try:
-            with open(log) as f:
-                data = json.load(f)
-            ts = data.get("timestamp", "—")
+            with open(log, "r", encoding="utf-8") as file:
+                timestamp = json.load(file).get("timestamp", "—")
         except Exception:
-            ts = "—"
-        t.add_row(str(i), log.name, ts)
+            timestamp = "—"
 
-    console.print(t)
-    console.print()
+        table.add_row(str(index), log.name, timestamp)
 
-    idx = Prompt.ask(f"Select log (1-{len(logs)}) or Q to cancel", default="Q")
-    if idx.lower() == "q":
+    console.print(table)
+
+    choice = Prompt.ask(
+        "\n[cyan]Select a log[/] [dim](0 to cancel)[/]",
+        default="0",
+    )
+
+    if choice == "0":
         return
 
     try:
-        selected = logs[int(idx) - 1]
-        _run_undo(selected)
+        _run_undo(logs[int(choice) - 1])
     except (ValueError, IndexError):
         console.print("[red]Invalid selection.[/]")
         pause_return()

@@ -11,6 +11,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 APP_NAME = "ErisLITE"
+APP_CODE = "EL"
 APP_VERSION = "1.1.0"
 APP_DESCRIPTION = "Linux competition security and triage toolkit"
 

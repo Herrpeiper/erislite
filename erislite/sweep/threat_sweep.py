@@ -10,32 +10,23 @@
 # tools/threat_sweep.py
 
 import os, json
-
 from datetime import datetime
 from pathlib import Path
 
-from erislite.vulnerability import cve_checker
-from erislite.accounts import (
-    login_audit,
-    users,
-    ssh_keys,
-    ssh_config,
-)
-
-from erislite.containers import docker
-
-from erislite.system import integrity, kernel_modules, processes
-from erislite.network import listeners, firewall, hosts
-from erislite.persistence import world_writable, cron, suid, backdoors
-
-from erislite.ui.utils import clear_screen, show_header, pause_return
-
-from rich.console import Console
+from rich import box
 from rich.panel import Panel
 from rich.table import Table
-from rich.align import Align
+from rich.text import Text
 
-console = Console()
+from erislite.accounts import login_audit, users, ssh_keys, ssh_config
+from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.containers import docker
+from erislite.network import listeners, firewall, hosts
+from erislite.persistence import world_writable, cron, suid, backdoors
+from erislite.system import integrity, kernel_modules, processes
+from erislite.ui.console import console
+from erislite.ui.utils import clear_screen, pause_return
+from erislite.vulnerability import cve_checker
 
 # 🧠 Tag-to-Insight Mapping
 THREAT_TAG_MAP = {
@@ -112,13 +103,10 @@ def calculate_risk_score(results: dict):
 
 def run_sweep(user_profile, sweep_profile="standard"):
     clear_screen()
-    show_header("THREAT SWEEP")
+    _render_header(user_profile, sweep_profile)
+    console.print("[dim]Running security checks...[/]")
+    console.print()
 
-    console.print(Panel.fit("[bold red]🚨 Running Consolidated Threat Sweep...[/bold red]"))
-
-    # FIX #8: "quick" was listener-only which is too sparse for useful triage.
-    # Now includes users and login so a fast sweep still catches the most common
-    # indicators of compromise without taking much longer.
     profiles = {
         "quick":    ["listeners", "users", "login"],
         "standard": ["integrity", "listeners", "users", "login", "cve"],
@@ -188,106 +176,123 @@ def run_sweep(user_profile, sweep_profile="standard"):
 
 def _display_results(results, sweep_profile, user_profile):
     label_map = {
-        "integrity":     "Integrity",
-        "firewall":      "Firewall Status",
-        "listeners":     "Listeners",
-        "users":         "User Accounts",
-        "kernel":        "Kernel Modules",
-        "sshkeys":       "SSH Keys",
+        "integrity": "Integrity",
+        "firewall": "Firewall Status",
+        "listeners": "Listeners",
+        "users": "User Accounts",
+        "kernel": "Kernel Modules",
+        "sshkeys": "SSH Keys",
         "worldwritable": "World-Writable Files",
-        "cron":          "Cron Jobs / Timers",
-        "login":         "Login/Auth Logs",
-        "sshconfig":     "SSH Config Audit",
-        "docker":        "Docker Security",
-        "cve":           "CVE Version Check",
-        "suid":          "SUID/SGID Binaries",
-        "processes":     "Process Anomaly Scan",
-        "hosts":         "/etc/hosts Tamper Check",
-        "backdoor":      "Backdoor Detection",
+        "cron": "Cron Jobs / Timers",
+        "login": "Login / Auth Logs",
+        "sshconfig": "SSH Config Audit",
+        "docker": "Docker Security",
+        "cve": "CVE Version Check",
+        "suid": "SUID / SGID Binaries",
+        "processes": "Process Anomaly Scan",
+        "hosts": "/etc/hosts Tamper Check",
+        "backdoor": "Backdoor Detection",
     }
 
-    table = Table(title="Threat Sweep Results", show_lines=True)
-    table.add_column("Module", style="cyan")
-    table.add_column("Status", justify="center")
-    table.add_column("Detail", style="dim")
-
-    def status_row(label, result):
+    def status_text(result):
         status = result.get("status", "unknown").lower()
-        if status == "ok":
-            emoji = "✅"
-            status_text = "[green]OK[/green]"
-        elif status in ("warning", "issue"):
-            emoji = "⚠️"
-            status_text = "[yellow]WARNING[/yellow]"
-        elif status == "error":
-            emoji = "❌"
-            status_text = "[red]ERROR[/red]"
-        else:
-            emoji = "❓"
-            status_text = f"[dim]{status.upper()}[/dim]"
 
-        detail = result.get("details", ["None"])
-        detail_str = detail[0] if detail else "No issues detected"
-        return [label, f"{emoji} {status_text}", detail_str]
+        if status == "ok":
+            return "[green]OK[/]"
+        if status in ("warning", "issue"):
+            return "[yellow]WARNING[/]"
+        if status == "error":
+            return "[red]ERROR[/]"
+        if status == "unsupported":
+            return "[magenta]UNSUPPORTED[/]"
+
+        return f"[dim]{status.upper()}[/]"
+
+    table = Table(
+        title=f"[italic cyan]Threat Sweep — {sweep_profile.capitalize()}[/]",
+        box=box.SIMPLE_HEAVY,
+        header_style="bold cyan",
+        show_edge=False,
+        padding=(0, 1),
+    )
+    table.add_column("Module", style="cyan", no_wrap=True, min_width=22)
+    table.add_column("Status", no_wrap=True, min_width=11)
+    table.add_column("Detail", style="white")
 
     for module, result in results.items():
-        label = label_map.get(module, module.title())
-        table.add_row(*status_row(label, result))
+        details = result.get("details", [])
+        detail = details[0] if details else "No issues detected"
 
-    console.print("\n")
-    console.print(Align.center(table))
-    console.print(Align.center("[grey62]Legend: ✅ OK   ⚠️ WARNING   ❌ ERROR[/]"))
+        table.add_row(
+            label_map.get(module, module.title()),
+            status_text(result),
+            detail,
+        )
 
-    # 📊 Risk score
+    console.print(table)
+    console.print()
+
     score, breakdown, max_possible = calculate_risk_score(results)
     percent = round((score / max_possible) * 100) if max_possible else 0
 
     info_present = any(
-        (r.get("status", "").lower() == "ok") and (r.get("details") and len(r.get("details")) > 0)
+        r.get("status", "").lower() == "ok" and r.get("details")
         for r in results.values()
     )
 
     if percent == 0:
         color = "grey37"
-        label = "Secure (Info Findings)" if info_present else "Secure"
+        risk_label = "Secure / Informational" if info_present else "Secure"
     elif percent <= 30:
         color = "green"
-        label = "Low Risk"
+        risk_label = "Low"
     elif percent <= 70:
         color = "yellow"
-        label = "Moderate Risk"
+        risk_label = "Moderate"
     else:
         color = "red"
-        label = "High Risk"
+        risk_label = "High"
 
-    console.print("\n")
-    console.print(Align.center(Panel.fit(
-        f"[bold]{label}[/bold]\n"
-        f"Threat Score: [bold {color}]{score}/{max_possible}[/bold {color}]\n"
-        f"Threat Rating: [bold {color}]{percent}%[/bold {color}]",
-        title="System Risk Level",
-        border_style=color
-    )))
+    risk_body = (
+        f"[dim]Risk Level:[/] [bold {color}]{risk_label}[/]   "
+        f"[dim]Score:[/] [bold {color}]{score}/{max_possible}[/]   "
+        f"[dim]Rating:[/] [bold {color}]{percent}%[/]"
+    )
 
-    if max_possible < 100:
-        console.print(Align.center(f"[dim]Scanned modules contributed {score}/{max_possible} to score[/dim]"))
+    console.print(
+        Panel.fit(
+            risk_body,
+            title="[bold cyan]Risk Summary[/]",
+            border_style=color,
+            box=box.ROUNDED,
+        )
+    )
 
-    # 🧮 Risk breakdown table
-    breakdown_table = Table(title="Risk Score Breakdown", show_lines=True)
-    breakdown_table.add_column("Module", style="cyan", justify="left")
-    breakdown_table.add_column("Points", style="bold yellow", justify="right")
+    contributors = [(module, points) for module, points in breakdown.items() if points > 0]
 
-    for module, value in breakdown.items():
-        if value > 0:
-            lbl = label_map.get(module, module.title())
-            breakdown_table.add_row(lbl, str(value))
+    if contributors:
+        console.print()
 
-    if any(v > 0 for v in breakdown.values()):
-        console.print("\n")
-        console.print(Align.center(breakdown_table))
+        breakdown_table = Table(
+            title="[italic cyan]Top Contributors[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+        breakdown_table.add_column("Module", style="cyan")
+        breakdown_table.add_column("Points", justify="right", style="yellow")
 
-    # 🧠 Threat insights
+        for module, points in contributors:
+            breakdown_table.add_row(
+                label_map.get(module, module.title()),
+                str(points),
+            )
+
+        console.print(breakdown_table)
+
     all_tags = set()
+
     for result in results.values():
         all_tags.update(result.get("tags", []))
 
@@ -302,15 +307,24 @@ def _display_results(results, sweep_profile, user_profile):
         all_tags.add("cve_match")
 
     if all_tags:
-        insights = "\n".join(
-            f"• [bold]{tag}[/bold]: {THREAT_TAG_MAP.get(tag, 'No description.')}"
+        console.print()
+
+        insight_lines = [
+            f"[cyan]{tag}[/]  [dim]{THREAT_TAG_MAP.get(tag, 'No description.')}[/]"
             for tag in sorted(all_tags)
+        ]
+
+        console.print(
+            Panel.fit(
+                "\n".join(insight_lines),
+                title="[bold cyan]Threat Insights[/]",
+                border_style="cyan",
+                box=box.ROUNDED,
+            )
         )
-        console.print("\n")
-        console.print(Panel.fit(insights, title="🧠 Threat Insights", border_style="cyan"))
 
+    console.print()
     pause_return()
-
 
 def _save_sweep(results, sweep_profile, user_profile):
     """Persist the sweep summary to ~/.erislite/last_sweep.json for the dashboard panel."""
@@ -348,3 +362,27 @@ def _save_sweep(results, sweep_profile, user_profile):
 
     except Exception as e:
         console.print(f"[yellow]Warning: could not save sweep log: {e}[/]")
+
+def _render_header(profile: dict, sweep_profile: str) -> None:
+    hostname = profile.get("hostname", "unknown-host")
+    role = profile.get("role", "unknown-role")
+    analyst_id = profile.get("analyst_id", "N/A")
+
+    metadata = Text.from_markup(
+        f"[dim]Host:[/] [white]{hostname}[/]   "
+        f"[dim]Role:[/] [white]{role}[/]   "
+        f"[dim]Analyst:[/] [white]{analyst_id}[/]   "
+        f"[dim]Profile:[/] [white]{sweep_profile.capitalize()}[/]"
+    )
+
+    console.print(
+        Panel(
+            metadata,
+            title="[bold cyan]THREAT SWEEP[/]",
+            subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
+            border_style="cyan",
+            box=box.SQUARE,
+            padding=(0, 1),
+        )
+    )
+    console.print()
