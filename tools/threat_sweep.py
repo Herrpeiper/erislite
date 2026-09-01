@@ -14,7 +14,7 @@ import os, json
 from datetime import datetime
 from pathlib import Path
 
-from core import cve_checker
+from erislite.vulnerability import cve_checker
 from erislite.accounts import (
     login_audit,
     users,
@@ -24,8 +24,9 @@ from erislite.accounts import (
 
 from tools import (
     threat_sweep,
-    docker_check,
 )
+
+from erislite.containers import docker
 
 from erislite.system import integrity, kernel_modules, processes
 from erislite.network import listeners, firewall, hosts
@@ -160,7 +161,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
         results["sshconfig"] = ssh_config.run_ssh_config_check(silent=True)
 
     if "docker" in profiles[sweep_profile]:
-        results["docker"] = docker_check.run_docker_scan(silent=True)
+        results["docker"] = docker.run_docker_scan(silent=True)
 
     # FIX #7: suid was in the weights dict and in the full profile list but was never
     # assigned to results{}, so it could never contribute to the risk score. Wired in now.

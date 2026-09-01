@@ -21,13 +21,11 @@ from erislite.ui.utils import clear_screen, show_header, pause_return
 
 from core import (
     security_audit,
-    cve_checker,
 )
 
 from tools import (
     threat_sweep,
     sweep_viewer,
-    docker_check,
     soc_mode,
     rapid_response,
 )
@@ -56,6 +54,9 @@ from erislite.persistence import (
     suid,
     backdoors,
 )
+
+from erislite.vulnerability import cve_checker
+from erislite.containers import docker
 
 console = Console()
 
@@ -214,7 +215,7 @@ def run(profile):
         elif choice == "10":
             ssh_config.run_ssh_config_check()
         elif choice == "11":
-            docker_check.run_docker_scan()
+            docker.run_docker_scan()
         elif choice == "12":
             login_audit.run_login_audit()
         elif choice == "13":
