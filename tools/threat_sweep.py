@@ -17,7 +17,6 @@ from pathlib import Path
 from core import login_audit, cve_checker
 
 from tools import (
-    listener_check,
     user_anomaly,
     threat_sweep,
     ssh_key_check,
@@ -25,17 +24,13 @@ from tools import (
     world_writable_check,
     cron_timer_check,
     suid_check,
-    firewall_check,
     docker_check,
-    hosts_check,
     backdoor_check,
 )
 
-from erislite.system import (
-    integrity,
-    kernel_modules,
-    processes,
-)
+from erislite.system import integrity, kernel_modules, processes
+
+from erislite.network import listeners, firewall, hosts
 
 from erislite.ui.utils import clear_screen, show_header, pause_return
 
@@ -142,7 +137,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
         results["integrity"] = integrity.scan_integrity(silent=True)
 
     if "listeners" in profiles[sweep_profile]:
-        results["listeners"] = listener_check.run_listener_scan(silent=True)
+        results["listeners"] = listeners.run_listener_scan(silent=True)
 
     if "users" in profiles[sweep_profile]:
         results["users"] = user_anomaly.run_user_scan(silent=True)
@@ -177,7 +172,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
         results["processes"] = processes.run_process_scan(silent=True)
 
     if "hosts" in profiles[sweep_profile]:
-        results["hosts"] = hosts_check.run_hosts_check(silent=True)
+        results["hosts"] = hosts.run_hosts_check(silent=True)
 
     if "backdoor" in profiles[sweep_profile]:
         results["backdoor"] = backdoor_check.run_backdoor_check(silent=True)
@@ -187,7 +182,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
 
     # Firewall check is always run as a baseline signal
     try:
-        results["firewall"] = firewall_check.run_firewall_check(silent=True)
+        results["firewall"] = firewall.run_firewall_check(silent=True)
     except Exception:
         pass
 

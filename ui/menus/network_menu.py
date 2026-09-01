@@ -13,7 +13,7 @@ from rich.table import Table
 
 from erislite.ui.utils import clear_screen, show_header
 
-from core import network_tools
+from erislite.network import tools
 
 console = Console()
 
@@ -46,21 +46,21 @@ def run(profile: dict):
         choice = input("\nSelect an option: ").strip()
 
         if choice == "1":
-            network_tools.show_ips()
+            tools.show_ips()
         elif choice == "2":
-            network_tools.show_gateway()
+            tools.show_gateway()
         elif choice == "3":
-            network_tools.show_dns()
+            tools.show_dns()
         elif choice == "4":
-            network_tools.ping_host()
+            tools.ping_host()
         elif choice == "5":
-            network_tools.show_external_ip()
+            tools.show_external_ip()
         elif choice == "6":
-            network_tools.show_active_connections()
+            tools.show_active_connections()
         elif choice == "7":
-            network_tools.trace_route()
+            tools.trace_route()
         elif choice == "8":
-            network_tools.whois_lookup()
+            tools.whois_lookup()
         elif choice == "9":
             break
 

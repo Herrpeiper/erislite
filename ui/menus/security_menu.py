@@ -26,7 +26,6 @@ from core import (
 )
 
 from tools import (
-    listener_check,
     user_anomaly,
     threat_sweep,
     ssh_key_check,
@@ -37,7 +36,6 @@ from tools import (
     suid_check,
     docker_check,
     soc_mode,
-    hosts_check,
     backdoor_check,
     rapid_response,
 )
@@ -46,6 +44,11 @@ from erislite.system import (
     integrity,
     kernel_modules,
     processes,
+)
+
+from erislite.network import (
+    listeners,
+    hosts,
 )
 
 console = Console()
@@ -187,7 +190,7 @@ def run(profile):
         if choice == "1":
             security_audit.run(profile)
         elif choice == "2":
-            listener_check.run_listener_scan()
+            listeners.run_listener_scan()
         elif choice == "3":
             user_anomaly.run_user_scan()
         elif choice == "4":
@@ -235,7 +238,7 @@ def run(profile):
         elif choice == "18":
             processes.run_process_scan()
         elif choice == "19":
-            hosts_check.run_hosts_check()
+            hosts.run_hosts_check()
         elif choice == "20":
             backdoor_check.run_backdoor_check()
         elif choice == "21":
