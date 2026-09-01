@@ -27,7 +27,6 @@ from tools import (
     threat_sweep,
     sweep_viewer,
     soc_mode,
-    rapid_response,
 )
 
 from erislite.system import (
@@ -57,6 +56,7 @@ from erislite.persistence import (
 
 from erislite.vulnerability import cve_checker
 from erislite.containers import docker
+from erislite.response import rapid_response
 
 console = Console()
 
