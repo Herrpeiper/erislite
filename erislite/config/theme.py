@@ -14,7 +14,6 @@ Centralized Rich theme and UI style definitions.
 
 from rich.theme import Theme
 
-
 ERISLITE_THEME = Theme(
     {
         # General

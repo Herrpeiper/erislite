@@ -20,7 +20,6 @@ from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
-
 SUSPICIOUS_PATTERNS = [
     (re.compile(r"\bnc\b.*(?:-e|--exec|-c)\b", re.I), "Netcat execution"),
     (re.compile(r"\bncat\b.*(?:-e|--exec|-c)\b", re.I), "Ncat execution"),

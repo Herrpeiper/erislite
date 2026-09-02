@@ -7,9 +7,13 @@
 # Last Updated: 2026-09-02
 # Description: Snapshot-style host security posture assessment.
 
-import os, re, stat, shutil, subprocess
-from pathlib import Path
+import os
+import re
+import shutil
+import stat
+import subprocess
 from datetime import datetime
+from pathlib import Path
 
 import psutil
 from rich import box

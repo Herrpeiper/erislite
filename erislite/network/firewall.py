@@ -9,10 +9,11 @@
 
 import subprocess
 
+from rich.align import Align
 from rich.console import Console
 from rich.table import Table
-from rich.align import Align
-from erislite.ui.utils import clear_screen, show_header, pause_return
+
+from erislite.ui.utils import clear_screen, pause_return, show_header
 
 console = Console()
 

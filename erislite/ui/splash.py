@@ -22,7 +22,6 @@ from erislite.ui.console import console
 from erislite.ui.utils import clear_screen
 from erislite.version import BUILD_DATE
 
-
 LOGO = [
     "███████ ██████  ██ ███████     ██      ██ ███████ ███████",
     "██      ██   ██ ██ ██          ██      ██    ██    ██",

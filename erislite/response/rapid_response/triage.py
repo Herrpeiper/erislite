@@ -9,7 +9,8 @@
 
 from __future__ import annotations
 
-import os, pwd
+import os
+import pwd
 from typing import Any, Dict, List
 
 import psutil

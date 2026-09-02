@@ -9,7 +9,9 @@
 
 from __future__ import annotations
 
-import os, shutil, time
+import os
+import shutil
+import time
 from typing import Any, Dict, List
 
 from erislite.response.rapid_response.utils import have, now, run_cmd

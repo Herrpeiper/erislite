@@ -9,14 +9,14 @@
 
 import os
 
+from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
-from rich.align import Align
 
-from erislite.ui.utils import clear_screen, show_header, pause_return
 from erislite.config.settings import SNAPSHOT_LOG_DIR
+from erislite.ui.utils import clear_screen, pause_return, show_header
 
 console = Console()
 

@@ -21,7 +21,6 @@ from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
-
 KNOWN_KEY_TYPES = {
     "ssh-ed25519",
     "ssh-rsa",

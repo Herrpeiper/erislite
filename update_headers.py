@@ -13,7 +13,6 @@ from pathlib import Path
 
 from erislite.version import VERSION
 
-
 TODAY = "2026-09-02"
 
 

@@ -77,6 +77,21 @@ def _module_label(module: str) -> str:
         module.replace("_", " ").title(),
     )
 
+def _get_changes(data: dict) -> dict:
+    changes = data.get("changes")
+
+    if isinstance(changes, dict):
+        return {
+            "new": list(changes.get("new", [])),
+            "persisting": list(changes.get("persisting", [])),
+            "resolved": list(changes.get("resolved", [])),
+        }
+
+    return {
+        "new": [],
+        "persisting": [],
+        "resolved": [],
+    }
 
 def _get_priorities(data: dict) -> list:
     priorities = data.get("priorities")
@@ -152,28 +167,6 @@ def show_recent_sweeps(limit=5):
 
     for timestamp, data, _ in logs:
         tag_set = set()
-
-        for result in data.get("results", {}).values():
-            tag_set.update(result.get("tags", []))
-
-        tags = ", ".join(sorted(tag_set)) if tag_set else "None"
-
-        priorities = _get_priorities(data)
-
-        if priorities:
-            top_priority = _module_label(
-                priorities[0]["module"]
-            )
-        else:
-            top_priority = "None"
-
-        table.add_row(
-            timestamp,
-            _get_profile(data),
-            _format_risk(data),
-            top_priority,
-            tags,
-        )
 
     for result in data.get("results", {}).values():
         tag_set.update(result.get("tags", []))
@@ -272,7 +265,7 @@ def view_full_report():
     if all_tags:
         console.print(f"[dim]Tags:[/] [cyan]{', '.join(sorted(all_tags))}[/]\n")
 
-    priorities = _get_priorities(selected)
+        priorities = _get_priorities(selected)
 
     if priorities:
         priority_table = Table(
@@ -334,6 +327,124 @@ def view_full_report():
             )
 
         console.print(priority_table)
+        console.print()
+
+    changes = _get_changes(selected)
+
+    if any(changes.values()):
+        change_table = Table(
+            title="[italic cyan]Changes Since Previous Comparable Sweep[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+
+        change_table.add_column(
+            "State",
+            no_wrap=True,
+        )
+        change_table.add_column(
+            "Count",
+            justify="right",
+        )
+        change_table.add_column(
+            "Signals",
+            style="white",
+        )
+
+        change_rows = (
+            (
+                "[red]NEW[/]",
+                changes["new"],
+            ),
+            (
+                "[yellow]PERSISTING[/]",
+                changes["persisting"],
+            ),
+            (
+                "[green]RESOLVED[/]",
+                changes["resolved"],
+            ),
+        )
+
+        for label, signals in change_rows:
+            display_signals = (
+                ", ".join(signals[:5])
+                if signals
+                else "None"
+            )
+
+            if len(signals) > 5:
+                display_signals += (
+                    f" (+{len(signals) - 5} more)"
+                )
+
+            change_table.add_row(
+                label,
+                str(len(signals)),
+                display_signals,
+            )
+
+        console.print(change_table)
+        console.print()
+
+    if any(changes.values()):
+        change_table = Table(
+            title="[italic cyan]Changes Since Previous Comparable Sweep[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+
+        change_table.add_column(
+            "State",
+            no_wrap=True,
+        )
+        change_table.add_column(
+            "Count",
+            justify="right",
+        )
+        change_table.add_column(
+            "Signals",
+            style="white",
+        )
+
+        change_rows = (
+            (
+                "[red]NEW[/]",
+                changes["new"],
+            ),
+            (
+                "[yellow]PERSISTING[/]",
+                changes["persisting"],
+            ),
+            (
+                "[green]RESOLVED[/]",
+                changes["resolved"],
+            ),
+        )
+
+        for label, signals in change_rows:
+            display_signals = (
+                ", ".join(signals[:5])
+                if signals
+                else "None"
+            )
+
+            if len(signals) > 5:
+                display_signals += (
+                    f" (+{len(signals) - 5} more)"
+                )
+
+            change_table.add_row(
+                label,
+                str(len(signals)),
+                display_signals,
+            )
+
+        console.print(change_table)
         console.print()
 
     for module, result in selected.get("results", {}).items():

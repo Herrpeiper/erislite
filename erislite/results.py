@@ -2,8 +2,7 @@
 ErisLITE shared result schema helpers.
 """
 
-from typing import Iterable
-
+from typing import Iterable, Optional
 
 VALID_STATUSES = {
     "ok",
@@ -16,8 +15,8 @@ VALID_STATUSES = {
 
 def make_result(
     status: str,
-    details: Iterable[str] | None = None,
-    tags: Iterable[str] | None = None,
+    details: Optional[Iterable[str]] = None,
+    tags: Optional[Iterable[str]] = None,
 ) -> dict:
     normalized_status = status.lower()
 
@@ -31,7 +30,7 @@ def make_result(
     }
 
 
-def validate_result(result: dict) -> bool:
+def validate_result(result: object) -> bool:
     if not isinstance(result, dict):
         return False
 

@@ -9,7 +9,8 @@
 
 from __future__ import annotations
 
-import json, os
+import json
+import os
 from typing import Dict, List
 
 from rich import box

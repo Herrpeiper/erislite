@@ -12,8 +12,8 @@ import os
 from rich.console import Console
 
 from erislite.accounts.profile import load_or_create_profile
-from erislite.ui.splash import show_splash
 from erislite.ui.cli import launch_cli
+from erislite.ui.splash import show_splash
 
 console = Console()
 

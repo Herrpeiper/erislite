@@ -7,7 +7,8 @@
 # Last Updated: 2026-09-02
 # Description: Heuristic network listener inspection and suspicious bind detection.
 
-import re, subprocess
+import re
+import subprocess
 
 from rich import box
 from rich.panel import Panel

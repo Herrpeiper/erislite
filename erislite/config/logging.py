@@ -18,7 +18,6 @@ from pathlib import Path
 
 from erislite.config.settings import LOG_DIR
 
-
 LOG_FILE = LOG_DIR / "erislite.log"
 
 DEFAULT_LOG_LEVEL = logging.INFO

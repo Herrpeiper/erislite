@@ -219,11 +219,125 @@ def run_sweep(user_profile, sweep_profile="standard"):
     except Exception:
         pass
 
-    _display_results(results, sweep_profile, user_profile)
-    _save_sweep(results, sweep_profile, user_profile)
+    hostname = user_profile.get(
+        "hostname",
+        "unknown",
+    )
+
+    previous = _load_previous_comparable_sweep(
+        hostname,
+        sweep_profile,
+    )
+
+    if previous:
+        changes = compare_sweep_results(
+            results,
+            previous.get("results", {}),
+        )
+    else:
+        changes = {
+            "new": [],
+            "persisting": [],
+            "resolved": [],
+        }
+
+    _display_results(
+        results,
+        sweep_profile,
+        user_profile,
+        changes,
+        comparison_available=previous is not None,
+    )
+
+    _save_sweep(
+        results,
+        sweep_profile,
+        user_profile,
+        changes,
+    )
+
+def _finding_signals(results: dict) -> set:
+    """
+    Convert actionable module results into stable comparison signals.
+
+    Prefer module + tag when tags exist. If an actionable result has no
+    tags, fall back to module + status.
+    """
+    signals = set()
+
+    for module, result in results.items():
+        status = result.get("status", "").lower()
+
+        if status not in {"warning", "issue", "error"}:
+            continue
+
+        tags = result.get("tags", [])
+
+        if tags:
+            for tag in tags:
+                signals.add(f"{module}:{tag}")
+        else:
+            signals.add(f"{module}:status:{status}")
+
+    return signals
 
 
-def _display_results(results, sweep_profile, user_profile):
+def compare_sweep_results(
+    current_results: dict,
+    previous_results: dict,
+) -> dict:
+    """
+    Compare two comparable sweeps.
+
+    Returns NEW, PERSISTING, and RESOLVED finding signals.
+    """
+    current = _finding_signals(current_results)
+    previous = _finding_signals(previous_results)
+
+    return {
+        "new": sorted(current - previous),
+        "persisting": sorted(current & previous),
+        "resolved": sorted(previous - current),
+    }
+
+
+def _load_previous_comparable_sweep(
+    hostname: str,
+    sweep_profile: str,
+):
+    """
+    Load the newest historical sweep for the same host and profile.
+    """
+    if not SWEEP_LOG_DIR.exists():
+        return None
+
+    paths = sorted(
+        SWEEP_LOG_DIR.glob("sweep_log_*.json"),
+        reverse=True,
+    )
+
+    for path in paths:
+        try:
+            with open(
+                path,
+                "r",
+                encoding="utf-8",
+            ) as file:
+                data = json.load(file)
+        except Exception:
+            continue
+
+        if data.get("hostname") != hostname:
+            continue
+
+        if data.get("profile") != sweep_profile:
+            continue
+
+        return data
+
+    return None
+
+def _display_results(results, sweep_profile, user_profile, changes, comparison_available=False):
     label_map = {
         "integrity": "Integrity",
         "firewall": "Firewall Status",
@@ -318,7 +432,9 @@ def _display_results(results, sweep_profile, user_profile):
     )
 
     contributors = [
-        (module, points) for module, points in breakdown.items() if points > 0
+        (module, points)
+        for module, points in breakdown.items()
+        if points > 0
     ]
 
     if contributors:
@@ -331,18 +447,28 @@ def _display_results(results, sweep_profile, user_profile):
             show_edge=False,
             padding=(0, 1),
         )
-        breakdown_table.add_column("Module", style="cyan")
-        breakdown_table.add_column("Points", justify="right", style="yellow")
+        breakdown_table.add_column(
+            "Module",
+            style="cyan",
+        )
+        breakdown_table.add_column(
+            "Points",
+            justify="right",
+            style="yellow",
+        )
 
         for module, points in contributors:
             breakdown_table.add_row(
-                label_map.get(module, module.title()),
+                label_map.get(
+                    module,
+                    module.title(),
+                ),
                 str(points),
             )
 
         console.print(breakdown_table)
 
-        priorities = prioritize_findings(results)
+    priorities = prioritize_findings(results)
 
     if priorities:
         console.print()
@@ -398,6 +524,65 @@ def _display_results(results, sweep_profile, user_profile):
             )
 
         console.print(priority_table)
+
+    if comparison_available:
+        console.print()
+
+        change_table = Table(
+            title="[italic cyan]Changes Since Previous Comparable Sweep[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+
+        change_table.add_column(
+            "State",
+            no_wrap=True,
+        )
+        change_table.add_column(
+            "Count",
+            justify="right",
+        )
+        change_table.add_column(
+            "Signals",
+            style="white",
+        )
+
+        change_rows = (
+            (
+                "[red]NEW[/]",
+                changes["new"],
+            ),
+            (
+                "[yellow]PERSISTING[/]",
+                changes["persisting"],
+            ),
+            (
+                "[green]RESOLVED[/]",
+                changes["resolved"],
+            ),
+        )
+
+        for label, signals in change_rows:
+            display_signals = (
+                ", ".join(signals[:4])
+                if signals
+                else "None"
+            )
+
+            if len(signals) > 4:
+                display_signals += (
+                    f" (+{len(signals) - 4} more)"
+                )
+
+            change_table.add_row(
+                label,
+                str(len(signals)),
+                display_signals,
+            )
+
+        console.print(change_table)
 
     all_tags = set()
 

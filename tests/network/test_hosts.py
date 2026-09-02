@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 from erislite.network import hosts
 
 

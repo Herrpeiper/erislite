@@ -7,10 +7,10 @@
 # Last Updated: 2026-09-02
 # Description: Process anomaly inspection for suspicious paths and execution context.
 
-import os, pwd
+import os
+import pwd
 
 import psutil
-
 from rich import box
 from rich.panel import Panel
 from rich.table import Table
@@ -19,7 +19,6 @@ from rich.text import Text
 from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
-
 
 SUSPICIOUS_SPAWN_PATHS = (
     "/tmp/",

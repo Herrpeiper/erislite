@@ -7,8 +7,11 @@
 # Last Updated: 2026-09-02
 # Description: SOC Mode rolling snapshot and posture assessment.
 
-import json, os, re, shutil, subprocess
-
+import json
+import os
+import re
+import shutil
+import subprocess
 from collections import Counter
 from datetime import datetime
 
@@ -21,8 +24,6 @@ from rich.text import Text
 from erislite.config.settings import APP_NAME, APP_VERSION, SOC_LOG_DIR
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
-
-
 
 WINDOW_MINUTES = 15
 EXPORT_DIR = SOC_LOG_DIR
