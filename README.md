@@ -261,7 +261,7 @@ def run_my_check(silent: bool = False) -> dict:
         "details": [],
         "tags": [],
     }
-
+```
 ---
 
 ## License
