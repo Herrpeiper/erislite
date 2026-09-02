@@ -41,15 +41,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-          python -m pip install pytest
+          python -m pip install pytest ruff
 
       - name: Compile Python sources
         run: python -m compileall -q erislite main.py
 
+      - name: Lint with Ruff
+        run: ruff check .
+
       - name: Run tests
-        run: |
-          if find tests -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
-            python -m pytest -q
-          else
-            echo "No tests found yet; compile check passed."
-          fi
+        run: python -m pytest -q
