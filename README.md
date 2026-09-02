@@ -68,6 +68,7 @@ Risk is displayed relative to the checks that actually ran. For example:
 Score: 30/95
 Rating: 32%
 Risk Level: Moderate
+```
 
 ### Additional Tools
 
