@@ -1,75 +1,82 @@
 import pytest
 
+from erislite.results import make_result, validate_result
 
-def assert_result_contract(result):
-    assert isinstance(result, dict)
 
-    assert "status" in result
-    assert isinstance(result["status"], str)
+@pytest.mark.parametrize(
+    "status",
+    [
+        "ok",
+        "warning",
+        "issue",
+        "error",
+        "unsupported",
+    ],
+)
+def test_make_result_accepts_valid_statuses(status):
+    result = make_result(status)
 
-    assert "details" in result
-    assert isinstance(result["details"], list)
+    assert result == {
+        "status": status,
+        "details": [],
+        "tags": [],
+    }
 
-    assert "tags" in result
-    assert isinstance(result["tags"], list)
+
+def test_make_result_normalizes_status_case():
+    result = make_result("WARNING")
+
+    assert result["status"] == "warning"
+
+
+def test_make_result_preserves_details_and_tags():
+    result = make_result(
+        "warning",
+        details=["Suspicious listener detected"],
+        tags=["suspicious_listener"],
+    )
+
+    assert result["details"] == ["Suspicious listener detected"]
+    assert result["tags"] == ["suspicious_listener"]
+
+
+def test_make_result_rejects_invalid_status():
+    with pytest.raises(ValueError):
+        make_result("banana")
+
+
+def test_validate_result_accepts_valid_result():
+    result = {
+        "status": "ok",
+        "details": [],
+        "tags": [],
+    }
+
+    assert validate_result(result) is True
 
 
 @pytest.mark.parametrize(
     "result",
     [
+        None,
+        [],
+        {},
         {
-            "status": "ok",
+            "status": "invalid",
             "details": [],
             "tags": [],
         },
         {
-            "status": "warning",
-            "details": ["Example finding"],
-            "tags": ["example_tag"],
-        },
-        {
-            "status": "error",
-            "details": ["Unable to inspect resource"],
+            "status": "ok",
+            "details": "not-a-list",
             "tags": [],
         },
         {
-            "status": "unsupported",
-            "details": ["Feature unavailable"],
-            "tags": [],
+            "status": "ok",
+            "details": [],
+            "tags": "not-a-list",
         },
     ],
 )
-def test_valid_result_contract(result):
-    assert_result_contract(result)
-
-
-def test_missing_status_fails_contract():
-    result = {
-        "details": [],
-        "tags": [],
-    }
-
-    with pytest.raises(AssertionError):
-        assert_result_contract(result)
-
-
-def test_details_must_be_list():
-    result = {
-        "status": "ok",
-        "details": "No findings",
-        "tags": [],
-    }
-
-    with pytest.raises(AssertionError):
-        assert_result_contract(result)
-
-
-def test_tags_must_be_list():
-    result = {
-        "status": "warning",
-        "details": [],
-        "tags": "suspicious",
-    }
-
-    with pytest.raises(AssertionError):
-        assert_result_contract(result)
+def test_validate_result_rejects_invalid_results(result):
+    assert validate_result(result) is False
