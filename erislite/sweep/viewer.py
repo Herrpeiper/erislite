@@ -20,9 +20,9 @@ from erislite.config.settings import (
     APP_VERSION,
     SWEEP_LOG_DIR,
 )
+from erislite.sweep.threat_sweep import prioritize_findings
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
-
 
 
 def _format_risk(data: dict) -> str:
@@ -50,6 +50,43 @@ def _header(title: str) -> None:
         )
     )
     console.print()
+
+MODULE_LABELS = {
+    "integrity": "Integrity",
+    "firewall": "Firewall Status",
+    "listeners": "Listeners",
+    "users": "User Accounts",
+    "kernel": "Kernel Modules",
+    "sshkeys": "SSH Keys",
+    "worldwritable": "World-Writable Files",
+    "cron": "Cron Jobs / Timers",
+    "login": "Login / Auth Logs",
+    "sshconfig": "SSH Config Audit",
+    "docker": "Docker Security",
+    "cve": "CVE Version Check",
+    "suid": "SUID / SGID Binaries",
+    "processes": "Process Anomaly Scan",
+    "hosts": "/etc/hosts Tamper Check",
+    "backdoor": "Backdoor Detection",
+}
+
+
+def _module_label(module: str) -> str:
+    return MODULE_LABELS.get(
+        module,
+        module.replace("_", " ").title(),
+    )
+
+
+def _get_priorities(data: dict) -> list:
+    priorities = data.get("priorities")
+
+    if isinstance(priorities, list):
+        return priorities
+
+    return prioritize_findings(
+        data.get("results", {})
+    )
 
 def _get_profile(data: dict) -> str:
     return str(
@@ -110,6 +147,7 @@ def show_recent_sweeps(limit=5):
     table.add_column("Timestamp", style="white")
     table.add_column("Profile", style="cyan")
     table.add_column("Risk", justify="right")
+    table.add_column("Top Priority", style="yellow")
     table.add_column("Tags", style="dim")
 
     for timestamp, data, _ in logs:
@@ -120,12 +158,44 @@ def show_recent_sweeps(limit=5):
 
         tags = ", ".join(sorted(tag_set)) if tag_set else "None"
 
+        priorities = _get_priorities(data)
+
+        if priorities:
+            top_priority = _module_label(
+                priorities[0]["module"]
+            )
+        else:
+            top_priority = "None"
+
         table.add_row(
             timestamp,
             _get_profile(data),
             _format_risk(data),
+            top_priority,
             tags,
         )
+
+    for result in data.get("results", {}).values():
+        tag_set.update(result.get("tags", []))
+
+    tags = ", ".join(sorted(tag_set)) if tag_set else "None"
+
+    priorities = _get_priorities(data)
+
+    if priorities:
+        top_priority = _module_label(
+            priorities[0]["module"]
+        )
+    else:
+        top_priority = "None"
+
+    table.add_row(
+        timestamp,
+        _get_profile(data),
+        _format_risk(data),
+        top_priority,
+        tags,
+    )
 
     console.print(table)
     return logs
@@ -202,6 +272,70 @@ def view_full_report():
     if all_tags:
         console.print(f"[dim]Tags:[/] [cyan]{', '.join(sorted(all_tags))}[/]\n")
 
+    priorities = _get_priorities(selected)
+
+    if priorities:
+        priority_table = Table(
+            title="[italic cyan]Analyst Priority Queue[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+
+        priority_table.add_column(
+            "#",
+            style="cyan",
+            justify="right",
+            no_wrap=True,
+        )
+        priority_table.add_column(
+            "Module",
+            style="cyan",
+            no_wrap=True,
+        )
+        priority_table.add_column(
+            "Status",
+            no_wrap=True,
+        )
+        priority_table.add_column(
+            "Weight",
+            justify="right",
+            style="yellow",
+        )
+        priority_table.add_column(
+            "Primary Signal",
+            style="white",
+        )
+
+        for index, finding in enumerate(
+            priorities,
+            start=1,
+        ):
+            details = finding.get("details", [])
+
+            primary_signal = (
+                details[0]
+                if details
+                else "Review module findings"
+            )
+
+            status = finding.get(
+                "status",
+                "unknown",
+            ).upper()
+
+            priority_table.add_row(
+                str(index),
+                _module_label(finding["module"]),
+                status,
+                str(finding.get("weight", 0)),
+                primary_signal,
+            )
+
+        console.print(priority_table)
+        console.print()
+
     for module, result in selected.get("results", {}).items():
         status = result.get("status", "unknown").lower()
         details = result.get("details") or ["No issues detected."]
@@ -222,7 +356,7 @@ def view_full_report():
         console.print(
             Panel.fit(
                 body,
-                title=f"[bold cyan]{module.replace('_', ' ').title()}[/]  {status_text}",
+                title=f"[bold cyan]{_module_label(module)}[/]  {status_text}",
                 border_style="cyan",
                 box=box.ROUNDED,
             )

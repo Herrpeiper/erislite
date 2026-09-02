@@ -15,15 +15,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from erislite.accounts import login_audit, users, ssh_keys, ssh_config
-from erislite.containers import docker
-from erislite.network import listeners, firewall, hosts
-from erislite.persistence import world_writable, cron, suid, backdoors
-from erislite.system import integrity, kernel_modules, processes
-from erislite.ui.console import console
-from erislite.ui.utils import clear_screen, pause_return
-from erislite.vulnerability import cve_checker
-
+from erislite.accounts import login_audit, ssh_config, ssh_keys, users
 from erislite.config.settings import (
     APP_NAME,
     APP_VERSION,
@@ -31,10 +23,40 @@ from erislite.config.settings import (
     SWEEP_LOG_DIR,
     SWEEP_PROFILES,
 )
+from erislite.containers import docker
+from erislite.network import firewall, hosts, listeners
+from erislite.persistence import backdoors, cron, suid, world_writable
+from erislite.system import integrity, kernel_modules, processes
+from erislite.ui.console import console
+from erislite.ui.utils import clear_screen, pause_return
+from erislite.vulnerability import cve_checker
+
+RISK_WEIGHTS = {
+    "integrity": 20,
+    "listeners": 15,
+    "users": 15,
+    "kernel": 15,
+    "sshkeys": 10,
+    "worldwritable": 10,
+    "cron": 15,
+    "login": 10,
+    "sshconfig": 10,
+    "docker": 15,
+    "firewall": 15,
+    "cve": 20,
+    "suid": 10,
+    "processes": 20,
+    "hosts": 20,
+    "backdoor": 25,
+}
 
 # 🧠 Tag-to-Insight Mapping
 THREAT_TAG_MAP = {
     "cve_match": "Outdated or vulnerable software version detected.",
+    "cve_version_match": (
+        "Installed software version matches a known CVE range; "
+        "verify vendor patch level."
+    ),
     "firewall_disabled": "No active firewall detected — system may be fully exposed to the network.",
     "firewall_ufw_inactive": "UFW is installed but currently inactive.",
     "firewall_ip_empty": "iptables is present but no rules are loaded — system may be unprotected.",
@@ -75,32 +97,13 @@ THREAT_TAG_MAP = {
 
 
 def calculate_risk_score(results: dict):
-    weights = {
-        "integrity": 20,
-        "listeners": 15,
-        "users": 15,
-        "kernel": 15,
-        "sshkeys": 10,
-        "worldwritable": 10,
-        "cron": 15,
-        "login": 10,
-        "sshconfig": 10,
-        "docker": 15,
-        "firewall": 15,
-        "cve": 20,
-        "suid": 10,
-        "processes": 20,
-        "hosts": 20,
-        "backdoor": 25,
-    }
-
     total_score = 0
     breakdown = {}
     max_score = 0
 
     for module in results:
-        if module in weights:
-            weight = weights[module]
+        if module in RISK_WEIGHTS:
+            weight = RISK_WEIGHTS[module]
             max_score += weight
             status = results[module].get("status", "").lower()
             if status in ("warning", "error", "issue"):
@@ -110,6 +113,47 @@ def calculate_risk_score(results: dict):
                 breakdown[module] = 0
 
     return total_score, breakdown, max_score
+
+def prioritize_findings(results: dict) -> list:
+    """
+    Return actionable sweep findings ordered by analyst priority.
+
+    Higher-risk modules are presented first. Clean and unsupported
+    modules are excluded.
+    """
+    status_priority = {
+        "error": 3,
+        "warning": 2,
+        "issue": 2,
+    }
+
+    findings = []
+
+    for module, result in results.items():
+        status = result.get("status", "").lower()
+
+        if status not in status_priority:
+            continue
+
+        findings.append(
+            {
+                "module": module,
+                "status": status,
+                "weight": RISK_WEIGHTS.get(module, 0),
+                "details": result.get("details", []),
+                "tags": result.get("tags", []),
+            }
+        )
+
+    findings.sort(
+        key=lambda finding: (
+            finding["weight"],
+            status_priority[finding["status"]],
+        ),
+        reverse=True,
+    )
+
+    return findings
 
 
 def run_sweep(user_profile, sweep_profile="standard"):
@@ -298,6 +342,63 @@ def _display_results(results, sweep_profile, user_profile):
 
         console.print(breakdown_table)
 
+        priorities = prioritize_findings(results)
+
+    if priorities:
+        console.print()
+
+        priority_table = Table(
+            title="[italic cyan]Analyst Priority[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+
+        priority_table.add_column(
+            "#",
+            style="cyan",
+            justify="right",
+            no_wrap=True,
+        )
+        priority_table.add_column(
+            "Module",
+            style="cyan",
+            no_wrap=True,
+        )
+        priority_table.add_column(
+            "Status",
+            no_wrap=True,
+        )
+        priority_table.add_column(
+            "Primary Signal",
+            style="white",
+        )
+
+        for index, finding in enumerate(
+            priorities,
+            1,
+        ):
+            details = finding["details"]
+
+            primary_detail = (
+                details[0]
+                if details
+                else "Review module findings"
+            )
+
+            priority_table.add_row(
+                str(index),
+                label_map.get(
+                    finding["module"],
+                    finding["module"].title(),
+                ),
+                finding["status"].upper(),
+                primary_detail,
+            )
+
+        console.print(priority_table)
+
     all_tags = set()
 
     for result in results.values():
@@ -347,6 +448,8 @@ def _save_sweep(results, sweep_profile, user_profile):
             else 0
         )
 
+        priorities = prioritize_findings(results)
+
         summary = {
             "timestamp": datetime.now().isoformat(timespec="seconds"),
             "hostname": user_profile.get(
@@ -358,6 +461,7 @@ def _save_sweep(results, sweep_profile, user_profile):
             "risk_max": max_possible,
             "risk_percent": risk_percent,
             "tags": sorted(set(all_tags)),
+            "priorities": priorities,
             "results": results,
         }
 
