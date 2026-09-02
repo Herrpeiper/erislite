@@ -1,27 +1,33 @@
 # Project: ErisLITE
-# Module: world_writable_check.py
+# Module: world_writable.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
-# Description: World-writable file and directory scan in critical filesystem paths.
+# Last Updated: 2026-09-02
+# Description: World-writable file and directory inspection in critical filesystem paths.
 
-import os
-import stat
-from typing import List, Set, Dict
+import os, stat
+from typing import Dict, List, Set
 
-from rich.console import Console
+from rich import box
+from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
-from erislite.ui.utils import clear_screen, show_header, pause_return, get_os
-
-console = Console()
+from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.ui.console import console
+from erislite.ui.utils import clear_screen, get_os, pause_return
 
 # Things we should basically never traverse for this check (noise / virtual FS / huge)
 SKIP_PREFIXES = (
-    "/proc", "/sys", "/dev", "/run", "/snap",
-    "/var/lib/docker", "/var/lib/snapd",
+    "/proc",
+    "/sys",
+    "/dev",
+    "/run",
+    "/snap",
+    "/var/lib/docker",
+    "/var/lib/snapd",
 )
 
 # For filtered mode (used by Threat Sweep): focus on places that matter for persistence/execution
@@ -41,16 +47,41 @@ CRITICAL_ROOTS = (
     "/usr/sbin",
     "/usr/local/bin",
     "/usr/local/sbin",
-    "/opt",          # optional: keep or remove depending on your environment
-    "/var/www",      # optional: webroots often matter
+    "/var/www",
 )
 
 # Risky file extensions (only meaningful in the right directories)
-RISKY_EXTENSIONS = (".sh", ".py", ".pl", ".rb", ".php", ".conf", ".service", ".socket", ".timer")
+RISKY_EXTENSIONS = (
+    ".sh",
+    ".py",
+    ".pl",
+    ".rb",
+    ".php",
+    ".conf",
+    ".service",
+    ".socket",
+    ".timer",
+)
 
 # If you want a small preview list for logs, cap it
 MAX_PREVIEW = 50
 
+def _header(full_scan: bool = False) -> None:
+    mode = "Full Filesystem" if full_scan else "Critical Paths"
+
+    console.print(
+        Panel(
+            Text.from_markup(
+                f"[dim]Review world-writable files and directories • Scope: {mode}[/]"
+            ),
+            title="[bold cyan]WORLD-WRITABLE CHECK[/]",
+            subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
+            border_style="cyan",
+            box=box.SQUARE,
+            padding=(0, 1),
+        )
+    )
+    console.print()
 
 def _should_skip(path: str) -> bool:
     return path.startswith(SKIP_PREFIXES)
@@ -177,10 +208,19 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
     if os_type != "Linux":
         if not silent:
             clear_screen()
-            show_header("WORLD-WRITABLE CHECK")
-            console.print("[yellow]This module is only supported on Linux.[/]")
+            _header(full_scan)
+
+            console.print(
+                Panel.fit("[yellow]World-Writable Check is only supported on Linux.[/]", border_style="yellow", box=box.ROUNDED, )
+            )
+
             pause_return()
-        return {"status": "unsupported", "details": [], "tags": []}
+
+        return {
+            "status": "unsupported",
+            "details": [],
+            "tags": [],
+        }
 
     # Decide scan scope
     if full_scan:
@@ -215,35 +255,103 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
     # UI output
     if not silent:
         clear_screen()
-        show_header("WORLD-WRITABLE CHECK" + (" (FULL)" if full_scan else " (FILTERED)"))
+        _header(full_scan)
+
+        scope = "Full Filesystem" if full_scan else "Critical Paths"
+
+        console.print(
+            Panel.fit(
+                f"[dim]Scope:[/] [white]{scope}[/]   "
+                f"[dim]Findings:[/] "
+                f"[{'yellow' if suspicious else 'green'}]{len(suspicious)}[/]",
+                title="[bold cyan]SUMMARY[/]",
+                border_style="cyan",
+                box=box.ROUNDED,
+            )
+        )
+        console.print()
 
         if suspicious:
-            table = Table(title="World-Writable (High-Signal)", show_lines=True)
-            table.add_column("Path", style="magenta")
-            table.add_column("Type", style="cyan")
+            table = Table(
+                title="[italic cyan]World-Writable Findings[/]",
+                box=box.SIMPLE_HEAVY,
+                header_style="bold cyan",
+                show_edge=False,
+                padding=(0, 1),
+            )
+
+            table.add_column("Path", style="white")
+            table.add_column("Type", style="cyan", no_wrap=True)
+            table.add_column("Risk", no_wrap=True)
 
             for item in sorted(suspicious):
                 try:
                     mode = os.lstat(item).st_mode
-                    item_type = "Directory" if stat.S_ISDIR(mode) else "File"
-                    table.add_row(item, item_type)
+                    is_dir = stat.S_ISDIR(mode)
+                    is_exec = _is_executable(mode)
+
+                    if is_dir:
+                        item_type = "Directory"
+                        risk = "[yellow]DROP LOCATION[/]"
+                    else:
+                        item_type = "File"
+                        risk = (
+                            "[red]EXECUTABLE[/]"
+                            if is_exec
+                            else "[yellow]WRITABLE FILE[/]"
+                        )
+
+                    table.add_row(
+                        item,
+                        item_type,
+                        risk,
+                    )
+
                 except Exception:
                     continue
 
             console.print(table)
+            console.print()
+
+            console.print(
+                Panel.fit(
+                    f"[yellow]{len(suspicious)} world-writable item(s) require review.[/]\n"
+                    "[dim]Validate writable directories, executable files, and configuration "
+                    "files in privileged or persistence-sensitive locations.[/]",
+                    title="[bold yellow]REVIEW REQUIRED[/]",
+                    border_style="yellow",
+                    box=box.ROUNDED,
+                )
+            )
+
         else:
-            console.print("[green]✔ No high-signal world-writable items detected.[/]")
+            console.print(
+                Panel.fit(
+                    "[green]No high-signal world-writable items detected.[/]\n"
+                    "[dim]No writable execution or persistence paths matched the current scan scope.[/]",
+                    title="[bold green]STATUS: OK[/]",
+                    border_style="green",
+                    box=box.ROUNDED,
+                )
+            )
 
         pause_return()
 
-    # Return structured results (good for Threat Sweep)
     if suspicious:
-        preview = sorted(list(suspicious))[:MAX_PREVIEW]
+        preview = sorted(suspicious)[:MAX_PREVIEW]
+
         return {
             "status": "warning",
-            "details": [f"{len(suspicious)} world-writable item(s) found ({'full' if full_scan else 'filtered'})"],
+            "details": [
+                f"{len(suspicious)} high-signal world-writable item(s) found "
+                f"({'full filesystem' if full_scan else 'critical paths'})"
+            ],
             "tags": ["world_writable"],
-            "preview": preview,  # optional, ignore if you don't want it
+            "preview": preview,
         }
 
-    return {"status": "ok", "details": [], "tags": []}
+    return {
+        "status": "ok",
+        "details": [],
+        "tags": [],
+    }

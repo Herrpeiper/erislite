@@ -1,11 +1,11 @@
 # Project: ErisLITE
 # Module: soc_mode.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
-# Description: SOC Mode: 15-minute rolling log snapshot and posture assessment.
+# Last Updated: 2026-09-02
+# Description: SOC Mode rolling snapshot and posture assessment.
 
 import json, os, re, shutil, subprocess
 
@@ -18,17 +18,21 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.config.settings import APP_NAME, APP_VERSION, SOC_LOG_DIR
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
+
+
 WINDOW_MINUTES = 15
-EXPORT_DIR = "./data/logs/soc_mode"
+EXPORT_DIR = SOC_LOG_DIR
 MAX_DETAIL = 5
 
 # --- Regex (best-effort, stable across common sshd/sudo formats) ---
 RE_SSH_FAIL = re.compile(r"Failed password for .* from (?P<ip>\d{1,3}(?:\.\d{1,3}){3})")
-RE_SSH_SUCCESS = re.compile(r"Accepted (password|publickey) for (?P<user>\S+) from (?P<ip>\d{1,3}(?:\.\d{1,3}){3})")
+RE_SSH_SUCCESS = re.compile(
+    r"Accepted (password|publickey) for (?P<user>\S+) from (?P<ip>\d{1,3}(?:\.\d{1,3}){3})"
+)
 RE_SU_ROOT = re.compile(r"session opened for user root", re.IGNORECASE)
 RE_SUDO_USER = re.compile(r"sudo:?\s+(?P<user>[A-Za-z0-9._-]+)\s*:")
 
@@ -36,6 +40,7 @@ RE_SUDO_USER = re.compile(r"sudo:?\s+(?P<user>[A-Za-z0-9._-]+)\s*:")
 # Note: All functions are designed to be best-effort and not fail if logs are missing or formats vary.
 # The interactive_soc_mode() function is the main entry point for the SOC Mode feature, which can be called from the main menu.
 # Logs are collected from journalctl (if available) and parsed for key security signals. The posture status is computed based on simple heuristics, and an interactive report is displayed to the user with options to view details or export a snapshot.
+
 
 # Helper functions for command execution and availability checks
 def _run_cmd(cmd):
@@ -45,8 +50,10 @@ def _run_cmd(cmd):
     except Exception:
         return 1, ""
 
+
 def _have_cmd(name):
     return shutil.which(name) is not None
+
 
 # Log collection functions
 def collect_journal_logs():
@@ -59,33 +66,37 @@ def collect_journal_logs():
         return None
     return out.splitlines()
 
+
 # Collect warnings/errors for system posture context
 def collect_warning_logs():
     """Warnings/errors help SOC posture without going 'too detailed'."""
     if not _have_cmd("journalctl"):
         return []
     since = f"{WINDOW_MINUTES} minutes ago"
-    code, out = _run_cmd(["journalctl", "--since", since, "-p", "warning..alert", "--no-pager"])
+    code, out = _run_cmd(
+        ["journalctl", "--since", since, "-p", "warning..alert", "--no-pager"]
+    )
     if code != 0 or not out.strip():
         return []
     return out.splitlines()
+
 
 # Log parsing function
 def parse_logs(lines):
     failed_ssh = 0
     failed_ips = Counter()
 
-    ssh_success_entries = []     # (user, ip, rawline)
+    ssh_success_entries = []  # (user, ip, rawline)
     root_ssh_success = 0
-    root_ssh_details = []        # raw lines
+    root_ssh_details = []  # raw lines
 
     sudo_events = 0
-    sudo_details = []            # raw lines (last MAX_DETAIL)
-    sudo_to_root = 0             # sudo where USER=root (best-effort)
-    sudo_to_root_details = []    # raw lines
+    sudo_details = []  # raw lines (last MAX_DETAIL)
+    sudo_to_root = 0  # sudo where USER=root (best-effort)
+    sudo_to_root_details = []  # raw lines
 
     su_to_root = 0
-    su_to_root_details = []      # raw lines
+    su_to_root_details = []  # raw lines
 
     for line in lines:
         # SSH fail
@@ -108,7 +119,11 @@ def parse_logs(lines):
 
         # su -> root session opened
         # (common: "su: pam_unix(su:session): session opened for user root by <user>(uid=...)")
-        if " su:" in line or line.strip().startswith("su:") or "pam_unix(su:session)" in line:
+        if (
+            " su:" in line
+            or line.strip().startswith("su:")
+            or "pam_unix(su:session)" in line
+        ):
             if RE_SU_ROOT.search(line):
                 su_to_root += 1
                 su_to_root_details.append(line.strip())
@@ -139,18 +154,16 @@ def parse_logs(lines):
         "failed_ips_top": top_failed_ips,
         "ssh_success_count": len(ssh_success_entries),
         "ssh_success_raw": ssh_success_raw,
-
         "root_ssh_success": root_ssh_success,
         "root_ssh_details": root_ssh_details,
-
         "sudo_events": sudo_events,
         "sudo_details": sudo_details,
         "sudo_to_root": sudo_to_root,
         "sudo_to_root_details": sudo_to_root_details,
-
         "su_to_root": su_to_root,
         "su_to_root_details": su_to_root_details,
     }
+
 
 # Posture computation functions
 def compute_status(parsed, warning_count):
@@ -160,7 +173,9 @@ def compute_status(parsed, warning_count):
     - WATCH: moderate spikes
     - STABLE: otherwise
     """
-    root_activity_total = parsed["root_ssh_success"] + parsed["su_to_root"] + parsed["sudo_to_root"]
+    root_activity_total = (
+        parsed["root_ssh_success"] + parsed["su_to_root"] + parsed["sudo_to_root"]
+    )
     if root_activity_total > 0:
         return "ACTION REQUIRED"
 
@@ -173,6 +188,7 @@ def compute_status(parsed, warning_count):
         return "WATCH"
 
     return "STABLE"
+
 
 # Score computation function
 # The score is a simple heuristic to give a numeric sense of posture severity. It is not meant to be precise, but to reflect the general level of concern based on the signals detected. The status (STABLE/WATCH/ACTION REQUIRED) is more authoritative for decision-making, while the score provides additional context.
@@ -210,6 +226,7 @@ def compute_score(parsed, warning_count):
 
     return min(score, 100)
 
+
 # Attention builder function
 def build_attention(parsed, warning_count):
     items = []
@@ -232,6 +249,7 @@ def build_attention(parsed, warning_count):
 
     return items
 
+
 # Export function
 def export_snapshot(snapshot):
     os.makedirs(EXPORT_DIR, exist_ok=True)
@@ -240,6 +258,7 @@ def export_snapshot(snapshot):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(snapshot, f, indent=2)
     return path
+
 
 # --- Main Interactive Function ---
 # This function is the main entry point for the SOC Mode feature. It collects logs, parses them, computes the posture status and score, and displays an interactive report to the user. The user can view details about root activity and auth events, or export a snapshot of the current posture for later analysis.

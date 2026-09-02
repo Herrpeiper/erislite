@@ -1,118 +1,420 @@
 """
-Patches the # Project/Module/Version/Last Updated header block
-in every ErisLITE Python source file listed below.
-Run from the ErisLITE repo root: python3 update_headers.py
+ErisLITE header updater.
+
+Updates the standard source header in current ErisLITE Python modules.
+
+Run from the repository root:
+
+    python3 update_headers.py
 """
 
 import re
 from pathlib import Path
 
-TODAY = "2026-04-05"
-VERSION = "1.0"
+from erislite.version import VERSION
 
-# (relative_path, module_name, description)
+
+TODAY = "2026-09-02"
+
+
 FILES = [
-    ("main.py", "main.py", "ErisLITE entry point — initialises user profile and launches the CLI."),
-    # core
-    ("core/version.py",         "version.py",           "Single source of truth for version string and build date."),
-    ("core/user_profile.py",    "user_profile.py",      "Manages user_profile.json: creation, locking, and forward-migration of missing fields."),
-    ("core/network_scan.py",    "network_scan.py",      "Network listener scan using 'ss'; risk classification by port and process."),
-    ("core/login_audit.py",     "login_audit.py",       "Login and auth audit: failed logins, root shells, recent login history."),
-    ("core/cve_checker.py",     "cve_checker.py",       "Offline CVE version check for kernel, sudo, and glibc."),
-    ("core/security_audit.py",  "security_audit.py",    "Snapshot-style security posture check: firewall, SSH keys, world-writable, failed logins."),
-    ("core/log_viewer.py",      "log_viewer.py",        "Snapshot log viewer: browse and display saved snapshot logs."),
-    ("core/cve_tools.py",       "cve_tools.py",         "Offline CVE search tool against a local JSON cache."),
-    ("core/system_info.py",     "system_info.py",       "System information display: OS, CPU, RAM, uptime, logged-in users."),
-    ("core/network_tools.py",   "network_tools.py",     "Network utility tools: IPs, gateway, DNS, ping, traceroute, WHOIS, connections."),
-    ("core/port_scan.py",       "port_scan.py",         "TCP port scanner: scans common ports, identifies services, generates reports."),
-    # tools
-    ("tools/snapshot.py",           "snapshot.py",              "Captures a system snapshot to a timestamped log file in data/logs/."),
-    ("tools/threat_sweep.py",       "threat_sweep.py",          "Threat sweep orchestrator: runs selected modules, scores risk, saves results."),
-    ("tools/integrity_tools.py",    "integrity_tools.py",       "File integrity monitor: SHA-256 baseline creation and change detection."),
-    ("tools/listener_check.py",     "listener_check.py",        "Heuristic suspicious network listener detection."),
-    ("tools/user_anomaly.py",       "user_anomaly.py",          "Suspicious user account scan: UID 0 clones, bad shells, hidden accounts."),
-    ("tools/kernel_module_check.py","kernel_module_check.py",   "Kernel module inspection: known-bad names, untracked modules, unusual paths."),
-    ("tools/ssh_key_check.py",      "ssh_key_check.py",         "SSH authorized_keys enumeration across all user home directories."),
-    ("tools/ssh_config_check.py",   "ssh_config_check.py",      "sshd_config audit against secure defaults."),
-    ("tools/world_writable_check.py","world_writable_check.py", "World-writable file and directory scan in critical filesystem paths."),
-    ("tools/cron_timer_check.py",   "cron_timer_check.py",      "Cron job and systemd timer inspection for suspicious scheduled tasks."),
-    ("tools/suid_check.py",         "suid_check.py",            "SUID/SGID binary scan: flags unexpected or dangerous binaries."),
-    ("tools/docker_check.py",       "docker_check.py",          "Docker security check: privileged containers and exposed sockets."),
-    ("tools/firewall_check.py",     "firewall_check.py",        "Firewall status check: UFW, firewalld, nftables, iptables."),
-    ("tools/security_log.py",       "security_log.py",          "Security audit log writer: saves findings to data/logs/."),
-    ("tools/sweep_viewer.py",       "sweep_viewer.py",          "Threat sweep log viewer: browse and inspect past sweep results."),
-    ("tools/soc_mode.py",           "soc_mode.py",              "SOC Mode: 15-minute rolling log snapshot and posture assessment."),
-    ("tools/backdoor_check.py",  "backdoor_check.py",  "Shell init files, profile.d, LD_PRELOAD persistence indicators."),
-    ("tools/hosts_check.py",     "hosts_check.py",      "/etc/hosts entries that redirect critical domains or look malicious."),
-    ("tools/process_check.py",   "process_check.py",    "Root processes from suspicious paths, deleted executables, bad tool names."),
-    ("tools/rapid_response.py",  "rapid_response.py",   "Triage scan with dry-run and live containment modes."),
-    # ui
-    ("ui/cli.py",               "cli.py",               "Main CLI menu loop."),
-    ("ui/splash.py",            "splash.py",            "Startup splash screen with system profile and version info."),
-    ("ui/utils.py",             "utils.py",             "Shared UI utilities: clear_screen, show_header, pause_return, get_os."),
-    ("ui/menus/security_menu.py",   "security_menu.py", "Security tools menu with last-sweep dashboard panel."),
-    ("ui/menus/help_menu.py",       "help_menu.py",     "Help / About panel."),
-    ("ui/menus/system_menu.py",     "system_menu.py",   "System info menu."),
-    ("ui/menus/network_menu.py",    "network_menu.py",  "Network tools menu."),
-    ("ui/menus/cve_tools_menu.py",  "cve_tools_menu.py","CVE tools menu."),
+    (
+        "main.py",
+        "main.py",
+        "ErisLITE entry point — initializes user profile and launches the CLI.",
+    ),
+
+    # ---------------------------------------------------------------------
+    # Accounts
+    # ---------------------------------------------------------------------
+    (
+        "erislite/accounts/profile.py",
+        "profile.py",
+        "Manages user profile creation, locking, and migration.",
+    ),
+    (
+        "erislite/accounts/login_audit.py",
+        "login_audit.py",
+        "Login and authentication audit: failed logins, root shells, and recent login history.",
+    ),
+    (
+        "erislite/accounts/users.py",
+        "users.py",
+        "Suspicious user account scan: UID anomalies, shells, and account configuration.",
+    ),
+    (
+        "erislite/accounts/ssh_keys.py",
+        "ssh_keys.py",
+        "SSH authorized_keys enumeration across user home directories.",
+    ),
+    (
+        "erislite/accounts/ssh_config.py",
+        "ssh_config.py",
+        "sshd_config audit against the ErisLITE hardening baseline.",
+    ),
+
+    # ---------------------------------------------------------------------
+    # Configuration
+    # ---------------------------------------------------------------------
+    (
+        "erislite/config/settings.py",
+        "settings.py",
+        "Application-wide settings, runtime defaults, and path definitions.",
+    ),
+    (
+        "erislite/config/theme.py",
+        "theme.py",
+        "Shared ErisLITE terminal theme and presentation constants.",
+    ),
+    (
+        "erislite/config/logging.py",
+        "logging.py",
+        "Shared ErisLITE runtime logging configuration.",
+    ),
+
+    # ---------------------------------------------------------------------
+    # Containers
+    # ---------------------------------------------------------------------
+    (
+        "erislite/containers/docker.py",
+        "docker.py",
+        "Docker security check: privileged containers and risky host exposure.",
+    ),
+
+    # ---------------------------------------------------------------------
+    # Network
+    # ---------------------------------------------------------------------
+    (
+        "erislite/network/scan.py",
+        "scan.py",
+        "Network listener scan and structured network discovery.",
+    ),
+    (
+        "erislite/network/tools.py",
+        "tools.py",
+        "Network utilities: addressing, DNS, diagnostics, WHOIS, and connections.",
+    ),
+    (
+        "erislite/network/ports.py",
+        "ports.py",
+        "TCP port scanner with service identification and reporting.",
+    ),
+    (
+        "erislite/network/listeners.py",
+        "listeners.py",
+        "Heuristic network listener inspection and suspicious bind detection.",
+    ),
+    (
+        "erislite/network/firewall.py",
+        "firewall.py",
+        "Firewall status inspection for UFW, firewalld, nftables, and iptables.",
+    ),
+    (
+        "erislite/network/hosts.py",
+        "hosts.py",
+        "/etc/hosts inspection for suspicious redirects and tampering.",
+    ),
+
+    # ---------------------------------------------------------------------
+    # Persistence
+    # ---------------------------------------------------------------------
+    (
+        "erislite/persistence/cron.py",
+        "cron.py",
+        "Cron job and systemd timer inspection for suspicious scheduled tasks.",
+    ),
+    (
+        "erislite/persistence/suid.py",
+        "suid.py",
+        "SUID/SGID binary scan for unexpected privileged executables.",
+    ),
+    (
+        "erislite/persistence/backdoors.py",
+        "backdoors.py",
+        "Shell init, profile, and LD_PRELOAD persistence inspection.",
+    ),
+    (
+        "erislite/persistence/world_writable.py",
+        "world_writable.py",
+        "World-writable file and directory inspection in critical filesystem paths.",
+    ),
+
+    # ---------------------------------------------------------------------
+    # Response
+    # ---------------------------------------------------------------------
+    (
+        "erislite/response/security_log.py",
+        "security_log.py",
+        "Security audit log writer for structured ErisLITE findings.",
+    ),
+    (
+        "erislite/response/rapid_response/menu.py",
+        "menu.py",
+        "Rapid Response menu and workflow entry point.",
+    ),
+    (
+        "erislite/response/rapid_response/triage.py",
+        "triage.py",
+        "Rapid Response triage and host assessment routines.",
+    ),
+    (
+        "erislite/response/rapid_response/actions.py",
+        "actions.py",
+        "Rapid Response containment and remediation actions.",
+    ),
+    (
+        "erislite/response/rapid_response/undo.py",
+        "undo.py",
+        "Rapid Response rollback and undo operations.",
+    ),
+    (
+        "erislite/response/rapid_response/utils.py",
+        "utils.py",
+        "Shared Rapid Response utility functions and runtime paths.",
+    ),
+
+    # ---------------------------------------------------------------------
+    # Sweep
+    # ---------------------------------------------------------------------
+    (
+        "erislite/sweep/snapshot.py",
+        "snapshot.py",
+        "Captures a system snapshot to a timestamped ErisLITE log.",
+    ),
+    (
+        "erislite/sweep/threat_sweep.py",
+        "threat_sweep.py",
+        "Threat sweep orchestrator: runs selected modules, scores risk, and saves results.",
+    ),
+    (
+        "erislite/sweep/viewer.py",
+        "viewer.py",
+        "Threat sweep log viewer for browsing and inspecting saved sweep results.",
+    ),
+    (
+        "erislite/sweep/log_viewer.py",
+        "log_viewer.py",
+        "Snapshot log viewer for browsing and displaying saved snapshot logs.",
+    ),
+    (
+        "erislite/sweep/soc_mode.py",
+        "soc_mode.py",
+        "SOC Mode rolling snapshot and posture assessment.",
+    ),
+
+    # ---------------------------------------------------------------------
+    # System
+    # ---------------------------------------------------------------------
+    (
+        "erislite/system/info.py",
+        "info.py",
+        "System information collection and display.",
+    ),
+    (
+        "erislite/system/processes.py",
+        "processes.py",
+        "Process anomaly inspection for suspicious paths and execution context.",
+    ),
+    (
+        "erislite/system/kernel_modules.py",
+        "kernel_modules.py",
+        "Kernel module inspection for known-bad names, untracked modules, and unusual paths.",
+    ),
+    (
+        "erislite/system/integrity.py",
+        "integrity.py",
+        "SHA-256 file integrity baseline creation and change detection.",
+    ),
+    (
+        "erislite/system/security_audit.py",
+        "security_audit.py",
+        "Snapshot-style host security posture assessment.",
+    ),
+
+    # ---------------------------------------------------------------------
+    # Vulnerability
+    # ---------------------------------------------------------------------
+    (
+        "erislite/vulnerability/cve_checker.py",
+        "cve_checker.py",
+        "Offline CVE version checking for installed software.",
+    ),
+    (
+        "erislite/vulnerability/cve_tools.py",
+        "cve_tools.py",
+        "Offline CVE search and lookup against the local cache.",
+    ),
+
+    # ---------------------------------------------------------------------
+    # UI
+    # ---------------------------------------------------------------------
+    (
+        "erislite/ui/cli.py",
+        "cli.py",
+        "Main ErisLITE CLI menu loop.",
+    ),
+    (
+        "erislite/ui/splash.py",
+        "splash.py",
+        "Startup splash screen with host profile and version information.",
+    ),
+    (
+        "erislite/ui/utils.py",
+        "utils.py",
+        "Shared UI utilities for screen control, headers, prompts, and platform detection.",
+    ),
+    (
+        "erislite/ui/console.py",
+        "console.py",
+        "Shared Rich console instance for ErisLITE terminal output.",
+    ),
+    (
+        "erislite/ui/menus/security_menu.py",
+        "security_menu.py",
+        "Security tools menu with threat sweep and posture workflows.",
+    ),
+    (
+        "erislite/ui/menus/help_menu.py",
+        "help_menu.py",
+        "Help and About interface.",
+    ),
+    (
+        "erislite/ui/menus/system_menu.py",
+        "system_menu.py",
+        "System information menu.",
+    ),
+    (
+        "erislite/ui/menus/network_menu.py",
+        "network_menu.py",
+        "Network tools menu.",
+    ),
+    (
+        "erislite/ui/menus/cve_tools_menu.py",
+        "cve_tools_menu.py",
+        "CVE tools launcher menu.",
+    ),
+
+    # ---------------------------------------------------------------------
+    # Version
+    # ---------------------------------------------------------------------
+    (
+        "erislite/version.py",
+        "version.py",
+        "Single source of truth for ErisLITE version and build metadata.",
+    ),
 ]
 
+
 HEADER_PATTERN = re.compile(
-    r'^(# Project:.*?\n)?'
-    r'(# Module:.*?\n)?'
-    r'(# Author:.*?\n)?'
-    r'(# Version:.*?\n)?'
-    r'(# License:.*?\n)?'
-    r'(# Created:.*?\n)?'
-    r'(# Last Updated:.*?\n)?'
-    r'(# Description:.*?\n(?:#.*?\n)*)?',
-    re.MULTILINE
+    r"\A"
+    r"(?:# Project:.*\n)?"
+    r"(?:# Module:.*\n)?"
+    r"(?:# Author:.*\n)?"
+    r"(?:# Version:.*\n)?"
+    r"(?:# License:.*\n)?"
+    r"(?:# Created:.*\n)?"
+    r"(?:# Last Updated:.*\n)?"
+    r"(?:# Description:.*\n)?"
 )
 
-def make_header(module_name, description):
+
+def make_header(module_name: str, description: str) -> str:
     return (
-        f"# Project: ErisLITE\n"
+        "# Project: ErisLITE\n"
         f"# Module: {module_name}\n"
-        f"# Author: Liam Piper-Brandon\n"
+        "# Author: Liam Piper-Brandon\n"
         f"# Version: {VERSION}\n"
-        f"# License: MIT\n"
-        f"# Created: 2025-06-01\n"
+        "# License: MIT\n"
+        "# Created: 2025-06-01\n"
         f"# Last Updated: {TODAY}\n"
         f"# Description: {description}\n"
     )
 
-updated = []
-skipped = []
 
-for rel_path, module_name, description in FILES:
-    path = Path(rel_path)
-    if not path.exists():
-        skipped.append(rel_path)
-        continue
+def update_file(
+    path: Path,
+    module_name: str,
+    description: str,
+) -> bool:
+    content = path.read_text(
+        encoding="utf-8"
+    )
 
-    content = path.read_text(encoding="utf-8")
-    new_header = make_header(module_name, description)
+    new_header = make_header(
+        module_name,
+        description,
+    )
 
-    # If file already has a header block, replace it
-    match = HEADER_PATTERN.match(content)
-    if match and match.group(0).strip():
-        new_content = new_header + content[match.end():]
-    else:
-        # Prepend header, preserving any shebang or future-annotations line
-        if content.startswith("from __future__") or content.startswith("#!"):
-            first_line_end = content.index("\n") + 1
-            new_content = content[:first_line_end] + "\n" + new_header + content[first_line_end:]
-        else:
-            new_content = new_header + "\n" + content
+    # Preserve shebang if present.
+    shebang = ""
 
-    path.write_text(new_content, encoding="utf-8")
-    updated.append(rel_path)
+    if content.startswith("#!"):
+        newline = content.find("\n")
 
-print(f"\nUpdated {len(updated)} files:")
-for f in updated:
-    print(f"  ✓ {f}")
+        if newline != -1:
+            shebang = content[: newline + 1]
+            content = content[newline + 1 :]
 
-if skipped:
-    print(f"\nSkipped {len(skipped)} files (not found):")
-    for f in skipped:
-        print(f"  - {f}")
+    # Preserve __future__ import before normal imports but place
+    # the project header ahead of it.
+    content = HEADER_PATTERN.sub(
+        "",
+        content,
+        count=1,
+    )
+
+    content = content.lstrip("\n")
+
+    updated_content = (
+        shebang
+        + new_header
+        + "\n"
+        + content
+    )
+
+    path.write_text(
+        updated_content,
+        encoding="utf-8",
+    )
+
+    return True
+
+
+def main() -> None:
+    updated = []
+    skipped = []
+
+    for rel_path, module_name, description in FILES:
+        path = Path(rel_path)
+
+        if not path.exists():
+            skipped.append(rel_path)
+            continue
+
+        update_file(
+            path,
+            module_name,
+            description,
+        )
+
+        updated.append(rel_path)
+
+    print(
+        f"\nUpdated {len(updated)} file(s):"
+    )
+
+    for path in updated:
+        print(f"  ✓ {path}")
+
+    if skipped:
+        print(
+            f"\nSkipped {len(skipped)} file(s) "
+            "(not found):"
+        )
+
+        for path in skipped:
+            print(f"  - {path}")
+
+
+if __name__ == "__main__":
+    main()

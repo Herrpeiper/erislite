@@ -1,11 +1,11 @@
 # Project: ErisLITE
 # Module: menu.py
 # Author: Liam Piper-Brandon
-# Version: 1.1
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-01
-# Description: Rapid Response interactive workflow and presentation layer.
+# Last Updated: 2026-09-02
+# Description: Rapid Response menu and workflow entry point.
 
 from __future__ import annotations
 
@@ -35,9 +35,7 @@ from erislite.ui.utils import clear_screen, get_os, pause_return
 def _header(title: str, subtitle: str = "") -> None:
     console.print(
         Panel(
-            Text.from_markup(
-                subtitle or "[dim]Containment and response operations[/]"
-            ),
+            Text.from_markup(subtitle or "[dim]Containment and response operations[/]"),
             title=f"[bold cyan]{title}[/]",
             subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
             border_style="cyan",
@@ -110,9 +108,7 @@ def _show_actions(actions) -> None:
 
     for index, action in enumerate(actions, start=1):
         recovery = (
-            "[green]Reversible[/]"
-            if action["undo"]
-            else "[yellow]Irreversible[/]"
+            "[green]Reversible[/]" if action["undo"] else "[yellow]Irreversible[/]"
         )
         table.add_row(str(index), action["label"], recovery)
 
@@ -138,8 +134,7 @@ def run_rapid_response(dry_run: bool = False) -> None:
     if dry_run:
         console.print(
             Panel.fit(
-                "[bold yellow]DRY RUN[/]   "
-                "[dim]No system changes will be made.[/]",
+                "[bold yellow]DRY RUN[/]   [dim]No system changes will be made.[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
             )
@@ -177,9 +172,7 @@ def run_rapid_response(dry_run: bool = False) -> None:
     _show_connections(conns)
 
     if users:
-        console.print(
-            f"[red]Flagged Accounts:[/] [white]{', '.join(users)}[/]\n"
-        )
+        console.print(f"[red]Flagged Accounts:[/] [white]{', '.join(users)}[/]\n")
 
     if crons:
         console.print("[red]World-Writable Cron Files[/]")
@@ -196,8 +189,7 @@ def run_rapid_response(dry_run: bool = False) -> None:
         return
 
     if not Confirm.ask(
-        "[bold red]Execute all actions?[/] "
-        "[white]This will modify the system.[/]",
+        "[bold red]Execute all actions?[/] [white]This will modify the system.[/]",
         default=False,
     ):
         console.print("[yellow]Rapid Response cancelled.[/]")
@@ -236,9 +228,7 @@ def run_rapid_response(dry_run: bool = False) -> None:
 
     console.print()
     console.print(
-        f"[bold]Complete.[/] "
-        f"[green]{success} succeeded[/], "
-        f"[red]{failed} failed[/]."
+        f"[bold]Complete.[/] [green]{success} succeeded[/], [red]{failed} failed[/]."
     )
     console.print(f"[dim]Log saved:[/] [white]{path}[/]")
 

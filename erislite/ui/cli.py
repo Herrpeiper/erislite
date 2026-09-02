@@ -1,11 +1,11 @@
 # Project: ErisLITE
 # Module: cli.py
 # Author: Liam Piper-Brandon
-# Version: 1.1
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-01
-# Description: Main CLI menu loop.
+# Last Updated: 2026-09-02
+# Description: Main ErisLITE CLI menu loop.
 
 import os
 
@@ -19,7 +19,11 @@ from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.sweep import log_viewer, snapshot
 from erislite.ui.console import console
 from erislite.ui.menus import (
-    cve_tools_menu, help_menu, network_menu, security_menu, system_menu
+    cve_tools_menu,
+    help_menu,
+    network_menu,
+    security_menu,
+    system_menu,
 )
 from erislite.ui.utils import clear_screen
 

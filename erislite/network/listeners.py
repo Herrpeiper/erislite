@@ -1,23 +1,23 @@
 # Project: ErisLITE
-# Module: listener_check.py
+# Module: listeners.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
-# Description: Heuristic suspicious network listener detection.
+# Last Updated: 2026-09-02
+# Description: Heuristic network listener inspection and suspicious bind detection.
 
-import subprocess, re
+import re, subprocess
 
-from rich.console import Console
+from rich import box
+from rich.panel import Panel
 from rich.table import Table
-from rich.align import Align
+from rich.text import Text
 
-from erislite.ui.utils import clear_screen, show_header, pause_return, get_os
+from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.ui.console import console
+from erislite.ui.utils import clear_screen, get_os, pause_return
 
-console = Console()
-
-# Expected/common daemons (tune as you like)
 WHITELISTED_PROCS = {
     "sshd",
     "cupsd",
@@ -26,52 +26,74 @@ WHITELISTED_PROCS = {
     "systemd-resolved",
 }
 
-# Processes that are commonly abused *as listeners*
-# If these are listening, it's more suspicious.
 SUSPICIOUS_PROC_NAMES = {"nc", "ncat", "socat"}
-
 UNCOMMON_PORT_THRESHOLD = 1024
 
-# Note: This is a heuristic and may not be perfect. Some processes may have multiple instances or dynamic names.
+
+def _header() -> None:
+    console.print(
+        Panel(
+            Text.from_markup(
+                "[dim]Review listening services, exposure, and suspicious binds[/]"
+            ),
+            title="[bold cyan]LISTENER CHECK[/]",
+            subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
+            border_style="cyan",
+            box=box.SQUARE,
+            padding=(0, 1),
+        )
+    )
+    console.print()
+
+
 def extract_process_name(pid_info: str) -> str:
     match = re.search(r'users:\(\("([^"]+)"', pid_info)
     return match.group(1) if match else "unknown"
 
-# Parses the local address to extract the port number. Returns 0 if parsing fails.
+
 def _parse_port(local_address: str) -> int:
     if ":" not in local_address:
         return 0
-    port_str = local_address.rsplit(":", 1)[-1]
+
     try:
-        return int(port_str)
+        return int(local_address.rsplit(":", 1)[-1])
     except ValueError:
         return 0
 
-# Determines if the local address indicates an external bind (exposure). This is a heuristic:
-def _is_external_bind(local_address: str) -> bool:
-    # All-interface binds are exposure, not inherently suspicious
-    if "0.0.0.0" in local_address:
-        return True
-    if "[::]" in local_address:
-        return True
-    # Sometimes ss shows :: without brackets
-    if local_address.startswith("::"):
-        return True
-    return False
 
-# Main parsing function that runs "ss -tulnp" and extracts relevant info, applying heuristics to flag notable listeners.
+def _is_loopback(local_address: str) -> bool:
+    return (
+        local_address.startswith("127.")
+        or local_address.startswith("[::1]")
+        or local_address.startswith("::1")
+    )
+
+
+def _is_external_bind(local_address: str) -> bool:
+    return (
+        "0.0.0.0" in local_address
+        or "[::]" in local_address
+        or local_address.startswith("::")
+    )
+
+
 def parse_listeners():
     """
-    Returns list of:
-      (proto, local_address, proc_name, flags:list[str], is_whitelisted:bool)
+    Return:
+        (proto, local_address, proc_name, flags, is_whitelisted)
     """
     try:
-        result = subprocess.run(["ss", "-tulnp"], capture_output=True, text=True)
-        lines = result.stdout.splitlines()
+        result = subprocess.run(
+            ["ss", "-tulnp"],
+            capture_output=True,
+            text=True,
+        )
+
         flagged = []
 
-        for line in lines[1:]:  # skip header
+        for line in result.stdout.splitlines()[1:]:
             parts = line.split()
+
             if len(parts) < 5:
                 continue
 
@@ -82,135 +104,205 @@ def parse_listeners():
 
             port = _parse_port(local_address)
             is_whitelisted = proc_name in WHITELISTED_PROCS
-
             flags = []
 
-            # Exposure / info flags
             if _is_external_bind(local_address):
-                flags.append("🌐 External Bind")
+                flags.append("External Bind")
 
             if port > UNCOMMON_PORT_THRESHOLD:
-                flags.append("📶 High Port")
+                flags.append("High Port")
 
-            # Suspicious capability flag
             if proc_name.lower() in SUSPICIOUS_PROC_NAMES:
-                flags.append("🧪 Potential LOLBin Listener")
+                flags.append("Potential LOLBin Listener")
 
-            # Mark known service (calms the output)
             if is_whitelisted:
-                flags.append("✅ Known Service")
+                flags.append("Known Service")
 
-            # Only include rows that have something notable
-            # (i.e., anything besides just "Known Service")
-            notable = [f for f in flags if f != "✅ Known Service"]
-            if not notable:
-                continue
+            if _is_loopback(local_address):
+                flags.append("Loopback")
 
-            flagged.append((proto, local_address, proc_name, flags, is_whitelisted))
+            notable = [flag for flag in flags if flag != "Known Service"]
+
+            if notable:
+                flagged.append(
+                    (
+                        proto,
+                        local_address,
+                        proc_name,
+                        flags,
+                        is_whitelisted,
+                    )
+                )
 
         return flagged
 
     except Exception as e:
-        return [("error", "-", f"{e}", ["⚠️ Error"], False)]
+        return [
+            (
+                "error",
+                "-",
+                str(e),
+                ["Error"],
+                False,
+            )
+        ]
 
-# Main function to run the listener scan, display results, and return structured output for Threat Sweep integration.
+
+def _is_suspicious(flags, is_whitelisted: bool) -> bool:
+    has_lolbin = any("LOLBin" in flag for flag in flags)
+    has_external = "External Bind" in flags
+
+    return has_lolbin or (not is_whitelisted and has_external)
+
+
+def _severity(flags, is_whitelisted: bool) -> str:
+    return (
+        "[yellow]WARNING[/]"
+        if _is_suspicious(flags, is_whitelisted)
+        else "[green]INFO[/]"
+    )
+
+
 def run_listener_scan(silent: bool = False):
-    os_type = get_os()
-
-    if os_type != "Linux":
+    if get_os() != "Linux":
         if not silent:
             clear_screen()
-            show_header("LISTENER SCAN")
-            console.print("[yellow]This module is only supported on Linux.[/]")
+            _header()
+
+            console.print(
+                Panel.fit(
+                    "[yellow]Listener Check is only supported on Linux.[/]",
+                    border_style="yellow",
+                    box=box.ROUNDED,
+                )
+            )
+
             pause_return()
-        return {"status": "unsupported", "details": [], "tags": []}
+
+        return {
+            "status": "unsupported",
+            "details": [],
+            "tags": [],
+        }
 
     flagged = parse_listeners()
 
-    # Compute "suspicious subset" count
-    suspicious = 0
-    for proto, addr, proc, flags, is_whitelisted in flagged:
-        has_lolbin = any("LOLBin" in f for f in flags)
-        has_external = any("External Bind" in f for f in flags)
-        has_high_port = any("High Port" in f for f in flags)
+    suspicious = sum(
+        1
+        for _, _, _, flags, is_whitelisted in flagged
+        if _is_suspicious(flags, is_whitelisted)
+    )
 
-        # Suspicious rules:
-        # 1) LOLBin listener is suspicious
-        if has_lolbin:
-            suspicious += 1
-            continue
-
-        # 2) Unknown (not whitelisted) exposed externally is suspicious
-        if (not is_whitelisted) and has_external:
-            suspicious += 1
-            continue
-
-        # 3) Unknown (not whitelisted) on high port is suspicious
-        if (not is_whitelisted) and has_high_port:
-            suspicious += 1
-            continue
-
-    # SILENT MODE (for Threat Sweep)
     if silent:
         if not flagged:
-            return {"status": "ok", "details": [], "tags": []}
+            return {
+                "status": "ok",
+                "details": [],
+                "tags": [],
+            }
 
-        # If nothing meets suspicious criteria, treat as OK (exposure only)
         if suspicious == 0:
             return {
                 "status": "ok",
                 "details": [f"{len(flagged)} listener(s) detected (expected/exposure)"],
-                "tags": ["listener_exposure"]
+                "tags": ["listener_exposure"],
             }
 
         return {
             "status": "warning",
-            "details": [f"{suspicious} suspicious listener(s) detected ({len(flagged)} total notable)"],
-            "tags": ["suspicious_listener"]
+            "details": [
+                f"{suspicious} suspicious listener(s) detected "
+                f"({len(flagged)} total notable)"
+            ],
+            "tags": ["suspicious_listener"],
         }
 
-    # INTERACTIVE MODE
     clear_screen()
-    show_header("LISTENER SCAN")
+    _header()
 
     if not flagged:
-        console.print("[green]No notable listeners detected.[/]")
-        pause_return()
-        return {"status": "ok", "details": [], "tags": []}
+        console.print(
+            Panel.fit(
+                "[green]No notable listeners detected.[/]\n"
+                "[dim]No exposed or suspicious listener conditions were found.[/]",
+                title="[bold green]STATUS: OK[/]",
+                border_style="green",
+                box=box.ROUNDED,
+            )
+        )
 
-    table = Table(title="Listener Exposure & Suspicion", show_lines=True)
-    table.add_column("Proto")
-    table.add_column("Local Address")
-    table.add_column("Process")
-    table.add_column("Severity")
-    table.add_column("Flags")
+        pause_return()
+
+        return {
+            "status": "ok",
+            "details": [],
+            "tags": [],
+        }
+
+    console.print(
+        Panel.fit(
+            f"[dim]Notable:[/] [white]{len(flagged)}[/]   "
+            f"[dim]Suspicious:[/] "
+            f"[{'yellow' if suspicious else 'green'}]{suspicious}[/]",
+            title="[bold cyan]SUMMARY[/]",
+            border_style="cyan",
+            box=box.ROUNDED,
+        )
+    )
+    console.print()
+
+    table = Table(
+        title="[italic cyan]Listener Exposure[/]",
+        box=box.SIMPLE_HEAVY,
+        header_style="bold cyan",
+        show_edge=False,
+        padding=(0, 1),
+    )
+
+    table.add_column("Proto", style="cyan", no_wrap=True)
+    table.add_column("Local Address", style="white", no_wrap=True)
+    table.add_column("Process", style="white", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Flags", style="dim")
 
     for proto, addr, proc, flags, is_whitelisted in flagged:
-        has_lolbin = any("LOLBin" in f for f in flags)
-        has_external = any("External Bind" in f for f in flags)
-        has_high_port = any("High Port" in f for f in flags)
+        table.add_row(
+            proto.upper(),
+            addr,
+            proc,
+            _severity(flags, is_whitelisted),
+            ", ".join(flags),
+        )
 
-        sev = "INFO"
-        if has_lolbin:
-            sev = "WARN"
-        elif (not is_whitelisted) and (has_external or has_high_port):
-            sev = "WARN"
+    console.print(table)
 
-        table.add_row(proto, addr, proc, sev, ", ".join(flags))
+    if suspicious:
+        console.print()
+        console.print(
+            Panel.fit(
+                f"[yellow]{suspicious} listener(s) require review.[/]\n"
+                "[dim]Unknown externally bound services, high-port listeners, "
+                "and listener-capable utilities may warrant investigation.[/]",
+                title="[bold yellow]REVIEW REQUIRED[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
 
-    console.print(Align.center(table))
     pause_return()
 
-    # Return overall status based on suspicious subset
     if suspicious == 0:
         return {
             "status": "ok",
             "details": [f"{len(flagged)} listener(s) detected (expected/exposure)"],
-            "tags": ["listener_exposure"]
+            "tags": ["listener_exposure"],
         }
 
     return {
         "status": "warning",
-        "details": [f"{suspicious} suspicious listener(s) detected ({len(flagged)} total notable)"],
-        "tags": ["suspicious_listener"]
+        "details": [
+            f"{suspicious} suspicious listener(s) detected "
+            f"({len(flagged)} total notable)"
+        ],
+        "tags": ["suspicious_listener"],
     }

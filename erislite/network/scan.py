@@ -1,11 +1,11 @@
 # Project: ErisLITE
-# Module: network_scan.py
+# Module: scan.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
-# Description: Network listener scan using 'ss'; risk classification by port and process.
+# Last Updated: 2026-09-02
+# Description: Network listener scan and structured network discovery.
 
 from __future__ import annotations
 
@@ -17,22 +17,66 @@ from typing import Any, Dict, List, Optional
 
 # A mapping of common ports to their typical services. This is used for basic risk classification of listeners based on the port they are using. If a listener is on a well-known port, it may be considered lower risk than an unknown service on a non-standard port.
 KNOWN_PORTS = {
-    20: "ftp-data", 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp",
-    53: "dns", 67: "dhcp", 68: "dhcp", 69: "tftp", 80: "http", 88: "kerberos",
-    110: "pop3", 111: "rpcbind", 123: "ntp", 135: "msrpc", 137: "netbios-ns",
-    138: "netbios-dgm", 139: "netbios-ssn", 143: "imap", 161: "snmp", 389: "ldap",
-    443: "https", 445: "smb", 465: "smtps", 514: "syslog", 587: "submission",
-    631: "ipp", 636: "ldaps", 853: "dns-over-tls", 993: "imaps", 995: "pop3s",
-    1433: "mssql", 1521: "oracle", 2049: "nfs", 2375: "docker", 2376: "docker-tls",
-    3000: "dev-web", 3306: "mysql", 3389: "rdp", 5000: "upnp/app", 5432: "postgresql",
-    5900: "vnc", 5985: "winrm-http", 5986: "winrm-https", 6379: "redis", 8000: "http-alt",
-    8080: "http-proxy", 8443: "https-alt", 9000: "app", 9090: "app",
-    9200: "elasticsearch", 9418: "git", 27017: "mongodb",
+    20: "ftp-data",
+    21: "ftp",
+    22: "ssh",
+    23: "telnet",
+    25: "smtp",
+    53: "dns",
+    67: "dhcp",
+    68: "dhcp",
+    69: "tftp",
+    80: "http",
+    88: "kerberos",
+    110: "pop3",
+    111: "rpcbind",
+    123: "ntp",
+    135: "msrpc",
+    137: "netbios-ns",
+    138: "netbios-dgm",
+    139: "netbios-ssn",
+    143: "imap",
+    161: "snmp",
+    389: "ldap",
+    443: "https",
+    445: "smb",
+    465: "smtps",
+    514: "syslog",
+    587: "submission",
+    631: "ipp",
+    636: "ldaps",
+    853: "dns-over-tls",
+    993: "imaps",
+    995: "pop3s",
+    1433: "mssql",
+    1521: "oracle",
+    2049: "nfs",
+    2375: "docker",
+    2376: "docker-tls",
+    3000: "dev-web",
+    3306: "mysql",
+    3389: "rdp",
+    5000: "upnp/app",
+    5432: "postgresql",
+    5900: "vnc",
+    5985: "winrm-http",
+    5986: "winrm-https",
+    6379: "redis",
+    8000: "http-alt",
+    8080: "http-proxy",
+    8443: "https-alt",
+    9000: "app",
+    9090: "app",
+    9200: "elasticsearch",
+    9418: "git",
+    27017: "mongodb",
 }
+
 
 # Utility functions for parsing and classifying network listeners. These help extract structured information from the raw output of 'ss' and apply basic risk tagging based on known ports and other heuristics.
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
 
 # Splits a string like "0.0.0.0:22" into host and port components
 def _split_host_port(value: str) -> tuple[str, Optional[int]]:
@@ -63,8 +107,11 @@ def _split_host_port(value: str) -> tuple[str, Optional[int]]:
 
     return value, None
 
+
 # Parses the process information block from the 'ss' output to extract the process name, PID, and user details when available. This is used to provide more context about which processes are associated with each listener.
-def _parse_process_block(raw_line: str) -> tuple[Optional[str], Optional[int], Optional[str]]:
+def _parse_process_block(
+    raw_line: str,
+) -> tuple[Optional[str], Optional[int], Optional[str]]:
     """
     Pulls process_name / pid / user-ish details from ss output when possible.
     Example fragments:
@@ -84,6 +131,7 @@ def _parse_process_block(raw_line: str) -> tuple[Optional[str], Optional[int], O
         pid = int(pid_match.group(1))
 
     return proc_name, pid, user_name
+
 
 # Classifies the risk level of a network listener based on its protocol, local address, port, and associated process. It uses known port mappings and heuristics to assign a risk level and reason for that classification.
 def _classify_listener(
@@ -105,7 +153,11 @@ def _classify_listener(
         return "low", f"Known service port ({known_service})", known_service
 
     if known_service and not process_name:
-        return "low", f"Known service port ({known_service}); process unavailable", known_service
+        return (
+            "low",
+            f"Known service port ({known_service}); process unavailable",
+            known_service,
+        )
 
     if port < 1024:
         return "medium", "Privileged port with unknown service mapping", known_service
@@ -115,11 +167,11 @@ def _classify_listener(
 
     return "medium", "Unknown listener on uncommon port", known_service
 
+
 # Main function to get network listeners data. This is the entry point for the Basalt agent when executing the "network.listeners" module. It runs the 'ss' command, parses the output, and returns a structured result with risk classifications.
 def get_network_listeners_data() -> Dict[str, Any]:
     """
     Headless listener scan for Linux.
-    Returns structured, JSON-safe results for Basalt agent or ErisLite CLI wrappers.
     """
     system = platform.system()
 

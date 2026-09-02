@@ -1,65 +1,170 @@
 # Project: ErisLITE
-# Module: user_anomaly.py
+# Module: users.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
-# Description: Suspicious user account scan: UID 0 clones, bad shells, hidden accounts.
+# Last Updated: 2026-09-02
+# Description: Suspicious user account scan: UID anomalies, shells, and account configuration.
 
-import pwd, os, json
+import pwd
 
-from datetime import datetime
-
-from rich.console import Console
+from rich import box
+from rich.panel import Panel
 from rich.table import Table
-from rich.align import Align
+from rich.text import Text
 
-from erislite.ui.utils import clear_screen, show_header, pause_return, get_os
+from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.ui.console import console
+from erislite.ui.utils import clear_screen, get_os, pause_return
 
-console = Console()
-
-# Shells that should NOT appear for service/system users
-INTERACTIVE_SHELLS = ["/bin/bash", "/bin/sh", "/usr/bin/zsh", "/usr/bin/fish", "/usr/bin/python", "/usr/bin/perl"]
-
-# Known system/service accounts to ignore unless truly suspicious
-KNOWN_SERVICE_USERS = {
-    "daemon", "bin", "sys", "sync", "games", "man", "lp", "mail", "news",
-    "uucp", "proxy", "www-data", "backup", "list", "irc", "gnats", "nobody",
-    "systemd-network", "systemd-resolve", "messagebus", "systemd-timesync",
-    "syslog", "systemd-oom", "tcpdump", "avahi-autoipd", "usbmux", "dnsmasq",
-    "kernoops", "avahi", "cups-pk-helper", "rtkit", "whoopsie", "sssd",
-    "speech-dispatcher", "fwupd-refresh", "nm-openvpn", "saned", "colord",
-    "geoclue", "pulse", "gnome-initial-setup", "hplip", "gdm", "clamav", "sshd",
-    "_apt", "uuidd", "tss"
+INTERACTIVE_SHELLS = {
+    "/bin/bash",
+    "/bin/sh",
+    "/usr/bin/zsh",
+    "/usr/bin/fish",
+    "/usr/bin/python",
+    "/usr/bin/perl",
 }
 
-def run_user_scan(silent=False):
-    os_type = get_os()
+NONLOGIN_SHELLS = {
+    "/usr/sbin/nologin",
+    "/sbin/nologin",
+    "/bin/false",
+}
 
-    if os_type != "Linux":
+KNOWN_SERVICE_USERS = {
+    "daemon",
+    "bin",
+    "sys",
+    "sync",
+    "games",
+    "man",
+    "lp",
+    "mail",
+    "news",
+    "uucp",
+    "proxy",
+    "www-data",
+    "backup",
+    "list",
+    "irc",
+    "gnats",
+    "nobody",
+    "systemd-network",
+    "systemd-resolve",
+    "messagebus",
+    "systemd-timesync",
+    "syslog",
+    "systemd-oom",
+    "tcpdump",
+    "avahi-autoipd",
+    "usbmux",
+    "dnsmasq",
+    "kernoops",
+    "avahi",
+    "cups-pk-helper",
+    "rtkit",
+    "whoopsie",
+    "sssd",
+    "speech-dispatcher",
+    "fwupd-refresh",
+    "nm-openvpn",
+    "saned",
+    "colord",
+    "geoclue",
+    "pulse",
+    "gnome-initial-setup",
+    "hplip",
+    "gdm",
+    "clamav",
+    "sshd",
+    "_apt",
+    "uuidd",
+    "tss",
+    "polkitd",
+}
+
+
+def _header() -> None:
+    console.print(
+        Panel(
+            Text.from_markup(
+                "[dim]Review local accounts for privilege and shell anomalies[/]"
+            ),
+            title="[bold cyan]USER ACCOUNT SCAN[/]",
+            subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
+            border_style="cyan",
+            box=box.SQUARE,
+            padding=(0, 1),
+        )
+    )
+    console.print()
+
+
+def _load_valid_shells() -> set[str]:
+    try:
+        with open("/etc/shells", "r", encoding="utf-8") as file:
+            return {
+                line.strip()
+                for line in file
+                if line.strip() and not line.startswith("#")
+            }
+    except OSError:
+        return set()
+
+
+def _tag_for_reason(reason: str) -> str | None:
+    if "UID 0" in reason:
+        return "uid0_clone"
+    if "Shell access" in reason:
+        return "low_uid_shell"
+    if "No valid home" in reason:
+        return "no_home_dir"
+    if "Suspicious shell" in reason:
+        return "code_shell"
+    if "Non-standard shell" in reason:
+        return "nonstandard_shell"
+    return None
+
+
+def _severity(reason: str) -> str:
+    if "UID 0" in reason:
+        return "[red]CRITICAL[/]"
+    if "Shell access" in reason or "Suspicious shell" in reason:
+        return "[yellow]WARNING[/]"
+    return "[yellow]REVIEW[/]"
+
+
+def run_user_scan(silent: bool = False):
+    if get_os() != "Linux":
         if not silent:
             clear_screen()
-            show_header("HIDDEN / SUSPICIOUS USER SCAN")
-            console.print("[yellow]This module is only supported on Linux.[/]")
+            _header()
+
+            console.print(
+                Panel.fit(
+                    "[yellow]User Account Scan is only supported on Linux.[/]",
+                    border_style="yellow",
+                    box=box.ROUNDED,
+                )
+            )
+
             pause_return()
+
         return {
             "status": "unsupported",
             "details": [],
-            "tags": []
+            "tags": [],
         }
 
-    if not silent:
-        clear_screen()
-        show_header("HIDDEN / SUSPICIOUS USER SCAN")
-
     flagged = []
+    valid_shells = _load_valid_shells()
 
     try:
         for user in pwd.getpwall():
             username = user.pw_name
             uid = user.pw_uid
-            gid = user.pw_gid
             home = user.pw_dir
             shell = user.pw_shell
 
@@ -72,67 +177,124 @@ def run_user_scan(silent=False):
             if uid < 1000 and shell in INTERACTIVE_SHELLS and username != "root":
                 flagged.append((username, f"Shell access on system UID {uid}"))
 
-            if not home or home in ["/", "/dev/null"]:
+            if (
+                uid >= 1000
+                and shell not in NONLOGIN_SHELLS
+                and (not home or home in ("/", "/dev/null"))
+            ):
                 flagged.append((username, "No valid home directory"))
 
-            if shell in ["/usr/bin/python", "/usr/bin/perl", "/dev/null"]:
+            if shell in ("/usr/bin/python", "/usr/bin/perl", "/dev/null"):
                 flagged.append((username, f"Suspicious shell: {shell}"))
 
-            try:
-                if shell and shell not in open("/etc/shells").read():
-                    flagged.append((username, f"Non-standard shell: {shell}"))
-            except Exception:
-                pass
+            if (
+                valid_shells
+                and shell
+                and shell not in valid_shells
+                and shell not in NONLOGIN_SHELLS
+            ):
+                flagged.append((username, f"Non-standard shell: {shell}"))
 
     except Exception as e:
         flagged.append(("Error", str(e)))
 
-    # 🔇 Silent mode
-    if silent:
-        tags = set()
-        for _, reason in flagged:
-            if "UID 0" in reason:
-                tags.add("uid0_clone")
-            elif "Shell access" in reason:
-                tags.add("low_uid_shell")
-            elif "No valid home" in reason:
-                tags.add("no_home_dir")
-            elif "Suspicious shell" in reason:
-                tags.add("code_shell")
-            elif "Non-standard shell" in reason:
-                tags.add("nonstandard_shell")
+    unique_accounts = {username for username, _ in flagged if username != "Error"}
 
-        if tags:
-            tags.add("suspicious_login")
+    tags = {tag for _, reason in flagged if (tag := _tag_for_reason(reason))}
+
+    if tags:
+        tags.add("suspicious_login")
+
+    if silent:
+        if not flagged:
+            return {
+                "status": "ok",
+                "details": [],
+                "tags": [],
+            }
 
         return {
-            "status": "ok" if not flagged else "warning",
-            "details": [f"{len(flagged)} suspicious account(s) flagged"] if flagged else [],
-            "tags": sorted(list(tags)) if tags else []
+            "status": "warning",
+            "details": [
+                f"{len(flagged)} account finding(s) across "
+                f"{len(unique_accounts)} account(s)"
+            ],
+            "tags": sorted(tags),
         }
 
-    # 🖥️ Interactive mode
+    clear_screen()
+    _header()
+
     if not flagged:
-        console.print("[green]No suspicious or hidden users detected.[/]")
+        console.print(
+            Panel.fit(
+                "[green]No suspicious account conditions detected.[/]\n"
+                "[dim]No UID 0 clones, unusual shells, or invalid homes were found.[/]",
+                title="[bold green]STATUS: OK[/]",
+                border_style="green",
+                box=box.ROUNDED,
+            )
+        )
+
         pause_return()
+
         return {
             "status": "ok",
             "details": [],
-            "tags": []
+            "tags": [],
         }
 
-    table = Table(title="Suspicious Users Found", show_lines=True)
-    table.add_column("Username")
-    table.add_column("Reason")
-    for user, reason in flagged:
-        table.add_row(user, reason)
+    console.print(
+        Panel.fit(
+            f"[dim]Accounts:[/] [white]{len(unique_accounts)}[/]   "
+            f"[dim]Findings:[/] [yellow]{len(flagged)}[/]",
+            title="[bold cyan]SUMMARY[/]",
+            border_style="cyan",
+            box=box.ROUNDED,
+        )
+    )
+    console.print()
 
-    console.print(Align.center(table))
+    table = Table(
+        title="[italic cyan]Account Findings[/]",
+        box=box.SIMPLE_HEAVY,
+        header_style="bold cyan",
+        show_edge=False,
+        padding=(0, 1),
+    )
+
+    table.add_column("Username", style="cyan", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Reason", style="white")
+
+    for username, reason in flagged:
+        table.add_row(
+            username,
+            _severity(reason),
+            reason,
+        )
+
+    console.print(table)
+    console.print()
+
+    console.print(
+        Panel.fit(
+            f"[yellow]{len(flagged)} account finding(s) require review.[/]\n"
+            "[dim]Validate unexpected privilege, interactive shells, "
+            "and abnormal account configuration.[/]",
+            title="[bold yellow]REVIEW REQUIRED[/]",
+            border_style="yellow",
+            box=box.ROUNDED,
+        )
+    )
+
     pause_return()
 
     return {
         "status": "warning",
-        "details": [f"{len(flagged)} suspicious account(s) flagged"],
-        "tags": ["suspicious_login"]
+        "details": [
+            f"{len(flagged)} account finding(s) across "
+            f"{len(unique_accounts)} account(s)"
+        ],
+        "tags": sorted(tags),
     }
-

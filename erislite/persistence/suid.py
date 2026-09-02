@@ -1,32 +1,36 @@
 # Project: ErisLITE
-# Module: suid_check.py
+# Module: suid.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
-# Description: SUID/SGID binary scan: flags unexpected or dangerous binaries.
+# Last Updated: 2026-09-02
+# Description: SUID/SGID binary scan for unexpected privileged executables.
 
-import os, stat, json
+import os
+import stat
+from typing import Dict, List
 
-from datetime import datetime
-
-from rich.console import Console
+from rich import box
+from rich.panel import Panel
 from rich.table import Table
-from rich.align import Align
+from rich.text import Text
 
-from erislite.ui.utils import clear_screen, show_header, pause_return
+from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.ui.console import console
+from erislite.ui.utils import clear_screen, get_os, pause_return
 
-console = Console()
 
-# Paths to skip entirely during the filesystem walk.
-# Matches the exclusion set used in world_writable_check.py for consistency.
 SKIP_PREFIXES = (
-    "/proc", "/sys", "/dev", "/run",
-    "/snap", "/var/lib/docker", "/var/lib/snapd",
+    "/proc",
+    "/sys",
+    "/dev",
+    "/run",
+    "/snap",
+    "/var/lib/docker",
+    "/var/lib/snapd",
 )
 
-# Common SUID binaries that are generally considered safe and required for normal system operation.
 WHITELISTED_SUID = {
     "/usr/bin/su",
     "/usr/bin/passwd",
@@ -39,31 +43,77 @@ WHITELISTED_SUID = {
     "/usr/bin/umount",
     "/usr/bin/crontab",
     "/usr/bin/ssh-agent",
+    "/usr/lib/openssh/ssh-keysign",
+    "/usr/lib/polkit-1/polkit-agent-helper-1",
+    "/usr/lib/dbus-1.0/dbus-daemon-launch-helper",
     "/bin/ping",
     "/bin/ping6",
 }
 
-# Common SGID binaries that are generally considered safe.
 WHITELISTED_SGID = {
     "/usr/bin/wall",
     "/usr/bin/write",
     "/usr/bin/locate",
     "/usr/bin/ssh-agent",
+    "/usr/sbin/pam_extrausers_chkpwd",
+    "/usr/sbin/unix_chkpwd",
+    "/usr/bin/chage",
+    "/usr/bin/expiry",
 }
 
+INTERPRETERS = {
+    "python",
+    "python3",
+    "perl",
+    "ruby",
+    "bash",
+    "sh",
+    "dash",
+    "zsh",
+}
 
-def find_suid_sgid():
+DANGEROUS_PATHS = (
+    "/tmp/",
+    "/var/tmp/",
+    "/dev/shm/",
+    "/home/",
+)
+
+STANDARD_EXEC_PATHS = (
+    "/bin/",
+    "/usr/bin/",
+    "/sbin/",
+    "/usr/sbin/",
+)
+
+
+def _header() -> None:
+    console.print(
+        Panel(
+            Text.from_markup(
+                "[dim]Inspect privileged executables for unexpected SUID and SGID permissions[/]"
+            ),
+            title="[bold cyan]SUID / SGID CHECK[/]",
+            subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
+            border_style="cyan",
+            box=box.SQUARE,
+            padding=(0, 1),
+        )
+    )
+    console.print()
+
+
+def find_suid_sgid() -> List[Dict]:
     flagged = []
 
-    for root, dirs, files in os.walk("/", topdown=True):
-        # Prune virtual/noisy directory trees in-place so os.walk won't descend into them
+    for root, dirs, files in os.walk("/", topdown=True, followlinks=False):
         if root.startswith(SKIP_PREFIXES):
             dirs[:] = []
             continue
 
-        # Also prune any subdirectory that starts with a skip prefix
         dirs[:] = [
-            d for d in dirs
+            d
+            for d in dirs
             if not os.path.join(root, d).startswith(SKIP_PREFIXES)
         ]
 
@@ -81,11 +131,16 @@ def find_suid_sgid():
                 is_sgid = bool(mode & stat.S_ISGID)
 
                 if is_suid or is_sgid:
-                    flagged.append({
-                        "path": path,
-                        "suid": is_suid,
-                        "sgid": is_sgid
-                    })
+                    flagged.append(
+                        {
+                            "path": path,
+                            "suid": is_suid,
+                            "sgid": is_sgid,
+                        }
+                    )
+
+            except (FileNotFoundError, PermissionError):
+                continue
 
             except Exception:
                 continue
@@ -93,87 +148,209 @@ def find_suid_sgid():
     return flagged
 
 
-def run_suid_scan(silent=False):
+def _is_known(entry: Dict) -> bool:
+    path = entry["path"]
+
+    suid_known = (
+        entry["suid"]
+        and path in WHITELISTED_SUID
+    )
+
+    sgid_known = (
+        entry["sgid"]
+        and path in WHITELISTED_SGID
+    )
+
+    if entry["suid"] and entry["sgid"]:
+        return suid_known and sgid_known
+
+    return suid_known or sgid_known
+
+
+def _analyze_entry(entry: Dict) -> tuple[list[str], set[str]]:
+    path = entry["path"]
+
+    reasons = []
+    tags = {"suid_sgid"}
+
+    if path.startswith(DANGEROUS_PATHS):
+        reasons.append("Dangerous path")
+        tags.add("suid_dangerous_path")
+
+    if not path.startswith(STANDARD_EXEC_PATHS):
+        reasons.append("Non-standard location")
+        tags.add("suid_nonstandard_location")
+
+    basename = os.path.basename(path).lower()
+
+    if basename in INTERPRETERS:
+        reasons.append("Privileged interpreter")
+        tags.add("suid_interpreter")
+
+    if not reasons:
+        reasons.append("Not in known-safe baseline")
+
+    return reasons, tags
+
+
+def run_suid_scan(silent: bool = False):
+    if get_os() != "Linux":
+        if not silent:
+            clear_screen()
+            _header()
+
+            console.print(
+                Panel.fit(
+                    "[yellow]SUID / SGID Check is only supported on Linux.[/]",
+                    border_style="yellow",
+                    box=box.ROUNDED,
+                )
+            )
+
+            pause_return()
+
+        return {
+            "status": "unsupported",
+            "details": [],
+            "tags": [],
+        }
+
     results = find_suid_sgid()
+
     suspicious = []
     tags = set()
 
-    interpreters = {"python", "perl", "ruby", "bash", "sh", "dash", "zsh"}
+    for entry in results:
+        if _is_known(entry):
+            continue
 
-    for f in results:
-        path = f["path"]
-        is_known = (
-            (f["suid"] and path in WHITELISTED_SUID) or
-            (f["sgid"] and path in WHITELISTED_SGID)
+        reasons, local_tags = _analyze_entry(entry)
+
+        suspicious.append(
+            {
+                **entry,
+                "reasons": reasons,
+            }
         )
 
-        if not is_known:
-            tag_local = {"suid_sgid"}
+        tags.update(local_tags)
 
-            if any(path.startswith(p) for p in ["/tmp", "/var/tmp", "/dev/shm", "/home"]):
-                tag_local.add("suid_dangerous_path")
+    details = (
+        [
+            f"{len(suspicious)} suspicious SUID/SGID binary(s) found"
+        ]
+        if suspicious
+        else []
+    )
 
-            if not path.startswith(("/bin", "/usr/bin", "/sbin", "/usr/sbin")):
-                tag_local.add("suid_nonstandard_location")
-
-            if any(interpreter in os.path.basename(path).lower() for interpreter in interpreters):
-                tag_local.add("suid_interpreter")
-
-            suspicious.append(f)
-            tags.update(tag_local)
+    result = {
+        "status": "warning" if suspicious else "ok",
+        "details": details,
+        "tags": sorted(tags),
+    }
 
     if silent:
-        return {
-            "status": "warning" if suspicious else "ok",
-            "details": [f"{len(suspicious)} suspicious SUID/SGID binaries found"] if suspicious else [],
-            "tags": sorted(list(tags)) if tags else []
-        }
+        return result
 
-    # Interactive output
     clear_screen()
-    show_header("SUID / SGID CHECK")
+    _header()
+
+    console.print(
+        Panel.fit(
+            f"[dim]Detected:[/] [white]{len(results)}[/]   "
+            f"[dim]Known:[/] [green]{len(results) - len(suspicious)}[/]   "
+            f"[dim]Review:[/] "
+            f"[{'yellow' if suspicious else 'green'}]{len(suspicious)}[/]",
+            title="[bold cyan]SUMMARY[/]",
+            border_style="cyan",
+            box=box.ROUNDED,
+        )
+    )
+    console.print()
 
     if not results:
-        console.print("[green]No SUID or SGID files found (unexpected).[/]")
-        pause_return()
-        return {
-            "status": "ok",
-            "details": [],
-            "tags": []
-        }
+        console.print(
+            Panel.fit(
+                "[yellow]No SUID or SGID files were detected.[/]\n"
+                "[dim]This may be valid in a minimal environment, but is unusual on many Linux systems.[/]",
+                title="[bold yellow]NO RESULTS[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
 
-    table = Table(title="Detected SUID / SGID Files", show_lines=True)
-    table.add_column("Path", style="magenta")
-    table.add_column("Flags", style="cyan")
-    table.add_column("Status", style="yellow")
+        pause_return()
+        return result
+
+    table = Table(
+        title="[italic cyan]Privileged Executables[/]",
+        box=box.SIMPLE_HEAVY,
+        header_style="bold cyan",
+        show_edge=False,
+        padding=(0, 1),
+    )
+
+    table.add_column("Path", style="white")
+    table.add_column("Flags", style="cyan", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Reason", style="dim")
+
+    suspicious_map = {
+        entry["path"]: entry
+        for entry in suspicious
+    }
 
     for entry in results:
         flags = []
+
         if entry["suid"]:
             flags.append("SUID")
+
         if entry["sgid"]:
             flags.append("SGID")
 
         path = entry["path"]
-        is_known = (
-            (entry["suid"] and path in WHITELISTED_SUID) or
-            (entry["sgid"] and path in WHITELISTED_SGID)
+
+        if path in suspicious_map:
+            status = "[yellow]REVIEW[/]"
+            reason = ", ".join(
+                suspicious_map[path]["reasons"]
+            )
+        else:
+            status = "[green]KNOWN[/]"
+            reason = "Known-safe baseline"
+
+        table.add_row(
+            path,
+            ", ".join(flags),
+            status,
+            reason,
         )
 
-        status = "[green]Known Safe[/]" if is_known else "[red]Suspicious[/]"
-        table.add_row(path, ", ".join(flags), status)
-
-    console.print(Align.center(table))
+    console.print(table)
+    console.print()
 
     if suspicious:
-        console.print(f"\n[bold red]⚠️ {len(suspicious)} suspicious SUID/SGID binaries detected.[/]")
+        console.print(
+            Panel.fit(
+                f"[yellow]{len(suspicious)} privileged executable(s) require review.[/]\n"
+                "[dim]Validate ownership, package origin, location, and whether elevated execution is expected.[/]",
+                title="[bold yellow]REVIEW REQUIRED[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+
     else:
-        console.print("\n[green]✅ No unexpected SUID/SGID binaries detected.[/]")
+        console.print(
+            Panel.fit(
+                "[green]No unexpected SUID/SGID binaries detected.[/]\n"
+                "[dim]All detected privileged executables matched the current known-safe baseline.[/]",
+                title="[bold green]STATUS: OK[/]",
+                border_style="green",
+                box=box.ROUNDED,
+            )
+        )
 
     pause_return()
-
-    return {
-        "status": "warning" if suspicious else "ok",
-        "details": [f"{len(suspicious)} suspicious SUID/SGID binaries found"] if suspicious else [],
-        "tags": sorted(list(tags)) if tags else []
-    }
+    return result

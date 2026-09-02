@@ -1,11 +1,11 @@
 # Project: ErisLITE
-# Module: system_info.py
+# Module: info.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
-# Description: System information display: OS, CPU, RAM, uptime, logged-in users.
+# Last Updated: 2026-09-02
+# Description: System information collection and display.
 
 import os, platform, psutil, getpass, time
 
@@ -17,18 +17,22 @@ from erislite.ui.utils import clear_screen, show_header
 
 console = Console()
 
+
 # Helper functions to get system information
 def get_uptime():
     uptime_seconds = time.time() - psutil.boot_time()
     return str(timedelta(seconds=int(uptime_seconds)))
 
+
 # Get OS information
 def get_os_info():
     return f"{platform.system()} {platform.release()}"
 
+
 # Get kernel version
 def get_kernel_version():
     return platform.version()
+
 
 # Get CPU information
 def get_cpu_info():
@@ -36,13 +40,15 @@ def get_cpu_info():
     cpu_model = platform.processor() or platform.machine()
     return f"{cpu_model} ({cpu_count} cores)"
 
+
 # Get RAM information
 def get_ram_info():
     ram = psutil.virtual_memory()
-    ram_total = round(ram.total / (1024 ** 3), 2)
-    ram_used = round(ram.used / (1024 ** 3), 2)
+    ram_total = round(ram.total / (1024**3), 2)
+    ram_used = round(ram.used / (1024**3), 2)
     ram_percent = ram.percent
     return f"{ram_used} GB / {ram_total} GB ({ram_percent}%)"
+
 
 # Get logged-in users count
 def get_logged_in_users():
@@ -50,18 +56,21 @@ def get_logged_in_users():
         return len(psutil.users())
     except Exception:
         return 0
+
 
 # Get system uptime
 def get_uptime():
     uptime_seconds = time.time() - psutil.boot_time()
     return str(timedelta(seconds=int(uptime_seconds)))
 
+
 # Get logged-in users count
 def get_logged_in_users():
     try:
         return len(psutil.users())
     except Exception:
         return 0
+
 
 # Main function to run the system info module
 def run(profile: dict):
@@ -80,8 +89,8 @@ def run(profile: dict):
         cpu_model = uname.processor if uname.processor else platform.machine()
 
         ram = psutil.virtual_memory()
-        ram_total = round(ram.total / (1024 ** 3), 2)
-        ram_used = round(ram.used / (1024 ** 3), 2)
+        ram_total = round(ram.total / (1024**3), 2)
+        ram_used = round(ram.used / (1024**3), 2)
         ram_percent = ram.percent
 
         if platform.system() == "Linux":

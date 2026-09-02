@@ -1,17 +1,14 @@
 # Project: ErisLITE
 # Module: threat_sweep.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
-# Description: Threat sweep orchestrator: runs selected modules, scores risk, saves results.
+# Last Updated: 2026-09-02
+# Description: Threat sweep orchestrator: runs selected modules, scores risk, and saves results.
 
-# tools/threat_sweep.py
-
-import os, json
+import json
 from datetime import datetime
-from pathlib import Path
 
 from rich import box
 from rich.panel import Panel
@@ -19,7 +16,6 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.accounts import login_audit, users, ssh_keys, ssh_config
-from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.containers import docker
 from erislite.network import listeners, firewall, hosts
 from erislite.persistence import world_writable, cron, suid, backdoors
@@ -27,6 +23,14 @@ from erislite.system import integrity, kernel_modules, processes
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 from erislite.vulnerability import cve_checker
+
+from erislite.config.settings import (
+    APP_NAME,
+    APP_VERSION,
+    LAST_SWEEP_FILE,
+    SWEEP_LOG_DIR,
+    SWEEP_PROFILES,
+)
 
 # 🧠 Tag-to-Insight Mapping
 THREAT_TAG_MAP = {
@@ -53,16 +57,22 @@ THREAT_TAG_MAP = {
     "proc_root_interpreter": "Script interpreter running as root without a named service wrapper.",
     "proc_hidden_name": "Process name starts with a dot — may be intentionally hidden.",
     "proc_no_exe": "Root process with no resolvable executable path.",
-    "hosts_critical_redirect":  "A critical domain (update server, CA, security tool) has been redirected in /etc/hosts.",
-    "hosts_loopback_redirect":  "A non-localhost hostname is redirected to loopback — may block security or update tools.",
-    "hosts_suspicious_entry":   "Suspicious hostname pattern detected in /etc/hosts.",
-    "hosts_duplicate_mapping":  "A hostname maps to multiple different IPs — possible hijack.",
-    "hosts_unreadable":         "/etc/hosts could not be read.",
-    "backdoor_init_file":       "Suspicious command found in a shell init or profile file.",
-    "backdoor_ld_preload":      "Library injected via /etc/ld.so.preload — high-confidence rootkit indicator.",
-    "backdoor_ld_preload_env":  "LD_PRELOAD is active in a running process environment.",
-    "backdoor_read_error":      "Could not read a file during backdoor scan.",
+    "hosts_critical_redirect": "A critical domain (update server, CA, security tool) has been redirected in /etc/hosts.",
+    "hosts_loopback_redirect": "A non-localhost hostname is redirected to loopback — may block security or update tools.",
+    "hosts_suspicious_entry": "Suspicious hostname pattern detected in /etc/hosts.",
+    "hosts_duplicate_mapping": "A hostname maps to multiple different IPs — possible hijack.",
+    "hosts_unreadable": "/etc/hosts could not be read.",
+    "backdoor_init_file": "Suspicious command found in a shell init or profile file.",
+    "backdoor_ld_preload": "Library injected via /etc/ld.so.preload — high-confidence rootkit indicator.",
+    "backdoor_ld_preload_env": "LD_PRELOAD is active in a running process environment.",
+    "backdoor_read_error": "Could not read a file during backdoor scan.",
+    "no_home_dir": "User account has no valid home directory.",
+    "nonstandard_shell": "User account has an unusual or non-standard login shell.",
+    "hosts_private_redirect": "External-looking hostname is mapped to a private address.",
+    "ssh_keys_unknown_type": "Authorized key uses an unrecognized SSH key format.",
+    "suid_nonstandard_location": "SUID/SGID binary is located outside standard executable paths.",
 }
+
 
 def calculate_risk_score(results: dict):
     weights = {
@@ -99,7 +109,8 @@ def calculate_risk_score(results: dict):
             else:
                 breakdown[module] = 0
 
-    return min(total_score, 100), breakdown, max_score
+    return total_score, breakdown, max_score
+
 
 def run_sweep(user_profile, sweep_profile="standard"):
     clear_screen()
@@ -107,13 +118,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
     console.print("[dim]Running security checks...[/]")
     console.print()
 
-    profiles = {
-        "quick":    ["listeners", "users", "login"],
-        "standard": ["integrity", "listeners", "users", "login", "cve"],
-        "full":     ["integrity", "listeners", "users", "kernel", "sshkeys",
-                     "worldwritable", "cron", "login", "sshconfig", "docker",
-                     "suid", "processes", "hosts", "backdoor", "cve"],
-    }
+    profiles = SWEEP_PROFILES
 
     results = {}
 
@@ -204,7 +209,7 @@ def _display_results(results, sweep_profile, user_profile):
         if status == "error":
             return "[red]ERROR[/]"
         if status == "unsupported":
-            return "[magenta]UNSUPPORTED[/]"
+            return "[dim]UNSUPPORTED[/]"
 
         return f"[dim]{status.upper()}[/]"
 
@@ -268,7 +273,9 @@ def _display_results(results, sweep_profile, user_profile):
         )
     )
 
-    contributors = [(module, points) for module, points in breakdown.items() if points > 0]
+    contributors = [
+        (module, points) for module, points in breakdown.items() if points > 0
+    ]
 
     if contributors:
         console.print()
@@ -296,11 +303,6 @@ def _display_results(results, sweep_profile, user_profile):
     for result in results.values():
         all_tags.update(result.get("tags", []))
 
-    sshkey_result = results.get("sshkeys", {})
-    if sshkey_result.get("flagged") and not sshkey_result.get("tags"):
-        sshkey_result["tags"] = ["ssh_keys_suspicious"]
-        all_tags.add("ssh_keys_suspicious")
-
     cve_result = results.get("cve", {})
     if cve_result.get("status") == "warning" and not cve_result.get("tags"):
         cve_result["tags"] = ["cve_match"]
@@ -326,42 +328,87 @@ def _display_results(results, sweep_profile, user_profile):
     console.print()
     pause_return()
 
+
 def _save_sweep(results, sweep_profile, user_profile):
-    """Persist the sweep summary to ~/.erislite/last_sweep.json for the dashboard panel."""
+    """Persist the latest sweep and a timestamped historical sweep log."""
     try:
         all_tags = []
-        for r in results.values():
-            all_tags.extend(r.get("tags", []))
 
-        score, _, _ = calculate_risk_score(results)
+        for result in results.values():
+            all_tags.extend(
+                result.get("tags", [])
+            )
+
+        score, _, max_possible = calculate_risk_score(results)
+
+        risk_percent = (
+            round((score / max_possible) * 100)
+            if max_possible
+            else 0
+        )
 
         summary = {
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "hostname": user_profile.get(
+                "hostname",
+                "unknown",
+            ),
             "profile": sweep_profile,
             "risk_score": score,
+            "risk_max": max_possible,
+            "risk_percent": risk_percent,
             "tags": sorted(set(all_tags)),
             "results": results,
-            "sweep_profile": sweep_profile,
         }
 
-        save_dir = Path.home() / ".erislite"
-        save_dir.mkdir(parents=True, exist_ok=True)
+        LAST_SWEEP_FILE.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
-        with open(save_dir / "last_sweep.json", "w") as f:
-            json.dump(summary, f, indent=2, default=str)
+        with open(
+            LAST_SWEEP_FILE,
+            "w",
+            encoding="utf-8",
+        ) as file:
+            json.dump(
+                summary,
+                file,
+                indent=2,
+                default=str,
+            )
 
-        # Also write a dated log to data/logs/
-        hostname = user_profile.get("hostname", "unknown")
-        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        log_dir = Path("data/logs")
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / f"{hostname}_sweep_{ts}.json"
+        SWEEP_LOG_DIR.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
-        with open(log_path, "w") as f:
-            json.dump(summary, f, indent=2, default=str)
+        timestamp = datetime.now().strftime(
+            "%Y%m%d_%H%M%S"
+        )
 
-    except Exception as e:
-        console.print(f"[yellow]Warning: could not save sweep log: {e}[/]")
+        log_path = (
+            SWEEP_LOG_DIR
+            / f"sweep_log_{timestamp}.json"
+        )
+
+        with open(
+            log_path,
+            "w",
+            encoding="utf-8",
+        ) as file:
+            json.dump(
+                summary,
+                file,
+                indent=2,
+                default=str,
+            )
+
+    except Exception as exc:
+        console.print(
+            f"[yellow]Warning: could not save sweep log: {exc}[/]"
+        )
+
 
 def _render_header(profile: dict, sweep_profile: str) -> None:
     hostname = profile.get("hostname", "unknown-host")

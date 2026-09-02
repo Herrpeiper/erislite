@@ -1,3 +1,12 @@
+# Project: ErisLITE
+# Module: actions.py
+# Author: Liam Piper-Brandon
+# Version: 1.1.0
+# License: MIT
+# Created: 2025-06-01
+# Last Updated: 2026-09-02
+# Description: Rapid Response containment and remediation actions.
+
 from __future__ import annotations
 
 import os, shutil, time
@@ -11,40 +20,48 @@ def build_action_plan(procs, conns, users, crons) -> List[Dict[str, Any]]:
     actions = []
 
     for proc in procs:
-        actions.append({
-            "type": "kill_process",
-            "label": f"Kill PID {proc['pid']} ({proc['name']}) — running from {proc['exe']}",
-            "data": proc,
-            "undo": None,
-        })
+        actions.append(
+            {
+                "type": "kill_process",
+                "label": f"Kill PID {proc['pid']} ({proc['name']}) — running from {proc['exe']}",
+                "data": proc,
+                "undo": None,
+            }
+        )
 
     for conn in conns:
-        actions.append({
-            "type": "block_ip",
-            "label": (
-                f"Block outbound to {conn['remote_ip']} — "
-                f"{conn.get('reason', 'suspicious connection')} "
-                f"(from {conn['laddr']})"
-            ),
-            "data": conn,
-            "undo": f"iptables -D OUTPUT -d {conn['remote_ip']} -j DROP",
-        })
+        actions.append(
+            {
+                "type": "block_ip",
+                "label": (
+                    f"Block outbound to {conn['remote_ip']} — "
+                    f"{conn.get('reason', 'suspicious connection')} "
+                    f"(from {conn['laddr']})"
+                ),
+                "data": conn,
+                "undo": f"iptables -D OUTPUT -d {conn['remote_ip']} -j DROP",
+            }
+        )
 
     for user in users:
-        actions.append({
-            "type": "lock_user",
-            "label": f"Lock account: {user}",
-            "data": {"username": user},
-            "undo": f"usermod -U {user}",
-        })
+        actions.append(
+            {
+                "type": "lock_user",
+                "label": f"Lock account: {user}",
+                "data": {"username": user},
+                "undo": f"usermod -U {user}",
+            }
+        )
 
     for path in crons:
-        actions.append({
-            "type": "remove_cron",
-            "label": f"Remove world-writable cron file: {path}",
-            "data": {"path": path},
-            "undo": None,
-        })
+        actions.append(
+            {
+                "type": "remove_cron",
+                "label": f"Remove world-writable cron file: {path}",
+                "data": {"path": path},
+                "undo": None,
+            }
+        )
 
     return actions
 

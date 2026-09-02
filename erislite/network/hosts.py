@@ -1,252 +1,470 @@
 # Project: ErisLITE
-# Module: hosts_check.py
+# Module: hosts.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
-# Description: /etc/hosts entries that redirect critical domains or look malicious.
+# Last Updated: 2026-09-02
+# Description: /etc/hosts inspection for suspicious redirects and tampering.
 
+import ipaddress
 import re
 
-from rich.console import Console
+from rich import box
+from rich.panel import Panel
 from rich.table import Table
-from rich.align import Align
+from rich.text import Text
 
-from erislite.ui.utils import clear_screen, show_header, pause_return, get_os
+from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.ui.console import console
+from erislite.ui.utils import clear_screen, get_os, pause_return
 
-console = Console()
 
 HOSTS_PATH = "/etc/hosts"
 
-# ── Heuristics ────────────────────────────────────────────────────────────────
 
-# Domains that should never be redirected in a legitimate hosts file.
-# Redirection of these is a strong indicator of DNS hijacking or C2 activity.
 CRITICAL_DOMAINS = {
-    # Package managers / update infrastructure
-    "security.ubuntu.com", "archive.ubuntu.com", "packages.debian.org",
-    "deb.debian.org", "dl.fedoraproject.org", "mirrors.fedoraproject.org",
-    "yum.repos.d", "rpm.repos",
-
-    # Certificate authorities
-    "ocsp.digicert.com", "crl.globalsign.com", "ocsp.globalsign.com",
-    "ocsp.pki.goog", "pki.goog",
-
-    # Common telemetry / update targets attackers redirect to block detection
-    "telemetry.microsoft.com", "update.microsoft.com",
-    "safebrowsing.googleapis.com", "safebrowsing.google.com",
-
-    # Common C2 callback domains seen in commodity malware
-    "windowsupdate.com", "microsoftupdate.com",
+    "security.ubuntu.com",
+    "archive.ubuntu.com",
+    "packages.debian.org",
+    "deb.debian.org",
+    "dl.fedoraproject.org",
+    "mirrors.fedoraproject.org",
+    "ocsp.digicert.com",
+    "crl.globalsign.com",
+    "ocsp.globalsign.com",
+    "ocsp.pki.goog",
+    "pki.goog",
+    "telemetry.microsoft.com",
+    "update.microsoft.com",
+    "safebrowsing.googleapis.com",
+    "safebrowsing.google.com",
+    "windowsupdate.com",
+    "microsoftupdate.com",
 }
 
-# IPs that are suspicious destinations in a hosts file.
-# Loopback redirects of non-local services can be used to block security tools.
-LOOPBACK_IPS = {"127.0.0.1", "127.0.0.2", "0.0.0.0", "::1"}
 
-# Patterns that suggest the entry is trying to hide itself or is malformed.
-SUSPICIOUS_PATTERNS = [
-    # Very long hostname (unusual for legitimate entries)
-    re.compile(r"\S{80,}"),
-    # IP that looks like an internal RFC1918 range pointing to an unusual domain
-    re.compile(r"^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)"),
-    # Base64-looking hostname (encoded C2 domain)
-    re.compile(r"^[A-Za-z0-9+/]{20,}={0,2}$"),
-]
+LOOPBACK_IPS = {
+    "127.0.0.1",
+    "127.0.0.2",
+    "0.0.0.0",
+    "::1",
+}
 
-# Legitimate standard entries — ignore these completely.
+
+LOCAL_HOSTNAMES = {
+    "localhost",
+    "localhost.localdomain",
+    "ip6-localhost",
+    "ip6-loopback",
+}
+
+
 WHITELIST_ENTRIES = {
-    ("127.0.0.1",   "localhost"),
-    ("127.0.1.1",   "localhost"),
-    ("::1",         "localhost"),
-    ("::1",         "ip6-localhost"),
-    ("::1",         "ip6-loopback"),
-    ("fe00::0",     "ip6-localnet"),
-    ("ff00::0",     "ip6-mcastprefix"),
-    ("ff02::1",     "ip6-allnodes"),
-    ("ff02::2",     "ip6-allrouters"),
+    ("127.0.0.1", "localhost"),
+    ("127.0.1.1", "localhost"),
+    ("::1", "localhost"),
+    ("::1", "ip6-localhost"),
+    ("::1", "ip6-loopback"),
+    ("fe00::0", "ip6-localnet"),
+    ("ff00::0", "ip6-mcastprefix"),
+    ("ff02::1", "ip6-allnodes"),
+    ("ff02::2", "ip6-allrouters"),
 }
 
 
-# ── Parser ────────────────────────────────────────────────────────────────────
+BASE64_HOSTNAME = re.compile(
+    r"^[A-Za-z0-9+/]{24,}={0,2}$"
+)
+
+VERY_LONG_HOSTNAME = re.compile(
+    r"^\S{80,}$"
+)
+
+
+def _header() -> None:
+    console.print(
+        Panel(
+            Text.from_markup(
+                "[dim]Inspect /etc/hosts for suspicious redirects, duplicate mappings, and tampering[/]"
+            ),
+            title="[bold cyan]HOSTS TAMPER CHECK[/]",
+            subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
+            border_style="cyan",
+            box=box.SQUARE,
+            padding=(0, 1),
+        )
+    )
+    console.print()
+
 
 def parse_hosts():
     """
-    Parse /etc/hosts and return a list of (ip, hostname, raw_line, lineno).
-    Skips comments and blank lines.
+    Return:
+        entries:
+            list[(ip, hostname, raw_line, lineno)]
+
+        error:
+            str | None
     """
     entries = []
+
     try:
-        with open(HOSTS_PATH, "r", errors="ignore") as f:
-            for lineno, line in enumerate(f, 1):
-                stripped = line.strip()
+        with open(
+            HOSTS_PATH,
+            "r",
+            encoding="utf-8",
+            errors="ignore",
+        ) as file:
+            for lineno, raw_line in enumerate(file, 1):
+                stripped = raw_line.strip()
+
                 if not stripped or stripped.startswith("#"):
                     continue
-                # Strip inline comments
-                stripped = stripped.split("#")[0].strip()
+
+                stripped = stripped.split("#", 1)[0].strip()
+
+                if not stripped:
+                    continue
+
                 parts = stripped.split()
+
                 if len(parts) < 2:
                     continue
+
                 ip = parts[0]
+
+                try:
+                    ipaddress.ip_address(ip)
+                except ValueError:
+                    continue
+
                 for hostname in parts[1:]:
-                    entries.append((ip, hostname.lower(), line.rstrip(), lineno))
-    except (FileNotFoundError, PermissionError) as e:
-        return [], str(e)
+                    entries.append(
+                        (
+                            ip,
+                            hostname.lower(),
+                            raw_line.rstrip(),
+                            lineno,
+                        )
+                    )
+
+    except (FileNotFoundError, PermissionError) as exc:
+        return [], str(exc)
+
+    except Exception as exc:
+        return [], str(exc)
+
     return entries, None
 
 
-# ── Detection ─────────────────────────────────────────────────────────────────
+def _is_critical_domain(hostname: str) -> bool:
+    return any(
+        hostname == domain
+        or hostname.endswith("." + domain)
+        for domain in CRITICAL_DOMAINS
+    )
+
+
+def _looks_external(hostname: str) -> bool:
+    """
+    Roughly distinguish external-looking FQDNs from common local aliases.
+    """
+    if hostname in LOCAL_HOSTNAMES:
+        return False
+
+    if hostname.endswith(
+        (
+            ".localhost",
+            ".local",
+            ".internal",
+        )
+    ):
+        return False
+
+    return "." in hostname
+
+
+def _is_private_ip(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+        return addr.is_private
+    except ValueError:
+        return False
+
 
 def scan_hosts():
-    """
-    Analyse /etc/hosts entries and return a list of suspicious findings.
-    Each finding: {lineno, ip, hostname, reason, tag}
-    """
-    entries, err = parse_hosts()
-    if err:
-        return [], [f"Could not read {HOSTS_PATH}: {err}"], ["hosts_unreadable"]
+    entries, error = parse_hosts()
+
+    if error:
+        return (
+            [],
+            [f"Could not read {HOSTS_PATH}: {error}"],
+            ["hosts_unreadable"],
+        )
 
     flagged = []
 
     for ip, hostname, raw_line, lineno in entries:
-        # Skip known-good standard entries
         if (ip, hostname) in WHITELIST_ENTRIES:
             continue
 
         reasons = []
-        tags    = set()
+        tags = set()
 
-        # ── Check 1: critical domain redirected ───────────────────────────────
-        for domain in CRITICAL_DOMAINS:
-            if hostname == domain or hostname.endswith("." + domain):
-                reasons.append(f"Critical domain redirected: {hostname} -> {ip}")
-                tags.add("hosts_critical_redirect")
-                break
+        critical = _is_critical_domain(hostname)
 
-        # ── Check 2: loopback redirect of non-localhost hostname ──────────────
-        if ip in LOOPBACK_IPS and hostname not in ("localhost", "ip6-localhost", "ip6-loopback"):
-            # Redirecting to loopback can block security/update tools
-            reasons.append(f"Non-localhost hostname points to loopback: {hostname} -> {ip}")
+        # High-confidence: security/update infrastructure redirected.
+        if critical:
+            reasons.append(
+                f"Critical domain redirected to {ip}"
+            )
+            tags.add("hosts_critical_redirect")
+
+        # Loopback redirects are only interesting for external-looking names.
+        # Local aliases are common and should not automatically trigger.
+        if (
+            ip in LOOPBACK_IPS
+            and _looks_external(hostname)
+            and not critical
+        ):
+            reasons.append(
+                "External-looking hostname redirected to loopback"
+            )
             tags.add("hosts_loopback_redirect")
 
-        # ── Check 3: suspicious hostname pattern ──────────────────────────────
-        for pat in SUSPICIOUS_PATTERNS:
-            if pat.search(hostname):
-                reasons.append(f"Suspicious hostname pattern: {hostname}")
-                tags.add("hosts_suspicious_entry")
-                break
+        if VERY_LONG_HOSTNAME.search(hostname):
+            reasons.append(
+                "Unusually long hostname"
+            )
+            tags.add("hosts_suspicious_entry")
 
-        # ── Check 4: duplicate hostname with different IP ─────────────────────
-        # (checked post-loop below)
+        if BASE64_HOSTNAME.fullmatch(hostname):
+            reasons.append(
+                "Hostname resembles encoded data"
+            )
+            tags.add("hosts_suspicious_entry")
+
+        # A public-looking hostname forced to RFC1918 space may warrant review.
+        if (
+            _is_private_ip(ip)
+            and _looks_external(hostname)
+            and not ipaddress.ip_address(ip).is_loopback
+        ):
+            reasons.append(
+                "External-looking hostname mapped to private address"
+            )
+            tags.add("hosts_private_redirect")
 
         if reasons:
-            flagged.append({
-                "lineno":   lineno,
-                "ip":       ip,
-                "hostname": hostname,
-                "raw":      raw_line,
-                "reasons":  reasons,
-                "tags":     sorted(tags),
-            })
+            flagged.append(
+                {
+                    "lineno": lineno,
+                    "ip": ip,
+                    "hostname": hostname,
+                    "raw": raw_line,
+                    "reasons": reasons,
+                    "tags": sorted(tags),
+                }
+            )
 
-    # ── Check 4: detect duplicate hostnames pointing to different IPs ─────────
-    seen: dict = {}
+    # Duplicate hostname mappings.
+    #
+    # Only flag when the same hostname maps to multiple distinct,
+    # non-loopback addresses. Local aliases often legitimately appear
+    # across loopback/IPv4/IPv6 mappings.
+    seen = {}
+
     for ip, hostname, raw_line, lineno in entries:
-        if hostname in seen and seen[hostname] != ip:
-            flagged.append({
-                "lineno":   lineno,
-                "ip":       ip,
+        seen.setdefault(hostname, set()).add(ip)
+
+    for hostname, addresses in seen.items():
+        if len(addresses) <= 1:
+            continue
+
+        non_loopback = {
+            ip
+            for ip in addresses
+            if not ipaddress.ip_address(ip).is_loopback
+        }
+
+        if len(non_loopback) <= 1:
+            continue
+
+        already_flagged = any(
+            finding["hostname"] == hostname
+            and "hosts_duplicate_mapping" in finding["tags"]
+            for finding in flagged
+        )
+
+        if already_flagged:
+            continue
+
+        flagged.append(
+            {
+                "lineno": "-",
+                "ip": ", ".join(sorted(addresses)),
                 "hostname": hostname,
-                "raw":      raw_line,
-                "reasons":  [f"Hostname {hostname} mapped to multiple IPs ({seen[hostname]} and {ip})"],
-                "tags":     ["hosts_duplicate_mapping"],
-            })
-        else:
-            seen[hostname] = ip
+                "raw": "",
+                "reasons": [
+                    "Hostname maps to multiple distinct addresses"
+                ],
+                "tags": ["hosts_duplicate_mapping"],
+            }
+        )
 
     return flagged, [], []
 
 
-# ── Main entry point ──────────────────────────────────────────────────────────
-
 def run_hosts_check(silent: bool = False) -> dict:
-    os_type = get_os()
-
-    if os_type != "Linux":
+    if get_os() != "Linux":
         if not silent:
             clear_screen()
-            show_header("/etc/hosts CHECK")
-            console.print("[yellow]This module is only supported on Linux.[/]")
+            _header()
+
+            console.print(
+                Panel.fit(
+                    "[yellow]Hosts Tamper Check is only supported on Linux.[/]",
+                    border_style="yellow",
+                    box=box.ROUNDED,
+                )
+            )
+
             pause_return()
-        return {"status": "unsupported", "details": [], "tags": []}
+
+        return {
+            "status": "unsupported",
+            "details": [],
+            "tags": [],
+        }
 
     flagged, errors, error_tags = scan_hosts()
 
     if errors:
-        if not silent:
-            clear_screen()
-            show_header("/etc/hosts CHECK")
-            for e in errors:
-                console.print(f"[red]{e}[/]")
-            pause_return()
-        return {"status": "error", "details": errors, "tags": error_tags}
-
-    all_tags: set = set()
-    for f in flagged:
-        all_tags.update(f["tags"])
-
-    # ── Silent mode ───────────────────────────────────────────────────────────
-    if silent:
-        if not flagged:
-            return {"status": "ok", "details": [], "tags": []}
-
-        details = []
-        for f in flagged:
-            for reason in f["reasons"]:
-                details.append(f"[line {f['lineno']}] {f['hostname']} — {reason}")
-
-        return {
-            "status": "warning",
-            "details": details[:10],
-            "tags":    sorted(all_tags),
+        result = {
+            "status": "error",
+            "details": errors,
+            "tags": error_tags,
         }
 
-    # ── Interactive mode ──────────────────────────────────────────────────────
-    clear_screen()
-    show_header("/etc/hosts TAMPER CHECK")
+        if silent:
+            return result
 
-    if not flagged:
-        console.print("[green]No suspicious /etc/hosts entries detected.[/]")
-        pause_return()
-        return {"status": "ok", "details": [], "tags": []}
+        clear_screen()
+        _header()
 
-    table = Table(title=f"Suspicious /etc/hosts Entries ({len(flagged)} found)",
-                  show_lines=True)
-    table.add_column("Line",     style="cyan",    no_wrap=True)
-    table.add_column("IP",       style="yellow",  no_wrap=True)
-    table.add_column("Hostname", style="magenta", no_wrap=True)
-    table.add_column("Reason",   style="white")
-
-    for f in flagged:
-        table.add_row(
-            str(f["lineno"]),
-            f["ip"],
-            f["hostname"],
-            "\n".join(f["reasons"]),
+        console.print(
+            Panel.fit(
+                "\n".join(
+                    f"[yellow]{error}[/]"
+                    for error in errors
+                ),
+                title="[bold yellow]UNAVAILABLE[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
         )
 
-    console.print(Align.center(table))
-    console.print(f"\n[bold red]⚠  {len(flagged)} suspicious entry(ies) detected in /etc/hosts.[/]")
-    pause_return()
+        pause_return()
+        return result
+
+    all_tags = set()
+
+    for finding in flagged:
+        all_tags.update(finding["tags"])
 
     details = []
-    for f in flagged:
-        for reason in f["reasons"]:
-            details.append(f"[line {f['lineno']}] {f['hostname']} — {reason}")
 
-    return {
-        "status": "warning",
-        "details": details,
-        "tags":    sorted(all_tags),
+    for finding in flagged:
+        for reason in finding["reasons"]:
+            details.append(
+                f"[line {finding['lineno']}] "
+                f"{finding['hostname']} — {reason}"
+            )
+
+    result = {
+        "status": "warning" if flagged else "ok",
+        "details": details[:10] if silent else details,
+        "tags": sorted(all_tags),
     }
+
+    if silent:
+        return result
+
+    clear_screen()
+    _header()
+
+    console.print(
+        Panel.fit(
+            f"[dim]File:[/] [white]{HOSTS_PATH}[/]   "
+            f"[dim]Findings:[/] "
+            f"[{'yellow' if flagged else 'green'}]{len(flagged)}[/]",
+            title="[bold cyan]SUMMARY[/]",
+            border_style="cyan",
+            box=box.ROUNDED,
+        )
+    )
+    console.print()
+
+    if flagged:
+        table = Table(
+            title="[italic cyan]Hosts File Findings[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+
+        table.add_column(
+            "Line",
+            style="cyan",
+            no_wrap=True,
+        )
+        table.add_column(
+            "Address",
+            style="white",
+            no_wrap=True,
+        )
+        table.add_column(
+            "Hostname",
+            style="white",
+        )
+        table.add_column(
+            "Signal",
+            style="yellow",
+        )
+
+        for finding in flagged:
+            table.add_row(
+                str(finding["lineno"]),
+                finding["ip"],
+                finding["hostname"],
+                ", ".join(finding["tags"]),
+            )
+
+        console.print(table)
+        console.print()
+
+        console.print(
+            Panel.fit(
+                f"[yellow]{len(flagged)} /etc/hosts entry(ies) require review.[/]\n"
+                "[dim]Validate unexpected redirects, private mappings, and duplicate hostname resolution.[/]",
+                title="[bold yellow]REVIEW REQUIRED[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+
+    else:
+        console.print(
+            Panel.fit(
+                "[green]No suspicious /etc/hosts entries detected.[/]\n"
+                "[dim]No critical redirects or high-signal hostname anomalies were identified.[/]",
+                title="[bold green]STATUS: OK[/]",
+                border_style="green",
+                box=box.ROUNDED,
+            )
+        )
+
+    pause_return()
+    return result

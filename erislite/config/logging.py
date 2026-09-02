@@ -1,3 +1,12 @@
+# Project: ErisLITE
+# Module: logging.py
+# Author: Liam Piper-Brandon
+# Version: 1.1.0
+# License: MIT
+# Created: 2025-06-01
+# Last Updated: 2026-09-02
+# Description: Shared ErisLITE runtime logging configuration.
+
 """
 ErisLITE v1.1
 Centralized application logging.
@@ -14,12 +23,7 @@ LOG_FILE = LOG_DIR / "erislite.log"
 
 DEFAULT_LOG_LEVEL = logging.INFO
 
-LOG_FORMAT = (
-    "%(asctime)s | "
-    "%(levelname)-8s | "
-    "%(name)s | "
-    "%(message)s"
-)
+LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 

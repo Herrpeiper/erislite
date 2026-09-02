@@ -1,11 +1,11 @@
 # Project: ErisLITE
 # Module: security_audit.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
-# Description: Snapshot-style security posture check: firewall, SSH keys, world-writable, failed logins.
+# Last Updated: 2026-09-02
+# Description: Snapshot-style host security posture assessment.
 
 import os, re, stat, shutil, subprocess
 from pathlib import Path
@@ -22,9 +22,10 @@ from erislite.response.security_log import write_audit_log
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
-#----------------------------
+
+# ----------------------------
 # Helpers
-#----------------------------
+# ----------------------------
 def _have(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
@@ -32,6 +33,7 @@ def _have(cmd: str) -> bool:
 def _safe_run(args: list[str]) -> subprocess.CompletedProcess:
     # Avoid throwing on nonzero return codes; we interpret stdout/stderr ourselves.
     return subprocess.run(args, capture_output=True, text=True)
+
 
 # ----------------------------
 # Checks
@@ -78,6 +80,7 @@ def check_firewall_status():
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
 
+
 # Note: the following checks are designed to be "snapshot-style" - they look for strong indicators of potential compromise or misconfiguration, but do not attempt to be exhaustive or definitive. The goal is to quickly surface notable findings that may warrant further investigation, without overwhelming the user with noise or false positives.
 def check_suspicious_procs():
     """
@@ -91,15 +94,15 @@ def check_suspicious_procs():
     shady_paths = ("/tmp", "/dev/shm", "/var/tmp")
     # Strong signals (not just "curl exists")
     suspicious_cmd_patterns = [
-        r"\|\s*(ba?sh|sh)\b",                 # curl/wget | bash
-        r"\bbase64\b.*\s-d\b",                # base64 decode then exec often
-        r"\bpython\d*\b\s+-c\s+",             # python -c one-liners
-        r"\bperl\b\s+-e\s+",                  # perl -e one-liners
-        r"\bruby\b\s+-e\s+",                  # ruby -e
-        r"/dev/tcp/\d+\.\d+\.\d+\.\d+/\d+",   # bash tcp trick
-        r"\bnc\b.*\s(-e|--exec)\b",           # netcat exec
-        r"\bsocat\b.*EXEC:",                  # socat EXEC
-        r"\bcurl\b.*\bhttp",                  # staged download (only counts if paired w/ other signals below)
+        r"\|\s*(ba?sh|sh)\b",  # curl/wget | bash
+        r"\bbase64\b.*\s-d\b",  # base64 decode then exec often
+        r"\bpython\d*\b\s+-c\s+",  # python -c one-liners
+        r"\bperl\b\s+-e\s+",  # perl -e one-liners
+        r"\bruby\b\s+-e\s+",  # ruby -e
+        r"/dev/tcp/\d+\.\d+\.\d+\.\d+/\d+",  # bash tcp trick
+        r"\bnc\b.*\s(-e|--exec)\b",  # netcat exec
+        r"\bsocat\b.*EXEC:",  # socat EXEC
+        r"\bcurl\b.*\bhttp",  # staged download (only counts if paired w/ other signals below)
         r"\bwget\b.*\bhttp",
     ]
 
@@ -113,11 +116,11 @@ def check_suspicious_procs():
     ]
 
     try:
-        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
-            pid = proc.info.get('pid')
-            name = (proc.info.get('name') or "").strip()
-            exe = (proc.info.get('exe') or "").strip()
-            cmdline_list = proc.info.get('cmdline') or []
+        for proc in psutil.process_iter(["pid", "name", "exe", "cmdline"]):
+            pid = proc.info.get("pid")
+            name = (proc.info.get("name") or "").strip()
+            exe = (proc.info.get("exe") or "").strip()
+            cmdline_list = proc.info.get("cmdline") or []
             cmd = " ".join(cmdline_list).strip().lower()
             exe_l = exe.lower()
 
@@ -139,7 +142,9 @@ def check_suspicious_procs():
                     break
 
             if reasons:
-                flagged.append(f"{name or 'unknown'} (PID {pid}) [{', '.join(reasons)}]")
+                flagged.append(
+                    f"{name or 'unknown'} (PID {pid}) [{', '.join(reasons)}]"
+                )
 
         if flagged:
             return f"[red]⚠️  {len(flagged)} suspicious[/]"
@@ -147,6 +152,7 @@ def check_suspicious_procs():
 
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
+
 
 # The following check is designed to identify "high-risk" world-writable items in critical system locations. While world-writable files/directories are not inherently malicious, those that are located in sensitive areas (like /etc or /usr/bin) and especially if they are executable or root-owned, can be strong indicators of potential compromise or misconfiguration. This check focuses on surfacing those high-risk items while ignoring more common and less risky world-writable files that are often found in places like /tmp.
 def check_world_writable():
@@ -179,8 +185,13 @@ def check_world_writable():
     ]
 
     skip_prefixes = (
-        "/proc", "/sys", "/run", "/dev", "/snap",
-        "/var/lib/docker", "/var/lib/snapd"
+        "/proc",
+        "/sys",
+        "/run",
+        "/dev",
+        "/snap",
+        "/var/lib/docker",
+        "/var/lib/snapd",
     )
 
     preview = []
@@ -210,8 +221,10 @@ def check_world_writable():
 
                         is_dir = stat.S_ISDIR(st.st_mode)
                         is_reg = stat.S_ISREG(st.st_mode)
-                        is_executable = bool(st.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH))
-                        is_root_owned = (st.st_uid == 0)
+                        is_executable = bool(
+                            st.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                        )
+                        is_root_owned = st.st_uid == 0
 
                         high_risk = False
 
@@ -248,6 +261,7 @@ def check_world_writable():
 
     except Exception as e:
         return (f"⚠️ Error: {str(e)}", [])
+
 
 # The following check looks for the presence of SSH authorized_keys files in user home directories and root, and counts the number of key lines. While the mere presence of authorized_keys is not necessarily a sign of compromise (as it can be used for legitimate key-based access), it is still a notable finding that may warrant review, especially if there are many keys or if the file is found in unexpected locations. This check is designed to be "snapshot-style" by reporting the presence and count of keys without making assumptions about their validity or intent.
 def check_ssh_keys():
@@ -289,6 +303,7 @@ def check_ssh_keys():
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
 
+
 # The following check looks for failed SSH login attempts in the system authentication logs (like auth.log or secure) for the current day. While failed login attempts can be common and not necessarily indicative of a compromise, a high number of them in a short period can be a strong signal of brute-force attacks or unauthorized access attempts. This check is designed to be "snapshot-style" by counting today's failed SSH logins and reporting the total, without attempting to analyze patterns or correlate with other events.
 def check_login_events():
     """
@@ -304,7 +319,7 @@ def check_login_events():
             if not os.path.exists(log_path):
                 continue
 
-            with open(log_path, "r", errors='ignore') as log:
+            with open(log_path, "r", errors="ignore") as log:
                 for line in log:
                     if today in line and "Failed password" in line:
                         failed += 1
@@ -317,6 +332,7 @@ def check_login_events():
 
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
+
 
 # ----------------------------
 # Runner

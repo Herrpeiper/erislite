@@ -1,11 +1,11 @@
 # Project: ErisLITE
-# Module: network_tools.py
+# Module: tools.py
 # Author: Liam Piper-Brandon
-# Version: 1.1
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-01
-# Description: Network utility tools: IPs, gateway, DNS, ping, traceroute, WHOIS, connections.
+# Last Updated: 2026-09-02
+# Description: Network utilities: addressing, DNS, diagnostics, WHOIS, and connections.
 
 import os, platform, psutil, re, socket, subprocess
 
@@ -17,21 +17,33 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.config.settings import APP_NAME, APP_VERSION, NETWORK_LOG_DIR
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
 
 COMMON_PORTS = {
-    22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS",
-    80: "HTTP", 110: "POP3", 143: "IMAP", 443: "HTTPS",
+    22: "SSH",
+    23: "Telnet",
+    25: "SMTP",
+    53: "DNS",
+    80: "HTTP",
+    110: "POP3",
+    143: "IMAP",
+    443: "HTTPS",
     3306: "MySQL",
 }
 
 EXTENDED_PORTS = {
-    21: "FTP", 135: "RPC", 139: "NetBIOS", 445: "SMB",
-    1433: "SQL Server", 1521: "Oracle DB", 3389: "RDP",
-    5432: "PostgreSQL", 9000: "Web UI",
+    21: "FTP",
+    135: "RPC",
+    139: "NetBIOS",
+    445: "SMB",
+    1433: "SQL Server",
+    1521: "Oracle DB",
+    3389: "RDP",
+    5432: "PostgreSQL",
+    9000: "Web UI",
 }
 
 KNOWN_PORTS = {**COMMON_PORTS, **EXTENDED_PORTS}
@@ -76,7 +88,9 @@ def show_ips() -> None:
 
             table.add_row(iface, family, addr.address)
 
-    console.print(table if table.row_count else "[yellow]No active IP addresses found.[/]")
+    console.print(
+        table if table.row_count else "[yellow]No active IP addresses found.[/]"
+    )
     pause_return()
 
 
@@ -144,7 +158,11 @@ def ping_host() -> None:
     target = Prompt.ask("[cyan]Target[/]", default="8.8.8.8")
 
     try:
-        cmd = ["ping", "-n", "4", target] if platform.system() == "Windows" else ["ping", "-c", "4", target]
+        cmd = (
+            ["ping", "-n", "4", target]
+            if platform.system() == "Windows"
+            else ["ping", "-c", "4", target]
+        )
         console.print(f"\n[cyan]Pinging[/] [white]{target}[/]\n")
 
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -203,11 +221,13 @@ def show_active_connections() -> None:
 
             l_addr, l_port = (
                 (":".join(local_raw.split(":")[:-1]), local_raw.split(":")[-1])
-                if ":" in local_raw else (local_raw, "-")
+                if ":" in local_raw
+                else (local_raw, "-")
             )
             r_addr, r_port = (
                 (":".join(remote_raw.split(":")[:-1]), remote_raw.split(":")[-1])
-                if ":" in remote_raw else (remote_raw, "-")
+                if ":" in remote_raw
+                else (remote_raw, "-")
             )
 
             if r_addr not in {"*", "0.0.0.0"}:
@@ -240,7 +260,7 @@ def show_active_connections() -> None:
         )
 
         if save == "y":
-            log_dir = "data/logs/network_connections"
+            log_dir = NETWORK_LOG_DIR
             os.makedirs(log_dir, exist_ok=True)
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -336,7 +356,11 @@ def whois_lookup() -> None:
             value = (match.group(1) or match.group(2)).strip()
 
             if label == "DNSSEC":
-                value = f"[green]{value}[/]" if value.lower() == "signed" else f"[red]{value}[/]"
+                value = (
+                    f"[green]{value}[/]"
+                    if value.lower() == "signed"
+                    else f"[red]{value}[/]"
+                )
 
             elif label == "Expires":
                 try:
@@ -353,7 +377,9 @@ def whois_lookup() -> None:
             parsed_summary[label] = value
 
         if parsed_summary:
-            lines = [f"[cyan]{key}:[/] {value}" for key, value in parsed_summary.items()]
+            lines = [
+                f"[cyan]{key}:[/] {value}" for key, value in parsed_summary.items()
+            ]
             console.print(
                 Panel(
                     "\n".join(lines),

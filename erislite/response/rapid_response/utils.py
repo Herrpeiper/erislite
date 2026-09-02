@@ -1,3 +1,12 @@
+# Project: ErisLITE
+# Module: utils.py
+# Author: Liam Piper-Brandon
+# Version: 1.1.0
+# License: MIT
+# Created: 2025-06-01
+# Last Updated: 2026-09-02
+# Description: Shared Rapid Response utility functions and runtime paths.
+
 from __future__ import annotations
 
 import shutil, subprocess
@@ -15,9 +24,7 @@ def have(cmd: str) -> bool:
 
 def run_cmd(args: List[str], timeout: int = 10) -> Tuple[int, str, str]:
     try:
-        result = subprocess.run(
-            args, capture_output=True, text=True, timeout=timeout
-        )
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
         return result.returncode, result.stdout.strip(), result.stderr.strip()
     except Exception as e:
         return 1, "", str(e)

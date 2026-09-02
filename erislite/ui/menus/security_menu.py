@@ -1,14 +1,13 @@
 # Project: ErisLITE
 # Module: security_menu.py
 # Author: Liam Piper-Brandon
-# Version: 1.1
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-01
-# Description: Security tools menu with last-sweep dashboard panel.
+# Last Updated: 2026-09-02
+# Description: Security tools menu with threat sweep and posture workflows.
 
 import json
-from pathlib import Path
 
 from rich import box
 from rich.panel import Panel
@@ -17,7 +16,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.accounts import login_audit, ssh_config, ssh_keys, users
-from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.config.settings import APP_NAME, APP_VERSION, LAST_SWEEP_FILE
 from erislite.containers import docker
 from erislite.network import hosts, listeners
 from erislite.persistence import backdoors, cron, suid, world_writable
@@ -31,7 +30,9 @@ from erislite.vulnerability import cve_checker
 
 def get_last_sweep_summary():
     try:
-        with open(Path.home() / ".erislite" / "last_sweep.json", "r", encoding="utf-8") as file:
+        with open(
+            LAST_SWEEP_FILE, "r", encoding="utf-8"
+        ) as file:
             return json.load(file)
     except Exception:
         return None
@@ -112,6 +113,7 @@ def _render_last_sweep(summary) -> None:
     )
     console.print()
 
+
 def _build_menu() -> Table:
     menu = Table(show_header=False, box=None, padding=(0, 1), collapse_padding=True)
     menu.add_column(no_wrap=True)
@@ -173,7 +175,9 @@ def _run_sweep_menu(profile: dict) -> None:
 
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_row("[cyan][1][/]", "Quick", "[dim]Listeners, users, login[/]")
-    table.add_row("[cyan][2][/]", "Standard", "[dim]Integrity, listeners, users, login, CVE[/]")
+    table.add_row(
+        "[cyan][2][/]", "Standard", "[dim]Integrity, listeners, users, login, CVE[/]"
+    )
     table.add_row("[cyan][3][/]", "Full", "[dim]All security checks[/]")
     table.add_row("[cyan][0][/]", "Back", "")
 
@@ -209,11 +213,15 @@ def run(profile: dict) -> None:
             "[cyan]r[/] Rerun Last"
         )
 
-        choice = Prompt.ask(
-            "\n[cyan]Select an option[/]",
-            default="0",
-            show_default=False,
-        ).strip().lower()
+        choice = (
+            Prompt.ask(
+                "\n[cyan]Select an option[/]",
+                default="0",
+                show_default=False,
+            )
+            .strip()
+            .lower()
+        )
 
         if choice in ("0", "b"):
             break

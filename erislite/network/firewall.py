@@ -1,11 +1,11 @@
 # Project: ErisLITE
-# Module: firewall_check.py
+# Module: firewall.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
-# Description: Firewall status check: UFW, firewalld, nftables, iptables.
+# Last Updated: 2026-09-02
+# Description: Firewall status inspection for UFW, firewalld, nftables, and iptables.
 
 import subprocess
 
@@ -15,6 +15,7 @@ from rich.align import Align
 from erislite.ui.utils import clear_screen, show_header, pause_return
 
 console = Console()
+
 
 # Firewall Check Tool
 def run_firewall_check(silent=False):
@@ -41,7 +42,9 @@ def run_firewall_check(silent=False):
 
     try:
         # Check firewalld
-        firewalld = subprocess.run(["systemctl", "is-active", "firewalld"], capture_output=True, text=True)
+        firewalld = subprocess.run(
+            ["systemctl", "is-active", "firewalld"], capture_output=True, text=True
+        )
         if "active" in firewalld.stdout:
             fw_type = "firewalld"
             active = True
@@ -75,11 +78,7 @@ def run_firewall_check(silent=False):
         tags.append("firewall_disabled")
 
     if silent:
-        return {
-            "status": status,
-            "details": [detail],
-            "tags": tags
-        }
+        return {"status": status, "details": [detail], "tags": tags}
 
     # Interactive output
     clear_screen()
@@ -93,8 +92,4 @@ def run_firewall_check(silent=False):
     console.print(Align.center(table))
     pause_return()
 
-    return {
-        "status": status,
-        "details": [detail],
-        "tags": tags
-    }
+    return {"status": status, "details": [detail], "tags": tags}

@@ -7,53 +7,90 @@
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-stable-green)
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
 
-*A modular Linux security monitoring toolkit for analysts, students and system administrators.*
+*A modular Linux security monitoring and triage toolkit for analysts, students, and system administrators.*
 
-ErisLITE is a standalone CLI tool for interactive security auditing on Linux hosts. Run threat sweeps, inspect system configuration, and review findings — no external dependencies or infrastructure required.
+ErisLITE is a standalone CLI toolkit for interactive security auditing, host triage, and competition-focused incident response on Linux systems.
 
-Designed for CCDC competitors, security students and sysadmins who need fast, readable triage output on a live system.
+Run threat sweeps, inspect system configuration, review historical findings, capture host snapshots, and perform rapid-response actions without requiring external infrastructure or cloud services.
+
+ErisLITE is designed primarily for CCDC-style competition environments, cybersecurity students, analysts, and administrators who need fast, readable, local-first host visibility.
 
 ---
 
 ## Features
 
-### Security Modules (14 total)
+### Security Checks
 
 | Module | What it checks |
 |--------|----------------|
-| Network Listeners | Active TCP/UDP listeners with risk classification |
-| Listener Check | Heuristic suspicious-listener detection |
-| User Anomaly Scan | UID 0 clones, hidden accounts, bad shells |
-| Login / Auth Logs | Failed logins, root shells, auth anomalies |
-| Kernel Modules | Known-bad or untracked kernel modules |
-| Cron & Timers | Suspicious scheduled tasks and systemd timers |
-| CVE Version Check | Kernel / sudo / glibc version matches (offline) |
-| SSH Keys | Enumerates `authorized_keys` across all users |
-| SSH Config Audit | `sshd_config` settings against secure defaults |
-| World-Writable | World-writable files and dirs in critical paths |
-| SUID / SGID | Unexpected SUID/SGID binaries |
-| Docker Security | Privileged containers and exposed sockets |
-| Firewall Status | UFW / iptables presence and rule state |
-| File Integrity | SHA-256 baseline check on critical system files |
+| Posture Snapshot | High-level security posture and host exposure |
+| Network Listeners | Active TCP/UDP listeners with contextual risk classification |
+| User Account Scan | UID anomalies, shell configuration, suspicious accounts |
+| Login / Auth Logs | Failed logins, interactive root shells, recent login activity |
+| Kernel Modules | Known-bad, unresolved, or unusually located kernel modules |
+| File Integrity | SHA-256 baseline validation for monitored critical files |
+| World-Writable Files | Writable execution and persistence paths in sensitive locations |
+| SUID / SGID | Unexpected privileged executables and risky locations |
+| Cron / Timers | Suspicious cron jobs, periodic scripts, and systemd timer services |
+| SSH Config Audit | Explicit `sshd_config` settings against the ErisLITE hardening baseline |
+| SSH Key Check | Authorized key enumeration and privileged-account key review |
+| Hosts Tamper Check | Suspicious `/etc/hosts` redirects and hostname mappings |
+| Process Anomaly Scan | Suspicious execution paths, deleted binaries, and process indicators |
+| Docker Security | Privileged containers, sensitive mounts, and Docker socket exposure |
+| Firewall Status | UFW, firewalld, nftables, and iptables state |
+| CVE Version Check | Offline software-version matching against the local CVE cache |
+| Backdoor Detection | Shell init, profile, and `LD_PRELOAD` persistence indicators |
 
-### Additional Tools (v1.0.0)
+### Threat Sweep
+
+Threat Sweep combines selected modules into structured security profiles:
+
+| Profile | Scope |
+|---------|-------|
+| `quick` | Listeners, users, authentication |
+| `standard` | Integrity, listeners, users, authentication, CVE checks |
+| `full` | Full host security and persistence assessment |
+
+Threat Sweep provides:
+
+- weighted risk scoring relative to the selected profile
+- per-module status and findings
+- threat tags with analyst-oriented explanations
+- top risk contributors
+- historical JSON logging
+- full report viewing from previous sweeps
+
+Risk is displayed relative to the checks that actually ran. For example:
+
+```text
+Score: 30/95
+Rating: 32%
+Risk Level: Moderate
+
+### Additional Tools
 
 | Tool | What it does |
 |------|--------------|
-| Backdoor Check | Inspects shell init files, profile.d, and LD_PRELOAD for persistence indicators |
-| Hosts Check | Flags `/etc/hosts` entries that redirect critical domains or appear malicious |
-| Process Check | Identifies root processes running from suspicious paths, deleted executables, or known bad tool names |
-| Rapid Response | Triage scan with dry-run and live containment modes — see warning below |
+| System Snapshot | Captures host, network, routing, and posture information to a timestamped log |
+| Snapshot Log Viewer | Reviews previously captured system snapshots |
+| Sweep Log Viewer | Browses recent Threat Sweeps and full per-module reports |
+| SOC Mode | Repeated host posture collection for short-duration monitoring |
+| Rapid Response | Triage, dry-run containment, live response actions, and rollback support |
+| CVE Tools | Offline CVE search against the local cache |
 
 ### CLI
-- Interactive menu system with section-grouped security tools
+
+- Interactive Rich-based terminal interface
+- Section-grouped security tools
 - Threat Sweep with `quick`, `standard`, and `full` profiles
-- Risk scoring (0–100) with colour-coded results and threat insight panel
-- System snapshot logging to `data/logs/`
-- Sweep log viewer with previous result browsing
-- SOC Mode: 15-minute rolling log snapshot
+- Weighted risk scoring relative to the checks executed
+- Per-module findings and threat insights
+- Historical Threat Sweep logging and report viewing
+- System snapshot logging
+- SOC Mode rolling posture collection
+- Consistent `[ENTER] Return to menu` navigation
 
 ---
 
@@ -99,57 +136,94 @@ Typical workflow:
 ```
 ErisLITE/
 │
-├── core/
-│   ├── network_scan.py
-│   ├── login_audit.py
-│   ├── cve_checker.py
-│   ├── security_audit.py
-│   ├── user_profile.py
-│   ├── log_viewer.py
-│   ├── cve_tools.py
-│   ├── system_info.py
-│   ├── network_tools.py
-│   ├── port_scan.py
+├── erislite/
+│   │
+│   ├── accounts/
+│   │   ├── profile.py
+│   │   ├── login_audit.py
+│   │   ├── users.py
+│   │   ├── ssh_keys.py
+│   │   └── ssh_config.py
+│   │
+│   ├── config/
+│   │   ├── settings.py
+│   │   ├── theme.py
+│   │   └── logging.py
+│   │
+│   ├── containers/
+│   │   └── docker.py
+│   │
+│   ├── network/
+│   │   ├── scan.py
+│   │   ├── tools.py
+│   │   ├── ports.py
+│   │   ├── listeners.py
+│   │   ├── firewall.py
+│   │   └── hosts.py
+│   │
+│   ├── persistence/
+│   │   ├── cron.py
+│   │   ├── suid.py
+│   │   ├── world_writable.py
+│   │   └── backdoors.py
+│   │
+│   ├── response/
+│   │   ├── security_log.py
+│   │   └── rapid_response/
+│   │       ├── menu.py
+│   │       ├── triage.py
+│   │       ├── actions.py
+│   │       ├── undo.py
+│   │       └── utils.py
+│   │
+│   ├── sweep/
+│   │   ├── threat_sweep.py
+│   │   ├── viewer.py
+│   │   ├── snapshot.py
+│   │   ├── log_viewer.py
+│   │   └── soc_mode.py
+│   │
+│   ├── system/
+│   │   ├── info.py
+│   │   ├── processes.py
+│   │   ├── kernel_modules.py
+│   │   ├── integrity.py
+│   │   └── security_audit.py
+│   │
+│   ├── ui/
+│   │   ├── console.py
+│   │   ├── utils.py
+│   │   ├── splash.py
+│   │   ├── cli.py
+│   │   └── menus/
+│   │       ├── security_menu.py
+│   │       ├── network_menu.py
+│   │       ├── system_menu.py
+│   │       ├── cve_tools_menu.py
+│   │       └── help_menu.py
+│   │
+│   ├── vulnerability/
+│   │   ├── cve_checker.py
+│   │   └── cve_tools.py
+│   │
 │   └── version.py
 │
-├── tools/
-│   ├── threat_sweep.py
-│   ├── snapshot.py
-│   ├── listener_check.py
-│   ├── user_anomaly.py
-│   ├── integrity_tools.py
-│   ├── kernel_module_check.py
-│   ├── ssh_key_check.py
-│   ├── ssh_config_check.py
-│   ├── world_writable_check.py
-│   ├── cron_timer_check.py
-│   ├── suid_check.py
-│   ├── docker_check.py
-│   ├── firewall_check.py
-│   ├── backdoor_check.py       ← new in v1.0.0
-│   ├── hosts_check.py          ← new in v1.0.0
-│   ├── process_check.py        ← new in v1.0.0
-│   └── rapid_response.py       ← new in v1.0.0
-│
-├── ui/
-│   ├── cli.py
-│   ├── splash.py
-│   └── menus/
-│       ├── security_menu.py
-│       ├── network_menu.py
-│       ├── system_menu.py
-│       ├── cve_tools_menu.py
-│       └── help_menu.py
+├── data/
+│   ├── integrity/
+│   └── logs/
+│       ├── threat_sweeps/
+│       ├── soc_mode/
+│       └── network_connections/
 │
 ├── infra/
 │   └── systemd/
 │       └── erislite-agent.service
 │
-├── data/
-│   └── logs/
-│
+├── assets/
 ├── main.py
 ├── requirements.txt
+├── CHANGELOG.md
+├── LICENSE
 └── README.md
 ```
 
@@ -157,25 +231,35 @@ ErisLITE/
 
 ## First Run Notes
 
-**Integrity baseline** — the File Integrity module requires a baseline before it can detect changes. On first run, go to Security Tools → File Integrity Monitor → Create Integrity Baseline. The baseline is stored in `data/integrity/` and is gitignored by design.
+**Integrity baseline** — File Integrity requires a baseline before it can detect changes. On first run, go to **Security Tools → File Integrity → Create Integrity Baseline**. Runtime integrity data is stored under `data/integrity/` and is gitignored by design.
 
-**User profile** — `user_profile.json` is auto-generated on first launch and locked read-only. To suppress snapshot alerts for known users, add usernames to the `known_users` list in the profile. You will need to temporarily `chmod 644` it first.
+ErisLITE records which monitored files were successfully hashed and which were unavailable. Protected files may require root privileges, but unavailable files do not automatically invalidate a correctly recorded baseline.
 
-**Root access** — some modules (kernel modules, world-writable scan, SUID scan, auth logs, process check) require root to return complete results. Run with `sudo` for full coverage.
+**User profile** — ErisLITE maintains user and host profile information used by portions of the CLI and snapshot tooling. Runtime user data is stored under `~/.erislite/`.
 
-**CVE version checker** — performs offline version matching only against known vulnerable version ranges for the kernel, sudo, and glibc. A match does not confirm a vulnerability. Vendors frequently backport patches without changing the base version number. Always verify findings against vendor advisories before taking action.
+**Root access** — some checks require elevated privileges for complete results, including authentication logs, kernel modules, SUID/SGID inspection, protected integrity targets, process inspection, and portions of persistence scanning. Run with `sudo` when full host coverage is required.
 
-**Rapid Response live mode** — `rapid_response.py` includes a live containment mode that will actively modify system state (killing processes, modifying firewall rules, etc.). Always run in dry-run mode first to review planned actions before executing live. Understand what the tool will do before running it with root privileges.
+**CVE version checker** — performs offline version matching against the local CVE cache. A version match does not confirm a vulnerability. Vendors frequently backport fixes without changing the upstream version string. Always verify findings against vendor advisories.
+
+**Threat Sweep history** — historical sweeps are stored under `data/logs/threat_sweeps/`. The latest sweep summary is also stored at `~/.erislite/last_sweep.json`.
+
+**Rapid Response live mode** — Rapid Response includes dry-run and live containment actions. Live mode can modify system state, terminate processes, change firewall behavior, and perform other containment actions. Review dry-run output before executing live actions.
 
 ---
 
 ## Development
 
-ErisLITE is designed for modular extension. To add a new security module:
+ErisLITE uses a domain-oriented package structure. New modules should be placed in the appropriate package under `erislite/`.
 
-1. Create `tools/my_check.py` with a `run_my_check(silent=False)` function that returns `{"status": ..., "details": [...], "tags": [...]}`
-2. Add it to `ui/menus/security_menu.py`
-3. Add it to the `profiles` dict in `tools/threat_sweep.py`
+A security check should support structured non-interactive results:
+
+```python
+def run_my_check(silent: bool = False) -> dict:
+    return {
+        "status": "ok",
+        "details": [],
+        "tags": [],
+    }
 
 ---
 
@@ -197,6 +281,6 @@ ErisLITE is intended for use on systems you own or have explicit written authori
 
 The CVE version checker performs offline version matching only. A version match does not confirm a vulnerability — vendors frequently backport patches without changing the base version number. Do not treat a match as a confirmed finding without verifying against vendor advisories.
 
-`rapid_response.py` includes a live containment mode that actively modifies system state. Always use dry-run mode first. Running live containment without understanding its actions may disrupt services or cause unintended system changes. Use with caution and only on systems you are authorised to modify.
+Rapid Response includes live containment functionality that can modify system state or disrupt services. Always review dry-run output first. Use live actions only on systems you are authorised to modify and only when you understand the actions being performed.
 
 This software is provided as-is with no warranty of any kind. The author accepts no liability for damages, data loss, or service disruption resulting from its use.

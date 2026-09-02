@@ -1,3 +1,12 @@
+# Project: ErisLITE
+# Module: theme.py
+# Author: Liam Piper-Brandon
+# Version: 1.1.0
+# License: MIT
+# Created: 2025-06-01
+# Last Updated: 2026-09-02
+# Description: Shared ErisLITE terminal theme and presentation constants.
+
 """
 ErisLITE v1.1
 Centralized Rich theme and UI style definitions.
@@ -13,20 +22,17 @@ ERISLITE_THEME = Theme(
         "secondary": "cyan",
         "muted": "grey62",
         "dim": "grey50",
-
         # Status
         "success": "green",
         "info": "cyan",
         "warning": "yellow",
         "danger": "red",
         "critical": "bold red",
-
         # UI
         "header": "bold cyan",
         "title": "bold white",
         "menu.key": "bold cyan",
         "menu.text": "white",
-
         # Security findings
         "finding.ok": "green",
         "finding.info": "cyan",

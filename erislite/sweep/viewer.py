@@ -1,13 +1,13 @@
 # Project: ErisLITE
-# Module: sweep_viewer.py
+# Module: viewer.py
 # Author: Liam Piper-Brandon
-# Version: 1.1
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-01
-# Description: Threat sweep log viewer: browse and inspect past sweep results.
+# Last Updated: 2026-09-02
+# Description: Threat sweep log viewer for browsing and inspecting saved sweep results.
 
-import json, os
+import json
 
 from rich import box
 from rich.panel import Panel
@@ -15,12 +15,28 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.config.settings import (
+    APP_NAME,
+    APP_VERSION,
+    SWEEP_LOG_DIR,
+)
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
-LOG_DIR = "data/logs/threat_sweeps"
 
+
+def _format_risk(data: dict) -> str:
+    score = data.get("risk_score")
+    maximum = data.get("risk_max")
+    percent = data.get("risk_percent")
+
+    if score is None:
+        return "N/A"
+
+    if maximum is not None and percent is not None:
+        return f"{score}/{maximum} ({percent}%)"
+
+    return str(score)
 
 def _header(title: str) -> None:
     console.print(
@@ -35,27 +51,45 @@ def _header(title: str) -> None:
     )
     console.print()
 
+def _get_profile(data: dict) -> str:
+    return str(
+        data.get(
+            "profile",
+            data.get("sweep_profile", "unknown"),
+        )
+    ).capitalize()
 
 def load_sweep_logs(limit=5):
-    if not os.path.exists(LOG_DIR):
+    if not SWEEP_LOG_DIR.exists():
         return []
 
     logs = []
 
-    for filename in os.listdir(LOG_DIR):
-        if not filename.startswith("sweep_log_") or not filename.endswith(".json"):
-            continue
-
-        path = os.path.join(LOG_DIR, filename)
-
+    for path in SWEEP_LOG_DIR.glob("sweep_log_*.json"):
         try:
-            with open(path, "r", encoding="utf-8") as file:
+            with open(
+                path,
+                "r",
+                encoding="utf-8",
+            ) as file:
                 data = json.load(file)
-                logs.append((data.get("timestamp", "Unknown"), data, filename))
+
+            logs.append(
+                (
+                    data.get("timestamp", "Unknown"),
+                    data,
+                    path.name,
+                )
+            )
+
         except Exception:
             continue
 
-    logs.sort(key=lambda item: item[0], reverse=True)
+    logs.sort(
+        key=lambda item: item[0],
+        reverse=True,
+    )
+
     return logs[:limit]
 
 
@@ -88,8 +122,8 @@ def show_recent_sweeps(limit=5):
 
         table.add_row(
             timestamp,
-            str(data.get("sweep_profile", "unknown")).capitalize(),
-            str(data.get("risk_score", "N/A")),
+            _get_profile(data),
+            _format_risk(data),
             tags,
         )
 
@@ -124,8 +158,8 @@ def view_full_report():
         table.add_row(
             str(index),
             timestamp,
-            str(data.get("sweep_profile", "unknown")).capitalize(),
-            str(data.get("risk_score", "N/A")),
+            _get_profile(data),
+            _format_risk(data),
         )
 
     console.print(table)
@@ -145,13 +179,14 @@ def view_full_report():
     clear_screen()
     _header(f"FULL REPORT — {timestamp}")
 
-    profile = str(selected.get("sweep_profile", "N/A")).capitalize()
-    score = selected.get("risk_score", "N/A")
+    profile = _get_profile(selected)
+
+    risk = _format_risk(selected)
 
     console.print(
         Panel.fit(
             f"[dim]Profile:[/] [white]{profile}[/]   "
-            f"[dim]Risk Score:[/] [white]{score}[/]",
+            f"[dim]Risk:[/] [white]{risk}[/]",
             title="[bold cyan]Sweep Metadata[/]",
             border_style="cyan",
             box=box.ROUNDED,
@@ -165,13 +200,11 @@ def view_full_report():
         all_tags.update(result.get("tags", []))
 
     if all_tags:
-        console.print(
-            f"[dim]Tags:[/] [cyan]{', '.join(sorted(all_tags))}[/]\n"
-        )
+        console.print(f"[dim]Tags:[/] [cyan]{', '.join(sorted(all_tags))}[/]\n")
 
     for module, result in selected.get("results", {}).items():
         status = result.get("status", "unknown").lower()
-        details = result.get("details", ["No details."])
+        details = result.get("details") or ["No issues detected."]
 
         if status == "ok":
             status_text = "[green]OK[/]"
@@ -180,7 +213,7 @@ def view_full_report():
         elif status == "error":
             status_text = "[red]ERROR[/]"
         elif status == "unsupported":
-            status_text = "[magenta]UNSUPPORTED[/]"
+            status_text = "[dim]UNSUPPORTED[/]"
         else:
             status_text = f"[dim]{status.upper()}[/]"
 

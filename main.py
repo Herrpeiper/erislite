@@ -1,11 +1,11 @@
 # Project: ErisLITE
 # Module: main.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
-# Description: ErisLITE entry point — initialises user profile and launches the CLI.
+# Last Updated: 2026-09-02
+# Description: ErisLITE entry point — initializes user profile and launches the CLI.
 
 import os
 

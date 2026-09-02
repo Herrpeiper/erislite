@@ -1,11 +1,11 @@
 # Project: ErisLITE
 # Module: log_viewer.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
-# Description: Snapshot log viewer: browse and display saved snapshot logs.
+# Last Updated: 2026-09-02
+# Description: Snapshot log viewer for browsing and displaying saved snapshot logs.
 
 import os
 
@@ -16,9 +16,10 @@ from rich.table import Table
 from rich.align import Align
 
 from erislite.ui.utils import clear_screen, show_header, pause_return
+from erislite.config.settings import SNAPSHOT_LOG_DIR
 
-LOG_DIR = "data/logs"
 console = Console()
+
 
 # Function to view snapshot logs
 def view_snapshot_logs():
@@ -26,12 +27,14 @@ def view_snapshot_logs():
     show_header("SNAPSHOT LOG VIEWER")
 
     try:
-        if not os.path.exists(LOG_DIR):
+        if not os.path.exists(SNAPSHOT_LOG_DIR):
             console.print("[yellow]No logs directory found.[/]")
             pause_return()
             return
 
-        files = [f for f in os.listdir(LOG_DIR) if f.endswith(".txt") and "snapshot" in f]
+        files = [
+            f for f in os.listdir(SNAPSHOT_LOG_DIR) if f.endswith(".txt") and "snapshot" in f
+        ]
         files.sort(reverse=True)
 
         if not files:
@@ -49,11 +52,13 @@ def view_snapshot_logs():
         console.print(Align.center(table))
 
         choice = Prompt.ask(
-            "\n[bold green]Select a log to view[/] (1-{}) or [b]Q[/b] to cancel".format(len(files)),
-            default="1"
+            "\n[bold green]Select a log to view[/] (1-{}) or [b]Q[/b] to cancel".format(
+                len(files)
+            ),
+            default="1",
         )
 
-        if choice.lower() == 'q':
+        if choice.lower() == "q":
             return
 
         try:
@@ -68,7 +73,7 @@ def view_snapshot_logs():
             pause_return()
             return
 
-        selected_file = os.path.join(LOG_DIR, files[index])
+        selected_file = os.path.join(SNAPSHOT_LOG_DIR, files[index])
         clear_screen()
         show_header("LOG FILE: " + files[index])
 

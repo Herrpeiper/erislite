@@ -1,11 +1,11 @@
 # Project: ErisLITE
 # Module: splash.py
 # Author: Liam Piper-Brandon
-# Version: 1.1
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-01
-# Description: Startup splash screen with system profile and version info.
+# Last Updated: 2026-09-02
+# Description: Startup splash screen with host profile and version information.
 
 import platform
 import time
@@ -117,22 +117,10 @@ def show_splash(profile: dict) -> None:
         justify="center",
     )
 
-    console.print(
-        Align.center(
-            "[cyan]────────────────────────────────────────────[/]"
-        )
-    )
+    console.print(Align.center("[cyan]────────────────────────────────────────────[/]"))
 
-    console.print(
-        Align.center(
-            f"[italic white]{quote}[/]"
-        )
-    )
+    console.print(Align.center(f"[italic white]{quote}[/]"))
 
-    console.print(
-        Align.center(
-            "[cyan]────────────────────────────────────────────[/]"
-        )
-    )
+    console.print(Align.center("[cyan]────────────────────────────────────────────[/]"))
 
     time.sleep(1.5)

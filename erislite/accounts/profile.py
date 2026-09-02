@@ -1,11 +1,11 @@
 # Project: ErisLITE
-# Module: user_profile.py
+# Module: profile.py
 # Author: Liam Piper-Brandon
-# Version: 1.0
+# Version: 1.1.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-04-05
-# Description: Manages user_profile.json: creation, locking, and forward-migration of missing fields.
+# Last Updated: 2026-09-02
+# Description: Manages user profile creation, locking, and migration.
 
 import json
 import os
@@ -19,19 +19,19 @@ console = Console()
 # Profile lives in data/ alongside logs, integrity, etc.
 # Path is resolved relative to this file so it always points to the right
 # place regardless of what directory Python is launched from.
-_REPO_ROOT   = Path(__file__).resolve().parent.parent
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 PROFILE_PATH = _REPO_ROOT / "data" / "user_profile.json"
 
 # Schema defaults — add new fields here when the schema changes.
 # load_or_create_profile() will automatically backfill them into any
 # existing profile that is missing them.
 PROFILE_DEFAULTS = {
-    "hostname":       None,     # set to socket.gethostname() at creation time
-    "segment":        "default",
-    "role":           "workstation",
-    "analyst_id":     0,
-    "edge_firewall":  "unknown",
-    "known_users":    [],       # v0.6.0 — suppresses UNRECOGNIZED alerts in snapshots
+    "hostname": None,  # set to socket.gethostname() at creation time
+    "segment": "default",
+    "role": "workstation",
+    "analyst_id": 0,
+    "edge_firewall": "unknown",
+    "known_users": [],  # v0.6.0 — suppresses UNRECOGNIZED alerts in snapshots
 }
 
 
@@ -68,7 +68,9 @@ def load_or_create_profile() -> dict:
             with open(PROFILE_PATH) as f:
                 profile = json.load(f)
         except (json.JSONDecodeError, OSError) as e:
-            console.print(f"[red]Warning: could not read user_profile.json ({e}). Using defaults.[/]")
+            console.print(
+                f"[red]Warning: could not read user_profile.json ({e}). Using defaults.[/]"
+            )
             profile = {}
 
         profile, changed = _migrate(profile)
@@ -92,5 +94,7 @@ def load_or_create_profile() -> dict:
 
         _lock(PROFILE_PATH)
 
-        console.print("[yellow]User profile created at data/user_profile.json and locked (read-only).[/]")
+        console.print(
+            "[yellow]User profile created at data/user_profile.json and locked (read-only).[/]"
+        )
         return profile

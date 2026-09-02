@@ -6,6 +6,101 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [1.1.0] - 2026-09-02
+
+### Added
+- New domain-based `erislite/` package structure replacing the legacy top-level `core/`, `tools/`, and `ui/` layout
+- `erislite.config` package for centralized application settings, paths, logging, and theme configuration
+- Centralized runtime path definitions for:
+  - threat sweep logs
+  - SOC Mode logs
+  - network connection logs
+  - integrity baselines
+  - user runtime data
+- Historical Threat Sweep logging under `data/logs/threat_sweeps/`
+- Threat Sweep report viewer with:
+  - recent sweep history
+  - full per-module reports
+  - profile metadata
+  - normalized risk score display
+  - threat tag summaries
+- Structured detection reasons and status summaries across security modules
+- Shared ErisLITE console instance for consistent Rich terminal rendering
+
+### Changed
+- Refactored application modules into domain packages:
+  - `erislite.accounts`
+  - `erislite.containers`
+  - `erislite.network`
+  - `erislite.persistence`
+  - `erislite.response`
+  - `erislite.sweep`
+  - `erislite.system`
+  - `erislite.ui`
+  - `erislite.vulnerability`
+- Rapid Response split from a single large module into:
+  - `menu.py`
+  - `triage.py`
+  - `actions.py`
+  - `undo.py`
+  - `utils.py`
+- Redesigned terminal UI across the application with a consistent cyan ErisLITE visual language
+- Replaced legacy centered tables, emoji-heavy status output, and magenta styling with compact Rich panels and tables
+- Standardized global return prompt to `[ENTER] Return to menu`
+- `erislite/version.py` is now the single source of truth for application version metadata
+- `erislite.config.settings.APP_VERSION` now derives from `erislite.version.VERSION`
+- Threat Sweep profiles are now centralized in `erislite.config.settings.SWEEP_PROFILES`
+- Threat Sweep risk scoring now preserves the full weighted score instead of capping the raw score at 100
+- Sweep logs now store:
+  - raw risk score
+  - maximum possible score
+  - percentage rating
+  - profile
+  - hostname
+  - tags
+  - per-module results
+- File Integrity baseline metadata now records monitored, recorded, and unavailable files
+- SSH Key Check now treats normal user authorized keys as informational and flags only unusual placement or key formats
+- SSH key display now uses SHA-256 fingerprints instead of truncated raw public keys
+- SSH Config Audit now distinguishes explicit secure, insecure, and unset directives
+- SUID/SGID Scan now reports known-safe and review-required privileged binaries separately
+- World-Writable Check now focuses filtered scans on persistence- and execution-sensitive paths
+- Cron / Timer Check now parses system crontabs, user crontabs, periodic scripts, and systemd timers according to their actual formats
+- Hosts Tamper Check now uses IP-aware analysis for private, loopback, and duplicate mappings
+- Backdoor Detection now separates persistence findings from collection/read errors
+- Docker Security Check now distinguishes unavailable Docker inspection from a valid zero-container result
+- Kernel Module Check now reports unavailable `lsmod` support instead of treating an empty collection as clean
+
+### Fixed
+- Threat Sweep log writer and viewer now use the same directory, filename convention, and result schema
+- SUID/SGID result is correctly included in Threat Sweep scoring
+- Kernel module inspection no longer reports a false clean result when `lsmod` is unavailable
+- File Integrity no longer treats an incomplete-but-accounted-for baseline as tampered
+- Fixed File Integrity baseline modification-time false positives
+- World-Writable Scan no longer produces thousands of low-value findings from broad `/opt` trees such as Conda installations
+- SUID/SGID known-safe baseline expanded for common Linux privileged helpers
+- Cron scanner no longer flags legitimate `apt-config` use of `eval` as encoded execution
+- Cron parser now handles the username field in `/etc/crontab` and `/etc/cron.d/*`
+- Periodic cron directories are now scanned as executable scripts rather than crontab syntax
+- SSH Config silent mode and interactive mode now use consistent findings
+- Root shell detection now requires an actual terminal session rather than flagging non-interactive shell wrappers
+- Process anomaly scan no longer treats ordinary privileged shell/interpreter wrappers as automatically suspicious
+- Listener detection no longer treats high-numbered ports alone as suspicious
+- User anomaly detection no longer flags normal non-login service accounts for missing home directories or shells
+- `/etc/hosts` loopback mappings are no longer automatically treated as malicious
+- Docker CLI or daemon unavailability no longer appears as a clean Docker result
+- Empty Threat Sweep report panels now display `No issues detected.` instead of rendering blank
+
+### Removed
+- Legacy runtime dependencies on the old `core/`, `tools/`, and top-level `ui/` package structure
+- Duplicate hardcoded application version strings
+- Duplicate Threat Sweep profile definitions
+- Hardcoded ErisLITE runtime paths spread across individual modules
+- Legacy Rapid Response monolithic implementation
+- Environment-specific or overly broad heuristics that generated excessive false positives
+
+---
+
 ## [1.0.0] - 2026-04-05
 
 ### Added
