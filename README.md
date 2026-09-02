@@ -1,7 +1,7 @@
 # ErisLITE
 
 <p align="center">
-  <img src="assets/erislite_logo_v2.svg" alt="ErisLITE" width="600"/>
+  <img src="assets/erislite_logo_v1.1.0.svg" alt="ErisLITE" width="600"/>
 </p>
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
