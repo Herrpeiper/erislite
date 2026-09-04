@@ -87,6 +87,18 @@ def collect_warning_logs():
     return out.splitlines()
 
 
+def get_current_privilege_state():
+    euid = os.geteuid()
+    sudo_user = os.environ.get("SUDO_USER")
+
+    return {
+        "euid": euid,
+        "is_root": euid == 0,
+        "sudo_user": sudo_user,
+        "elevated_via_sudo": euid == 0 and bool(sudo_user),
+    }
+
+
 # Log parsing function
 def parse_logs(lines):
     failed_ssh = 0
@@ -318,7 +330,14 @@ def interactive_soc_mode():
     status = compute_status(parsed, warning_count)
     score = compute_score(parsed, warning_count)
     attention = build_attention(parsed, warning_count)
+    privilege = get_current_privilege_state()
     sweep_summary = load_latest_sweep_summary()
+
+    if privilege["elevated_via_sudo"]:
+        attention.append(
+            f"Current session elevated via sudo "
+            f"from {privilege['sudo_user']}"
+        )
 
     if sweep_summary and sweep_summary["new"]:
         attention.append(
@@ -385,7 +404,11 @@ def interactive_soc_mode():
     table.add_row("ROOT", "Root SSH", str(parsed["root_ssh_success"]))
     table.add_row("ROOT", "su → root", str(parsed["su_to_root"]))
     table.add_row("ROOT", "sudo → root", str(parsed["sudo_to_root"]))
+
     table.add_row("SYSTEM", "Warnings+", str(warning_count))
+    table.add_row("SESSION", "Effective UID", str(privilege["euid"]))
+    table.add_row("SESSION", "Running as Root", "Yes" if privilege["is_root"] else "No")
+    table.add_row("SESSION", "Original User", privilege["sudo_user"] or "N/A")
 
     console.print(table)
     console.print()
