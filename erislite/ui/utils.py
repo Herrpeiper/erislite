@@ -11,6 +11,7 @@ import json
 import os
 import platform
 from datetime import datetime
+from typing import Optional
 
 from rich import box
 from rich.panel import Panel
@@ -45,7 +46,7 @@ def clear_screen() -> None:
 
 def show_header(
     title: str = "ERISLITE",
-    description: str | None = None,
+    description: Optional[str] = None,
 ) -> None:
     """
     Legacy-compatible shared header.

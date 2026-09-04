@@ -104,7 +104,7 @@ def parse_hosts():
             list[(ip, hostname, raw_line, lineno)]
 
         error:
-            str | None
+            Optional[str]
     """
     entries = []
 
