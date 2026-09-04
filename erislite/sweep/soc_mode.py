@@ -477,7 +477,8 @@ def interactive_soc_mode():
     menu.add_row("[bold cyan]DETAILS[/]", "")
     menu.add_row("[cyan][1][/]", "View Root Details")
     menu.add_row("[cyan][2][/]", "View Auth Details")
-    menu.add_row("[cyan][3][/]", "Export Snapshot")
+    menu.add_row("[cyan][3][/]", "View New Sweep Findings")
+    menu.add_row("[cyan][4][/]", "Export Snapshot")
     menu.add_row("", "")
     menu.add_row("[cyan][0][/]", "Back")
 
@@ -529,6 +530,70 @@ def interactive_soc_mode():
         pause_return()
 
     elif choice == "3":
+        console.print()
+
+        if not sweep_summary:
+            console.print(
+                Panel(
+                    "[dim]No saved Threat Sweep is available.[/]",
+                    title="[bold cyan]New Sweep Findings[/]",
+                    border_style="grey37",
+                    box=box.ROUNDED,
+                )
+            )
+
+        elif not sweep_summary["new"]:
+            console.print(
+                Panel(
+                    "[green]No new findings since the previous comparable sweep.[/]",
+                    title="[bold cyan]New Sweep Findings[/]",
+                    border_style="green",
+                    box=box.ROUNDED,
+                )
+            )
+
+        else:
+            findings_table = Table(
+                title="[italic cyan]New Threat Sweep Findings[/]",
+                box=box.SIMPLE_HEAVY,
+                header_style="bold cyan",
+                show_edge=False,
+                padding=(0, 1),
+            )
+
+            findings_table.add_column(
+                "#",
+                style="cyan",
+                justify="right",
+                no_wrap=True,
+            )
+            findings_table.add_column(
+                "Module",
+                style="cyan",
+                no_wrap=True,
+            )
+            findings_table.add_column(
+                "Signal",
+                style="white",
+            )
+
+            for index, signal in enumerate(
+                sweep_summary["new"],
+                start=1,
+            ):
+                module, _, finding = signal.partition(":")
+
+                findings_table.add_row(
+                    str(index),
+                    module.replace("_", " ").title(),
+                    finding or signal,
+                )
+
+            console.print(findings_table)
+
+        pause_return()
+
+    elif choice == "4":
         snapshot = {
             "timestamp": datetime.now().isoformat(),
             "window_minutes": WINDOW_MINUTES,
@@ -557,4 +622,4 @@ def interactive_soc_mode():
         console.print(f"\n[green]Snapshot exported:[/] {path}")
         pause_return()
 
-    # choice "4" or anything else: return to menu
+    # choice "5" or anything else: return to menu
