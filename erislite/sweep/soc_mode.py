@@ -21,7 +21,12 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION, SOC_LOG_DIR
+from erislite.config.settings import (
+    APP_NAME,
+    APP_VERSION,
+    LAST_SWEEP_FILE,
+    SOC_LOG_DIR,
+)
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
@@ -260,6 +265,32 @@ def export_snapshot(snapshot):
         json.dump(snapshot, f, indent=2)
     return path
 
+def load_latest_sweep_summary():
+    if not LAST_SWEEP_FILE.exists():
+        return None
+
+    try:
+        with open(
+            LAST_SWEEP_FILE,
+            "r",
+            encoding="utf-8",
+        ) as file:
+            data = json.load(file)
+    except Exception:
+        return None
+
+    changes = data.get("changes", {})
+
+    return {
+        "timestamp": data.get("timestamp", "Unknown"),
+        "profile": data.get("profile", "unknown"),
+        "risk_score": data.get("risk_score"),
+        "risk_max": data.get("risk_max"),
+        "risk_percent": data.get("risk_percent"),
+        "new": list(changes.get("new", [])),
+        "persisting": list(changes.get("persisting", [])),
+        "resolved": list(changes.get("resolved", [])),
+    }
 
 # --- Main Interactive Function ---
 # This function is the main entry point for the SOC Mode feature. It collects logs, parses them, computes the posture status and score, and displays an interactive report to the user. The user can view details about root activity and auth events, or export a snapshot of the current posture for later analysis.
@@ -287,6 +318,16 @@ def interactive_soc_mode():
     status = compute_status(parsed, warning_count)
     score = compute_score(parsed, warning_count)
     attention = build_attention(parsed, warning_count)
+    sweep_summary = load_latest_sweep_summary()
+
+    if sweep_summary and sweep_summary["new"]:
+        attention.append(
+            f"New Threat Sweep findings detected "
+            f"({len(sweep_summary['new'])})"
+        )
+
+        if status == "STABLE":
+            status = "WATCH"
 
     status_color = {
         "STABLE": "green",
@@ -348,6 +389,69 @@ def interactive_soc_mode():
 
     console.print(table)
     console.print()
+
+    if sweep_summary:
+        sweep_table = Table(
+            title="[italic cyan]Latest Threat Sweep[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+
+        sweep_table.add_column(
+            "Metric",
+            style="cyan",
+            no_wrap=True,
+        )
+        sweep_table.add_column(
+            "Value",
+            style="white",
+        )
+
+        risk_score = sweep_summary["risk_score"]
+        risk_max = sweep_summary["risk_max"]
+        risk_percent = sweep_summary["risk_percent"]
+
+        if (
+            risk_score is not None
+            and risk_max is not None
+            and risk_percent is not None
+        ):
+            risk_text = (
+                f"{risk_score}/{risk_max} "
+                f"({risk_percent}%)"
+            )
+        else:
+            risk_text = "N/A"
+
+        sweep_table.add_row(
+            "Profile",
+            str(sweep_summary["profile"]).capitalize(),
+        )
+        sweep_table.add_row(
+            "Risk",
+            risk_text,
+        )
+        sweep_table.add_row(
+            "NEW",
+            str(len(sweep_summary["new"])),
+        )
+        sweep_table.add_row(
+            "PERSISTING",
+            str(len(sweep_summary["persisting"])),
+        )
+        sweep_table.add_row(
+            "RESOLVED",
+            str(len(sweep_summary["resolved"])),
+        )
+        sweep_table.add_row(
+            "Last Sweep",
+            str(sweep_summary["timestamp"]),
+        )
+
+        console.print(sweep_table)
+        console.print()
 
     if attention:
         attention_text = "\n".join(f"[yellow]•[/] {item}" for item in attention)
@@ -431,6 +535,7 @@ def interactive_soc_mode():
             "status": status,
             "score": score,
             "attention": attention,
+            "sweep": sweep_summary,
             "auth": {
                 "failed_ssh": parsed["failed_ssh"],
                 "failed_ips_top": parsed["failed_ips_top"],
