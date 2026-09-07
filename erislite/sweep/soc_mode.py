@@ -39,8 +39,9 @@ RE_SSH_FAIL = re.compile(r"Failed password for .* from (?P<ip>\d{1,3}(?:\.\d{1,3
 RE_SSH_SUCCESS = re.compile(
     r"Accepted (password|publickey) for (?P<user>\S+) from (?P<ip>\d{1,3}(?:\.\d{1,3}){3})"
 )
-RE_SU_ROOT = re.compile(r"session opened for user root", re.IGNORECASE)
-RE_SUDO_USER = re.compile(r"sudo:?\s+(?P<user>[A-Za-z0-9._-]+)\s*:")
+RE_SUDO_ROOT_TARGET = re.compile(r"\bUSER=root\b", re.IGNORECASE)
+RE_SUDO_ROOT_SESSION = re.compile(r"pam_unix\(sudo(?::session)?\):.*" r"session opened for user root", re.IGNORECASE)
+RE_SU_ROOT_SESSION = re.compile(r"pam_unix\(su(?::session)?\):.*" r"session opened for user root", re.IGNORECASE)
 
 # --- Core Functions ---
 # Note: All functions are designed to be best-effort and not fail if logs are missing or formats vary.
@@ -99,6 +100,49 @@ def get_current_privilege_state():
     }
 
 
+def collect_auth_logs():
+    journal_logs = collect_journal_logs()
+
+    if journal_logs:
+        return {
+            "source": "journalctl",
+            "available": True,
+            "lines": journal_logs,
+        }
+
+    fallback_paths = (
+        "/var/log/auth.log",
+        "/var/log/secure",
+    )
+
+    for path in fallback_paths:
+        if not os.path.isfile(path):
+            continue
+
+        try:
+            with open(
+                path,
+                "r",
+                encoding="utf-8",
+                errors="replace",
+            ) as file:
+                lines = file.readlines()
+        except OSError:
+            continue
+
+        return {
+            "source": path,
+            "available": True,
+            "lines": lines[-1000:],
+        }
+
+    return {
+        "source": "unavailable",
+        "available": False,
+        "lines": [],
+    }
+
+
 # Log parsing function
 def parse_logs(lines):
     failed_ssh = 0
@@ -109,12 +153,14 @@ def parse_logs(lines):
     root_ssh_details = []  # raw lines
 
     sudo_events = 0
-    sudo_details = []  # raw lines (last MAX_DETAIL)
-    sudo_to_root = 0  # sudo where USER=root (best-effort)
-    sudo_to_root_details = []  # raw lines
+    sudo_details = []
+    sudo_to_root = 0
+    sudo_to_root_details = []
+    sudo_root_sessions = 0
+    sudo_root_session_details = []
 
     su_to_root = 0
-    su_to_root_details = []  # raw lines
+    su_to_root_details = []
 
     for line in lines:
         # SSH fail
@@ -137,31 +183,36 @@ def parse_logs(lines):
 
         # su -> root session opened
         # (common: "su: pam_unix(su:session): session opened for user root by <user>(uid=...)")
-        if (
-            " su:" in line
-            or line.strip().startswith("su:")
-            or "pam_unix(su:session)" in line
-        ):
-            if RE_SU_ROOT.search(line):
-                su_to_root += 1
-                su_to_root_details.append(line.strip())
-                if len(su_to_root_details) > MAX_DETAIL:
-                    su_to_root_details = su_to_root_details[-MAX_DETAIL:]
+        if RE_SU_ROOT_SESSION.search(line):
+            su_to_root += 1
+            su_to_root_details.append(line.strip())
 
-        # sudo usage
-        if "sudo" in line and "COMMAND=" in line:
+            if len(su_to_root_details) > MAX_DETAIL:
+                su_to_root_details = su_to_root_details[-MAX_DETAIL:]
+
+        # sudo command execution
+        if "sudo" in line.lower() and "COMMAND=" in line:
             sudo_events += 1
             sudo_details.append(line.strip())
+
             if len(sudo_details) > MAX_DETAIL:
                 sudo_details = sudo_details[-MAX_DETAIL:]
 
-            # sudo to root (best-effort)
-            # logs often include "USER=root" when elevating
-            if "USER=root" in line:
+            if RE_SUDO_ROOT_TARGET.search(line):
                 sudo_to_root += 1
                 sudo_to_root_details.append(line.strip())
+
                 if len(sudo_to_root_details) > MAX_DETAIL:
                     sudo_to_root_details = sudo_to_root_details[-MAX_DETAIL:]
+
+
+        # sudo-created root session
+        if RE_SUDO_ROOT_SESSION.search(line):
+            sudo_root_sessions += 1
+            sudo_root_session_details.append(line.strip())
+
+            if len(sudo_root_session_details) > MAX_DETAIL:
+                sudo_root_session_details = sudo_root_session_details[-MAX_DETAIL:]
 
     top_failed_ips = failed_ips.most_common(3)
     # keep only last MAX_DETAIL successes for display
@@ -178,6 +229,8 @@ def parse_logs(lines):
         "sudo_details": sudo_details,
         "sudo_to_root": sudo_to_root,
         "sudo_to_root_details": sudo_to_root_details,
+        "sudo_root_sessions": sudo_root_sessions,
+        "sudo_root_session_details": sudo_root_session_details,
         "su_to_root": su_to_root,
         "su_to_root_details": su_to_root_details,
     }
@@ -192,8 +245,12 @@ def compute_status(parsed, warning_count):
     - STABLE: otherwise
     """
     root_activity_total = (
-        parsed["root_ssh_success"] + parsed["su_to_root"] + parsed["sudo_to_root"]
+        parsed["root_ssh_success"]
+        + parsed["su_to_root"]
+        + parsed["sudo_to_root"]
+        + parsed["sudo_root_sessions"]
     )
+
     if root_activity_total > 0:
         return "ACTION REQUIRED"
 
@@ -239,7 +296,9 @@ def compute_score(parsed, warning_count):
         score += 10
 
     # root activity is critical
-    if (parsed["root_ssh_success"] + parsed["su_to_root"] + parsed["sudo_to_root"]) > 0:
+    root_activity_total = (parsed["root_ssh_success"] + parsed["su_to_root"] + parsed["sudo_to_root"] + parsed["sudo_root_sessions"])
+
+    if root_activity_total > 0:
         score = max(score, 85)
 
     return min(score, 100)
@@ -255,13 +314,12 @@ def build_attention(parsed, warning_count):
         items.append(f"su → root sessions detected ({parsed['su_to_root']})")
     if parsed["sudo_to_root"] > 0:
         items.append(f"sudo → root executions detected ({parsed['sudo_to_root']})")
-
     if parsed["failed_ssh"] >= 10:
         items.append(f"SSH failure spike ({parsed['failed_ssh']})")
-
+    if parsed["sudo_root_sessions"] > 0:
+        items.append(f"sudo-created root sessions detected " f"({parsed['sudo_root_sessions']})")
     if parsed["sudo_events"] >= 5:
         items.append(f"High sudo activity ({parsed['sudo_events']})")
-
     if warning_count >= 15:
         items.append(f"Elevated system warnings ({warning_count})")
 
@@ -309,29 +367,28 @@ def load_latest_sweep_summary():
 def interactive_soc_mode():
     clear_screen()
 
-    logs = collect_journal_logs()
+    auth_source = collect_auth_logs()
     warn_logs = collect_warning_logs()
     warning_count = len(warn_logs)
 
-    if logs is None:
-        console.print(
-            Panel(
-                "[yellow]No journal logs available.[/]\n"
-                "[dim]Try running ErisLITE with elevated permissions.[/]",
-                title="[bold cyan]SOC MODE[/]",
-                border_style="yellow",
-                box=box.ROUNDED,
-            )
-        )
-        pause_return()
-        return
+    event_source_available = auth_source["available"]
+    event_source_name = auth_source["source"]
 
-    parsed = parse_logs(logs)
+    if event_source_available:
+        parsed = parse_logs(auth_source["lines"])
+    else:
+        parsed = parse_logs([])
     status = compute_status(parsed, warning_count)
     score = compute_score(parsed, warning_count)
     attention = build_attention(parsed, warning_count)
     privilege = get_current_privilege_state()
     sweep_summary = load_latest_sweep_summary()
+
+    if not event_source_available:
+        attention.append(
+            "Authentication event source unavailable; "
+            "privilege-escalation event visibility is limited"
+        )
 
     if privilege["elevated_via_sudo"]:
         attention.append(
@@ -380,6 +437,8 @@ def interactive_soc_mode():
     )
     console.print()
 
+    event_na = "N/A" if not event_source_available else None
+
     top_ips = (
         ", ".join(f"{ip} ({count})" for ip, count in parsed["failed_ips_top"])
         if parsed["failed_ips_top"]
@@ -397,18 +456,20 @@ def interactive_soc_mode():
     table.add_column("Metric", style="white")
     table.add_column("Value", style="white")
 
-    table.add_row("AUTH", "Failed SSH", str(parsed["failed_ssh"]))
-    table.add_row("AUTH", "Top Failed IPs", top_ips)
-    table.add_row("AUTH", "SSH Success", str(parsed["ssh_success_count"]))
-    table.add_row("AUTH", "Sudo Events", str(parsed["sudo_events"]))
-    table.add_row("ROOT", "Root SSH", str(parsed["root_ssh_success"]))
-    table.add_row("ROOT", "su → root", str(parsed["su_to_root"]))
-    table.add_row("ROOT", "sudo → root", str(parsed["sudo_to_root"]))
-
-    table.add_row("SYSTEM", "Warnings+", str(warning_count))
-    table.add_row("SESSION", "Effective UID", str(privilege["euid"]))
-    table.add_row("SESSION", "Running as Root", "Yes" if privilege["is_root"] else "No")
-    table.add_row("SESSION", "Original User", privilege["sudo_user"] or "N/A")
+    table.add_row("AUTH", "Failed SSH", event_na or str(parsed["failed_ssh"]),)
+    table.add_row("AUTH", "Top Failed IPs", event_na or top_ips,)
+    table.add_row("AUTH", "SSH Success", event_na or str(parsed["ssh_success_count"]),)
+    table.add_row("AUTH", "Sudo Events", event_na or str(parsed["sudo_events"]),)
+    table.add_row("ROOT", "Root SSH", event_na or str(parsed["root_ssh_success"]),)
+    table.add_row("ROOT", "su → root", event_na or str(parsed["su_to_root"]),)
+    table.add_row("ROOT", "sudo → root", event_na or str(parsed["sudo_to_root"]),)
+    table.add_row("ROOT", "sudo root session", event_na or str(parsed["sudo_root_sessions"]),)
+    table.add_row("SYSTEM", "Warnings+", str(warning_count),)
+    table.add_row("SESSION", "Effective UID", str(privilege["euid"]),)
+    table.add_row("SESSION", "Running as Root", "Yes" if privilege["is_root"] else "No",)
+    table.add_row("SESSION", "Original User", privilege["sudo_user"] or "N/A",)
+    table.add_row("SOURCE", "Auth Event Source", event_source_name,)
+    table.add_row("SOURCE", "Event Visibility", "Available" if event_source_available else "Limited", )
 
     console.print(table)
     console.print()
@@ -525,7 +586,16 @@ def interactive_soc_mode():
                     + (parsed["su_to_root_details"] or ["[dim]None[/]"])
                     + [""]
                     + ["[bold cyan]sudo → root[/]"]
-                    + (parsed["sudo_to_root_details"] or ["[dim]None[/]"])
+                    + (
+                        parsed["sudo_to_root_details"]
+                        or ["[dim]None[/]"]
+                    )
+                    + [""]
+                    + ["[bold cyan]sudo root sessions[/]"]
+                    + (
+                        parsed["sudo_root_session_details"]
+                        or ["[dim]None[/]"]
+                    )
                 ),
                 title="[bold cyan]Root Details[/]",
                 border_style="cyan",
@@ -623,6 +693,7 @@ def interactive_soc_mode():
             "status": status,
             "score": score,
             "attention": attention,
+            "privilege": privilege,
             "sweep": sweep_summary,
             "auth": {
                 "failed_ssh": parsed["failed_ssh"],
@@ -635,9 +706,14 @@ def interactive_soc_mode():
                 "root_ssh_success": parsed["root_ssh_success"],
                 "su_to_root": parsed["su_to_root"],
                 "sudo_to_root": parsed["sudo_to_root"],
+                "sudo_root_sessions": parsed["sudo_root_sessions"],
             },
             "system": {
                 "warning_count": warning_count,
+            },
+            "event_source": {
+                "source": event_source_name,
+                "available": event_source_available,
             },
         }
 

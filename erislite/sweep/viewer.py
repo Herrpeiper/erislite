@@ -71,6 +71,21 @@ MODULE_LABELS = {
 }
 
 
+def _guidance_for_result(result: dict) -> list:
+    guidance_items = []
+
+    for tag in result.get("tags", []):
+        if has_guidance(tag):
+            guidance_items.append(
+                (
+                    tag,
+                    get_guidance(tag),
+                )
+            )
+
+    return guidance_items
+
+
 def _module_label(module: str) -> str:
     return MODULE_LABELS.get(
         module,
@@ -196,6 +211,7 @@ def show_recent_sweeps(limit=5):
 
 def view_full_report():
     logs = load_sweep_logs(limit=5)
+
 
     if not logs:
         console.print("[yellow]No recent sweep logs found.[/]")
