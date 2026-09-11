@@ -445,52 +445,6 @@ def view_full_report():
                 display_signals,
             )
 
-        change_table.add_column(
-            "State",
-            no_wrap=True,
-        )
-        change_table.add_column(
-            "Count",
-            justify="right",
-        )
-        change_table.add_column(
-            "Signals",
-            style="white",
-        )
-
-        change_rows = (
-            (
-                "[red]NEW[/]",
-                changes["new"],
-            ),
-            (
-                "[yellow]PERSISTING[/]",
-                changes["persisting"],
-            ),
-            (
-                "[green]RESOLVED[/]",
-                changes["resolved"],
-            ),
-        )
-
-        for label, signals in change_rows:
-            display_signals = (
-                ", ".join(signals[:5])
-                if signals
-                else "None"
-            )
-
-            if len(signals) > 5:
-                display_signals += (
-                    f" (+{len(signals) - 5} more)"
-                )
-
-            change_table.add_row(
-                label,
-                str(len(signals)),
-                display_signals,
-            )
-
         console.print(change_table)
         console.print()
 
@@ -510,16 +464,6 @@ def view_full_report():
             status_text = f"[dim]{status.upper()}[/]"
 
         body = "\n".join(f"[dim]•[/] {line}" for line in details)
-
-        console.print(
-            Panel.fit(
-                body,
-                title=f"[bold cyan]{_module_label(module)}[/]  {status_text}",
-                border_style="cyan",
-                box=box.ROUNDED,
-            )
-        )
-        console.print()
 
         console.print(
             Panel.fit(
