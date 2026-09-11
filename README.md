@@ -7,7 +7,7 @@
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-stable-green)
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 
 *A modular Linux security monitoring and triage toolkit for analysts, students, and system administrators.*
 
@@ -61,6 +61,7 @@ Threat Sweep provides:
 - top risk contributors
 - historical JSON logging
 - full report viewing from previous sweeps
+- analyst response guidance with investigation commands and recommendations
 
 Risk is displayed relative to the checks that actually ran. For example:
 
@@ -169,6 +170,7 @@ ErisLITE/
 │   │   └── backdoors.py
 │   │
 │   ├── response/
+│   │   ├── guidance.py
 │   │   ├── security_log.py
 │   │   └── rapid_response/
 │   │       ├── menu.py
@@ -207,6 +209,7 @@ ErisLITE/
 │   │   ├── cve_checker.py
 │   │   └── cve_tools.py
 │   │
+│   ├── results.py
 │   └── version.py
 │
 ├── data/
