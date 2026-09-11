@@ -10,6 +10,8 @@ __pycache__/
 *.pyd
 .Python
 *.egg-info/
+.pytest_cache/
+.ruff_cache/
 dist/
 build/
 
@@ -50,4 +52,4 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
-*.swoinfra/
+*.swo
