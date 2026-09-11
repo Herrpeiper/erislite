@@ -170,8 +170,8 @@ RESPONSE_GUIDANCE = {
     "firewall_ip_empty": {
         "severity": "medium",
         "summary": (
-            "ErisLITE received no usable iptables rule listing. The ruleset may "
-            "be empty, or the current account may lack permission to inspect it."
+            "No meaningful nftables or iptables rules were detected, leaving "
+            "the host without an identified packet-filtering policy."
         ),
         "investigate": [
             "sudo iptables -L -n -v",
@@ -199,6 +199,58 @@ RESPONSE_GUIDANCE = {
             "Review each reported setting against operational requirements, "
             "back up the configuration, and validate changes with sshd -t "
             "before reloading the SSH service."
+        ),
+    },
+
+    "firewall_ufw_inactive": {
+        "severity": "medium",
+        "summary": (
+            "UFW is installed but reported an inactive state, and no other "
+            "supported active firewall was detected."
+        ),
+        "investigate": [
+            "sudo ufw status verbose",
+            "systemctl status ufw --no-pager",
+            "sudo nft list ruleset",
+        ],
+        "recommendation": (
+            "Confirm the intended firewall platform and required services "
+            "before enabling UFW or changing its rules."
+        ),
+    },
+
+    "firewall_permission_denied": {
+        "severity": "medium",
+        "summary": (
+            "ErisLITE could not fully inspect the host firewall because the "
+            "current account lacked the required privileges."
+        ),
+        "investigate": [
+            "id",
+            "sudo ufw status verbose",
+            "sudo nft list ruleset",
+            "sudo iptables -S",
+        ],
+        "recommendation": (
+            "Repeat the inspection with authorized elevated privileges before "
+            "concluding that the firewall is disabled or misconfigured."
+        ),
+    },
+
+    "firewall_check_failed": {
+        "severity": "medium",
+        "summary": (
+            "One or more firewall inspection commands failed without producing "
+            "a recognized permission error."
+        ),
+        "investigate": [
+            "command -v ufw firewall-cmd nft iptables",
+            "systemctl status firewalld --no-pager",
+            "journalctl -u firewalld --since today",
+        ],
+        "recommendation": (
+            "Identify the failing firewall backend and review its diagnostic "
+            "output before modifying firewall configuration."
         ),
     },
 }

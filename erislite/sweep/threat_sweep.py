@@ -95,6 +95,8 @@ THREAT_TAG_MAP = {
     "suid_nonstandard_location": "SUID/SGID binary is located outside standard executable paths.",
     "uid0_clone": "A non-root account has UID 0 and root-equivalent privileges.",
     "weak_ssh_config": "One or more SSH server settings differ from the hardening baseline.",
+    "firewall_permission_denied": ("Firewall state could not be fully inspected with the current privileges."),
+    "firewall_check_failed": "One or more firewall inspection commands failed.",
 }
 
 

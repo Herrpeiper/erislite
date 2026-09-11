@@ -50,6 +50,9 @@ def test_guidance_for_result_returns_known_tags_only():
         ("suspicious_listener", "high"),
         ("firewall_ip_empty", "medium"),
         ("weak_ssh_config", "high"),
+        ("firewall_ufw_inactive", "medium"),
+        ("firewall_permission_denied", "medium"),
+        ("firewall_check_failed", "medium"),
     ],
 )
 def test_live_sweep_tags_have_guidance(tag, expected_severity):
