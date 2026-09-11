@@ -2,9 +2,11 @@ import pytest
 
 from erislite.response.guidance import (
     DEFAULT_GUIDANCE,
+    RESPONSE_GUIDANCE,
     get_guidance,
     has_guidance,
 )
+from erislite.sweep.threat_sweep import THREAT_TAG_MAP
 from erislite.sweep.viewer import _guidance_for_result
 
 
@@ -41,6 +43,7 @@ def test_guidance_for_result_returns_known_tags_only():
         "firewall_disabled",
     ]
 
+
 @pytest.mark.parametrize(
     ("tag", "expected_severity"),
     [
@@ -57,3 +60,7 @@ def test_live_sweep_tags_have_guidance(tag, expected_severity):
     assert guidance["summary"]
     assert guidance["investigate"]
     assert guidance["recommendation"]
+
+
+def test_every_guidance_tag_has_threat_description():
+    assert set(RESPONSE_GUIDANCE) <= set(THREAT_TAG_MAP)

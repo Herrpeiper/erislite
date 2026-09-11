@@ -93,6 +93,8 @@ THREAT_TAG_MAP = {
     "hosts_private_redirect": "External-looking hostname is mapped to a private address.",
     "ssh_keys_unknown_type": "Authorized key uses an unrecognized SSH key format.",
     "suid_nonstandard_location": "SUID/SGID binary is located outside standard executable paths.",
+    "uid0_clone": "A non-root account has UID 0 and root-equivalent privileges.",
+    "weak_ssh_config": "One or more SSH server settings differ from the hardening baseline.",
 }
 
 
