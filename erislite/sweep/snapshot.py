@@ -1,24 +1,24 @@
 # Project: ErisLITE
 # Module: snapshot.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: Captures a system snapshot to a timestamped ErisLITE log.
 
-import os, platform, socket, psutil
+import os
+import platform
+import socket
+from datetime import datetime, timedelta
 
-from datetime import timedelta, datetime
-
+import psutil
 from rich.console import Console
 from rich.panel import Panel
 
-from erislite.ui.utils import clear_screen, show_header, pause_return
-
-from erislite.system.security_audit import check_firewall_status
-
 from erislite.config.settings import SNAPSHOT_LOG_DIR
+from erislite.system.security_audit import check_firewall_status
+from erislite.ui.utils import clear_screen, pause_return, show_header
 
 console = Console()
 

@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: main.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: ErisLITE entry point — initializes user profile and launches the CLI.
 
 import os
@@ -12,8 +12,8 @@ import os
 from rich.console import Console
 
 from erislite.accounts.profile import load_or_create_profile
-from erislite.ui.splash import show_splash
 from erislite.ui.cli import launch_cli
+from erislite.ui.splash import show_splash
 
 console = Console()
 

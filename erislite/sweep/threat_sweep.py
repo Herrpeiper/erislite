@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: threat_sweep.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: Threat sweep orchestrator: runs selected modules, scores risk, and saves results.
 
 import json
@@ -15,15 +15,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from erislite.accounts import login_audit, users, ssh_keys, ssh_config
-from erislite.containers import docker
-from erislite.network import listeners, firewall, hosts
-from erislite.persistence import world_writable, cron, suid, backdoors
-from erislite.system import integrity, kernel_modules, processes
-from erislite.ui.console import console
-from erislite.ui.utils import clear_screen, pause_return
-from erislite.vulnerability import cve_checker
-
+from erislite.accounts import login_audit, ssh_config, ssh_keys, users
 from erislite.config.settings import (
     APP_NAME,
     APP_VERSION,
@@ -31,10 +23,40 @@ from erislite.config.settings import (
     SWEEP_LOG_DIR,
     SWEEP_PROFILES,
 )
+from erislite.containers import docker
+from erislite.network import firewall, hosts, listeners
+from erislite.persistence import backdoors, cron, suid, world_writable
+from erislite.system import integrity, kernel_modules, processes
+from erislite.ui.console import console
+from erislite.ui.utils import clear_screen, pause_return
+from erislite.vulnerability import cve_checker
+
+RISK_WEIGHTS = {
+    "integrity": 20,
+    "listeners": 15,
+    "users": 15,
+    "kernel": 15,
+    "sshkeys": 10,
+    "worldwritable": 10,
+    "cron": 15,
+    "login": 10,
+    "sshconfig": 10,
+    "docker": 15,
+    "firewall": 15,
+    "cve": 20,
+    "suid": 10,
+    "processes": 20,
+    "hosts": 20,
+    "backdoor": 25,
+}
 
 # 🧠 Tag-to-Insight Mapping
 THREAT_TAG_MAP = {
     "cve_match": "Outdated or vulnerable software version detected.",
+    "cve_version_match": (
+        "Installed software version matches a known CVE range; "
+        "verify vendor patch level."
+    ),
     "firewall_disabled": "No active firewall detected — system may be fully exposed to the network.",
     "firewall_ufw_inactive": "UFW is installed but currently inactive.",
     "firewall_ip_empty": "iptables is present but no rules are loaded — system may be unprotected.",
@@ -71,36 +93,21 @@ THREAT_TAG_MAP = {
     "hosts_private_redirect": "External-looking hostname is mapped to a private address.",
     "ssh_keys_unknown_type": "Authorized key uses an unrecognized SSH key format.",
     "suid_nonstandard_location": "SUID/SGID binary is located outside standard executable paths.",
+    "uid0_clone": "A non-root account has UID 0 and root-equivalent privileges.",
+    "weak_ssh_config": "One or more SSH server settings differ from the hardening baseline.",
+    "firewall_permission_denied": ("Firewall state could not be fully inspected with the current privileges."),
+    "firewall_check_failed": "One or more firewall inspection commands failed.",
 }
 
 
 def calculate_risk_score(results: dict):
-    weights = {
-        "integrity": 20,
-        "listeners": 15,
-        "users": 15,
-        "kernel": 15,
-        "sshkeys": 10,
-        "worldwritable": 10,
-        "cron": 15,
-        "login": 10,
-        "sshconfig": 10,
-        "docker": 15,
-        "firewall": 15,
-        "cve": 20,
-        "suid": 10,
-        "processes": 20,
-        "hosts": 20,
-        "backdoor": 25,
-    }
-
     total_score = 0
     breakdown = {}
     max_score = 0
 
     for module in results:
-        if module in weights:
-            weight = weights[module]
+        if module in RISK_WEIGHTS:
+            weight = RISK_WEIGHTS[module]
             max_score += weight
             status = results[module].get("status", "").lower()
             if status in ("warning", "error", "issue"):
@@ -110,6 +117,47 @@ def calculate_risk_score(results: dict):
                 breakdown[module] = 0
 
     return total_score, breakdown, max_score
+
+def prioritize_findings(results: dict) -> list:
+    """
+    Return actionable sweep findings ordered by analyst priority.
+
+    Higher-risk modules are presented first. Clean and unsupported
+    modules are excluded.
+    """
+    status_priority = {
+        "error": 3,
+        "warning": 2,
+        "issue": 2,
+    }
+
+    findings = []
+
+    for module, result in results.items():
+        status = result.get("status", "").lower()
+
+        if status not in status_priority:
+            continue
+
+        findings.append(
+            {
+                "module": module,
+                "status": status,
+                "weight": RISK_WEIGHTS.get(module, 0),
+                "details": result.get("details", []),
+                "tags": result.get("tags", []),
+            }
+        )
+
+    findings.sort(
+        key=lambda finding: (
+            finding["weight"],
+            status_priority[finding["status"]],
+        ),
+        reverse=True,
+    )
+
+    return findings
 
 
 def run_sweep(user_profile, sweep_profile="standard"):
@@ -175,11 +223,125 @@ def run_sweep(user_profile, sweep_profile="standard"):
     except Exception:
         pass
 
-    _display_results(results, sweep_profile, user_profile)
-    _save_sweep(results, sweep_profile, user_profile)
+    hostname = user_profile.get(
+        "hostname",
+        "unknown",
+    )
+
+    previous = _load_previous_comparable_sweep(
+        hostname,
+        sweep_profile,
+    )
+
+    if previous:
+        changes = compare_sweep_results(
+            results,
+            previous.get("results", {}),
+        )
+    else:
+        changes = {
+            "new": [],
+            "persisting": [],
+            "resolved": [],
+        }
+
+    _display_results(
+        results,
+        sweep_profile,
+        user_profile,
+        changes,
+        comparison_available=previous is not None,
+    )
+
+    _save_sweep(
+        results,
+        sweep_profile,
+        user_profile,
+        changes,
+    )
+
+def _finding_signals(results: dict) -> set:
+    """
+    Convert actionable module results into stable comparison signals.
+
+    Prefer module + tag when tags exist. If an actionable result has no
+    tags, fall back to module + status.
+    """
+    signals = set()
+
+    for module, result in results.items():
+        status = result.get("status", "").lower()
+
+        if status not in {"warning", "issue", "error"}:
+            continue
+
+        tags = result.get("tags", [])
+
+        if tags:
+            for tag in tags:
+                signals.add(f"{module}:{tag}")
+        else:
+            signals.add(f"{module}:status:{status}")
+
+    return signals
 
 
-def _display_results(results, sweep_profile, user_profile):
+def compare_sweep_results(
+    current_results: dict,
+    previous_results: dict,
+) -> dict:
+    """
+    Compare two comparable sweeps.
+
+    Returns NEW, PERSISTING, and RESOLVED finding signals.
+    """
+    current = _finding_signals(current_results)
+    previous = _finding_signals(previous_results)
+
+    return {
+        "new": sorted(current - previous),
+        "persisting": sorted(current & previous),
+        "resolved": sorted(previous - current),
+    }
+
+
+def _load_previous_comparable_sweep(
+    hostname: str,
+    sweep_profile: str,
+):
+    """
+    Load the newest historical sweep for the same host and profile.
+    """
+    if not SWEEP_LOG_DIR.exists():
+        return None
+
+    paths = sorted(
+        SWEEP_LOG_DIR.glob("sweep_log_*.json"),
+        reverse=True,
+    )
+
+    for path in paths:
+        try:
+            with open(
+                path,
+                "r",
+                encoding="utf-8",
+            ) as file:
+                data = json.load(file)
+        except Exception:
+            continue
+
+        if data.get("hostname") != hostname:
+            continue
+
+        if data.get("profile") != sweep_profile:
+            continue
+
+        return data
+
+    return None
+
+def _display_results(results, sweep_profile, user_profile, changes, comparison_available=False):
     label_map = {
         "integrity": "Integrity",
         "firewall": "Firewall Status",
@@ -274,7 +436,9 @@ def _display_results(results, sweep_profile, user_profile):
     )
 
     contributors = [
-        (module, points) for module, points in breakdown.items() if points > 0
+        (module, points)
+        for module, points in breakdown.items()
+        if points > 0
     ]
 
     if contributors:
@@ -287,16 +451,142 @@ def _display_results(results, sweep_profile, user_profile):
             show_edge=False,
             padding=(0, 1),
         )
-        breakdown_table.add_column("Module", style="cyan")
-        breakdown_table.add_column("Points", justify="right", style="yellow")
+        breakdown_table.add_column(
+            "Module",
+            style="cyan",
+        )
+        breakdown_table.add_column(
+            "Points",
+            justify="right",
+            style="yellow",
+        )
 
         for module, points in contributors:
             breakdown_table.add_row(
-                label_map.get(module, module.title()),
+                label_map.get(
+                    module,
+                    module.title(),
+                ),
                 str(points),
             )
 
         console.print(breakdown_table)
+
+    priorities = prioritize_findings(results)
+
+    if priorities:
+        console.print()
+
+        priority_table = Table(
+            title="[italic cyan]Analyst Priority[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+
+        priority_table.add_column(
+            "#",
+            style="cyan",
+            justify="right",
+            no_wrap=True,
+        )
+        priority_table.add_column(
+            "Module",
+            style="cyan",
+            no_wrap=True,
+        )
+        priority_table.add_column(
+            "Status",
+            no_wrap=True,
+        )
+        priority_table.add_column(
+            "Primary Signal",
+            style="white",
+        )
+
+        for index, finding in enumerate(
+            priorities,
+            1,
+        ):
+            details = finding["details"]
+
+            primary_detail = (
+                details[0]
+                if details
+                else "Review module findings"
+            )
+
+            priority_table.add_row(
+                str(index),
+                label_map.get(
+                    finding["module"],
+                    finding["module"].title(),
+                ),
+                finding["status"].upper(),
+                primary_detail,
+            )
+
+        console.print(priority_table)
+
+    if comparison_available:
+        console.print()
+
+        change_table = Table(
+            title="[italic cyan]Changes Since Previous Comparable Sweep[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+
+        change_table.add_column(
+            "State",
+            no_wrap=True,
+        )
+        change_table.add_column(
+            "Count",
+            justify="right",
+        )
+        change_table.add_column(
+            "Signals",
+            style="white",
+        )
+
+        change_rows = (
+            (
+                "[red]NEW[/]",
+                changes["new"],
+            ),
+            (
+                "[yellow]PERSISTING[/]",
+                changes["persisting"],
+            ),
+            (
+                "[green]RESOLVED[/]",
+                changes["resolved"],
+            ),
+        )
+
+        for label, signals in change_rows:
+            display_signals = (
+                ", ".join(signals[:4])
+                if signals
+                else "None"
+            )
+
+            if len(signals) > 4:
+                display_signals += (
+                    f" (+{len(signals) - 4} more)"
+                )
+
+            change_table.add_row(
+                label,
+                str(len(signals)),
+                display_signals,
+            )
+
+        console.print(change_table)
 
     all_tags = set()
 
@@ -347,6 +637,8 @@ def _save_sweep(results, sweep_profile, user_profile):
             else 0
         )
 
+        priorities = prioritize_findings(results)
+
         summary = {
             "timestamp": datetime.now().isoformat(timespec="seconds"),
             "hostname": user_profile.get(
@@ -358,6 +650,7 @@ def _save_sweep(results, sweep_profile, user_profile):
             "risk_max": max_possible,
             "risk_percent": risk_percent,
             "tags": sorted(set(all_tags)),
+            "priorities": priorities,
             "results": results,
         }
 

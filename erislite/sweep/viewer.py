@@ -1,15 +1,16 @@
 # Project: ErisLITE
 # Module: viewer.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: Threat sweep log viewer for browsing and inspecting saved sweep results.
 
 import json
 
 from rich import box
+from rich.console import Group
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
@@ -20,9 +21,10 @@ from erislite.config.settings import (
     APP_VERSION,
     SWEEP_LOG_DIR,
 )
+from erislite.response.guidance import get_guidance, has_guidance
+from erislite.sweep.threat_sweep import prioritize_findings
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
-
 
 
 def _format_risk(data: dict) -> str:
@@ -50,6 +52,117 @@ def _header(title: str) -> None:
         )
     )
     console.print()
+
+MODULE_LABELS = {
+    "integrity": "Integrity",
+    "firewall": "Firewall Status",
+    "listeners": "Listeners",
+    "users": "User Accounts",
+    "kernel": "Kernel Modules",
+    "sshkeys": "SSH Keys",
+    "worldwritable": "World-Writable Files",
+    "cron": "Cron Jobs / Timers",
+    "login": "Login / Auth Logs",
+    "sshconfig": "SSH Config Audit",
+    "docker": "Docker Security",
+    "cve": "CVE Version Check",
+    "suid": "SUID / SGID Binaries",
+    "processes": "Process Anomaly Scan",
+    "hosts": "/etc/hosts Tamper Check",
+    "backdoor": "Backdoor Detection",
+}
+
+
+def _guidance_for_result(result: dict) -> list:
+    guidance_items = []
+
+    for tag in result.get("tags", []):
+        if has_guidance(tag):
+            guidance_items.append(
+                (
+                    tag,
+                    get_guidance(tag),
+                )
+            )
+
+    return guidance_items
+
+def _render_guidance(result: dict) -> None:
+    severity_colors = {
+        "critical": "red",
+        "high": "bright_red",
+        "medium": "yellow",
+        "low": "green",
+        "unknown": "dim",
+    }
+
+    for tag, guidance in _guidance_for_result(result):
+        severity = guidance.get("severity", "unknown")
+        border_color = severity_colors.get(severity, "dim")
+
+        content = [
+            Text(guidance["summary"], style="bold"),
+            Text(),
+            Text("Investigate:", style="cyan"),
+        ]
+
+        content.extend(
+            Text(f"• {command}", style="white")
+            for command in guidance.get("investigate", [])
+        )
+
+        content.extend(
+            [
+                Text(),
+                Text("Recommendation:", style="cyan"),
+                Text(guidance["recommendation"]),
+            ]
+        )
+
+        console.print(
+            Panel.fit(
+                Group(*content),
+                title=(
+                    f"[bold {border_color}]Response Guidance — "
+                    f"{tag} [{severity.upper()}][/]"
+                ),
+                border_style=border_color,
+                box=box.ROUNDED,
+            )
+        )
+        console.print()
+
+def _module_label(module: str) -> str:
+    return MODULE_LABELS.get(
+        module,
+        module.replace("_", " ").title(),
+    )
+
+def _get_changes(data: dict) -> dict:
+    changes = data.get("changes")
+
+    if isinstance(changes, dict):
+        return {
+            "new": list(changes.get("new", [])),
+            "persisting": list(changes.get("persisting", [])),
+            "resolved": list(changes.get("resolved", [])),
+        }
+
+    return {
+        "new": [],
+        "persisting": [],
+        "resolved": [],
+    }
+
+def _get_priorities(data: dict) -> list:
+    priorities = data.get("priorities")
+
+    if isinstance(priorities, list):
+        return priorities
+
+    return prioritize_findings(
+        data.get("results", {})
+    )
 
 def _get_profile(data: dict) -> str:
     return str(
@@ -110,6 +223,7 @@ def show_recent_sweeps(limit=5):
     table.add_column("Timestamp", style="white")
     table.add_column("Profile", style="cyan")
     table.add_column("Risk", justify="right")
+    table.add_column("Top Priority", style="yellow")
     table.add_column("Tags", style="dim")
 
     for timestamp, data, _ in logs:
@@ -119,11 +233,18 @@ def show_recent_sweeps(limit=5):
             tag_set.update(result.get("tags", []))
 
         tags = ", ".join(sorted(tag_set)) if tag_set else "None"
+        priorities = _get_priorities(data)
+
+        if priorities:
+            top_priority = _module_label(priorities[0]["module"])
+        else:
+            top_priority = "None"
 
         table.add_row(
             timestamp,
             _get_profile(data),
             _format_risk(data),
+            top_priority,
             tags,
         )
 
@@ -133,6 +254,7 @@ def show_recent_sweeps(limit=5):
 
 def view_full_report():
     logs = load_sweep_logs(limit=5)
+
 
     if not logs:
         console.print("[yellow]No recent sweep logs found.[/]")
@@ -202,6 +324,130 @@ def view_full_report():
     if all_tags:
         console.print(f"[dim]Tags:[/] [cyan]{', '.join(sorted(all_tags))}[/]\n")
 
+    priorities = _get_priorities(selected)
+
+    if priorities:
+        priority_table = Table(
+            title="[italic cyan]Analyst Priority Queue[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+
+        priority_table.add_column(
+            "#",
+            style="cyan",
+            justify="right",
+            no_wrap=True,
+        )
+        priority_table.add_column(
+            "Module",
+            style="cyan",
+            no_wrap=True,
+        )
+        priority_table.add_column(
+            "Status",
+            no_wrap=True,
+        )
+        priority_table.add_column(
+            "Weight",
+            justify="right",
+            style="yellow",
+        )
+        priority_table.add_column(
+            "Primary Signal",
+            style="white",
+        )
+
+        for index, finding in enumerate(
+            priorities,
+            start=1,
+        ):
+            details = finding.get("details", [])
+
+            primary_signal = (
+                details[0]
+                if details
+                else "Review module findings"
+            )
+
+            status = finding.get(
+                "status",
+                "unknown",
+            ).upper()
+
+            priority_table.add_row(
+                str(index),
+                _module_label(finding["module"]),
+                status,
+                str(finding.get("weight", 0)),
+                primary_signal,
+            )
+
+        console.print(priority_table)
+        console.print()
+
+    changes = _get_changes(selected)
+
+    if any(changes.values()):
+        change_table = Table(
+            title="[italic cyan]Changes Since Previous Comparable Sweep[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+
+        change_table.add_column(
+            "State",
+            no_wrap=True,
+        )
+        change_table.add_column(
+            "Count",
+            justify="right",
+        )
+        change_table.add_column(
+            "Signals",
+            style="white",
+        )
+
+        change_rows = (
+            (
+                "[red]NEW[/]",
+                changes["new"],
+            ),
+            (
+                "[yellow]PERSISTING[/]",
+                changes["persisting"],
+            ),
+            (
+                "[green]RESOLVED[/]",
+                changes["resolved"],
+            ),
+        )
+
+        for label, signals in change_rows:
+            display_signals = (
+                ", ".join(signals[:5])
+                if signals
+                else "None"
+            )
+
+            if len(signals) > 5:
+                display_signals += (
+                    f" (+{len(signals) - 5} more)"
+                )
+
+            change_table.add_row(
+                label,
+                str(len(signals)),
+                display_signals,
+            )
+
+        console.print(change_table)
+        console.print()
+
     for module, result in selected.get("results", {}).items():
         status = result.get("status", "unknown").lower()
         details = result.get("details") or ["No issues detected."]
@@ -222,12 +468,14 @@ def view_full_report():
         console.print(
             Panel.fit(
                 body,
-                title=f"[bold cyan]{module.replace('_', ' ').title()}[/]  {status_text}",
+                title=f"[bold cyan]{_module_label(module)}[/]  {status_text}",
                 border_style="cyan",
                 box=box.ROUNDED,
             )
         )
         console.print()
+
+        _render_guidance(result)
 
     pause_return()
 

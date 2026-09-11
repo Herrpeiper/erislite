@@ -1,13 +1,14 @@
 # Project: ErisLITE
 # Module: world_writable.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: World-writable file and directory inspection in critical filesystem paths.
 
-import os, stat
+import os
+import stat
 from typing import Dict, List, Set
 
 from rich import box

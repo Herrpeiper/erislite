@@ -6,6 +6,57 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [1.2.0] - 2026-09-11
+
+### Added
+
+- GitHub Actions CI workflow covering Python 3.9 through 3.13
+- Ruff linting and pytest configuration through `pyproject.toml`
+- Shared structured result helpers in `erislite/results.py`
+- Threat Sweep change detection for new, persisting, and resolved findings
+- Analyst priority queue based on actionable module findings and risk weight
+- Analyst response guidance with:
+  - severity classification
+  - investigation commands
+  - response recommendations
+- Guidance coverage for:
+  - UID 0 clone accounts
+  - suspicious network listeners
+  - weak SSH configuration
+  - unauthorized SSH keys
+  - suspicious cron entries
+  - firewall failures and inactive states
+  - suspicious processes
+  - `/etc/hosts` redirects
+  - `LD_PRELOAD` persistence
+- Live privilege-state reporting in SOC Mode
+- New Threat Sweep findings view in SOC Mode
+- Automated tests for result contracts, sweep profiles, guidance, and firewall detection
+
+### Changed
+
+- Threat Sweep reports now display response guidance beneath applicable module findings
+- Recent sweep history now displays every loaded sweep instead of only the final entry
+- Firewall inspection now:
+  - distinguishes permission failures from command failures
+  - compares firewalld states exactly
+  - inspects nftables and iptables independently
+  - detects meaningful iptables rules and restrictive policies
+  - avoids fallback warnings after finding an active firewall
+- Threat tag descriptions now cover all tags with analyst response guidance
+- Application version and source headers updated to 1.2.0
+
+### Fixed
+
+- Corrected firewalld `inactive` being misclassified as `active`
+- Corrected non-root firewall inspection being reported as an empty ruleset
+- Removed duplicated module panels from full Threat Sweep reports
+- Removed duplicated change-table construction in the full report viewer
+- Prevented an undefined priority queue when a historical sweep contains no tags
+- Restored Python 3.9 compatibility in the v1.2 refactor
+
+---
+
 ## [1.1.0] - 2026-09-02
 
 ### Added

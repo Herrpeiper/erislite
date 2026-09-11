@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: ssh_config.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: sshd_config audit against the ErisLITE hardening baseline.
 
 import os
@@ -17,7 +17,6 @@ from rich.text import Text
 from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
-
 
 SSH_CONFIG_PATH = "/etc/ssh/sshd_config"
 

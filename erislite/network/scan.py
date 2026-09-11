@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: scan.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: Network listener scan and structured network discovery.
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import platform
 import re
 import subprocess
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 # A mapping of common ports to their typical services. This is used for basic risk classification of listeners based on the port they are using. If a listener is on a well-known port, it may be considered lower risk than an unknown service on a non-standard port.
 KNOWN_PORTS = {

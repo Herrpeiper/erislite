@@ -1,15 +1,16 @@
 # Project: ErisLITE
 # Module: menu.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: Rapid Response menu and workflow entry point.
 
 from __future__ import annotations
 
-import json, os
+import json
+import os
 from typing import Dict, List
 
 from rich import box

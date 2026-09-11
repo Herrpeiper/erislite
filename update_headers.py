@@ -13,8 +13,7 @@ from pathlib import Path
 
 from erislite.version import VERSION
 
-
-TODAY = "2026-09-02"
+TODAY = "2026-09-11"
 
 
 FILES = [
@@ -172,6 +171,11 @@ FILES = [
         "utils.py",
         "Shared Rapid Response utility functions and runtime paths.",
     ),
+        (
+        "erislite/response/guidance.py",
+        "guidance.py",
+        "Analyst response guidance for threat findings.",
+    ),
 
     # ---------------------------------------------------------------------
     # Sweep
@@ -301,6 +305,15 @@ FILES = [
         "erislite/version.py",
         "version.py",
         "Single source of truth for ErisLITE version and build metadata.",
+    ),
+
+    # ---------------------------------------------------------------------
+    # Shared Results
+    # ---------------------------------------------------------------------
+    (
+        "erislite/results.py",
+        "results.py",
+        "Shared structured result schema helpers.",
     ),
 ]
 

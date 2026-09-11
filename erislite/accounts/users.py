@@ -1,13 +1,14 @@
 # Project: ErisLITE
 # Module: users.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: Suspicious user account scan: UID anomalies, shells, and account configuration.
 
 import pwd
+from typing import Optional
 
 from rich import box
 from rich.panel import Panel
@@ -114,7 +115,7 @@ def _load_valid_shells() -> set[str]:
         return set()
 
 
-def _tag_for_reason(reason: str) -> str | None:
+def _tag_for_reason(reason: str) -> Optional[str]:
     if "UID 0" in reason:
         return "uid0_clone"
     if "Shell access" in reason:

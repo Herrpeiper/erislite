@@ -1,22 +1,22 @@
 # Project: ErisLITE
 # Module: log_viewer.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: Snapshot log viewer for browsing and displaying saved snapshot logs.
 
 import os
 
+from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
-from rich.align import Align
 
-from erislite.ui.utils import clear_screen, show_header, pause_return
 from erislite.config.settings import SNAPSHOT_LOG_DIR
+from erislite.ui.utils import clear_screen, pause_return, show_header
 
 console = Console()
 

@@ -1,14 +1,17 @@
 # Project: ErisLITE
 # Module: soc_mode.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: SOC Mode rolling snapshot and posture assessment.
 
-import json, os, re, shutil, subprocess
-
+import json
+import os
+import re
+import shutil
+import subprocess
 from collections import Counter
 from datetime import datetime
 
@@ -18,11 +21,14 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION, SOC_LOG_DIR
+from erislite.config.settings import (
+    APP_NAME,
+    APP_VERSION,
+    LAST_SWEEP_FILE,
+    SOC_LOG_DIR,
+)
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
-
-
 
 WINDOW_MINUTES = 15
 EXPORT_DIR = SOC_LOG_DIR
@@ -33,8 +39,9 @@ RE_SSH_FAIL = re.compile(r"Failed password for .* from (?P<ip>\d{1,3}(?:\.\d{1,3
 RE_SSH_SUCCESS = re.compile(
     r"Accepted (password|publickey) for (?P<user>\S+) from (?P<ip>\d{1,3}(?:\.\d{1,3}){3})"
 )
-RE_SU_ROOT = re.compile(r"session opened for user root", re.IGNORECASE)
-RE_SUDO_USER = re.compile(r"sudo:?\s+(?P<user>[A-Za-z0-9._-]+)\s*:")
+RE_SUDO_ROOT_TARGET = re.compile(r"\bUSER=root\b", re.IGNORECASE)
+RE_SUDO_ROOT_SESSION = re.compile(r"pam_unix\(sudo(?::session)?\):.*" r"session opened for user root", re.IGNORECASE)
+RE_SU_ROOT_SESSION = re.compile(r"pam_unix\(su(?::session)?\):.*" r"session opened for user root", re.IGNORECASE)
 
 # --- Core Functions ---
 # Note: All functions are designed to be best-effort and not fail if logs are missing or formats vary.
@@ -81,6 +88,61 @@ def collect_warning_logs():
     return out.splitlines()
 
 
+def get_current_privilege_state():
+    euid = os.geteuid()
+    sudo_user = os.environ.get("SUDO_USER")
+
+    return {
+        "euid": euid,
+        "is_root": euid == 0,
+        "sudo_user": sudo_user,
+        "elevated_via_sudo": euid == 0 and bool(sudo_user),
+    }
+
+
+def collect_auth_logs():
+    journal_logs = collect_journal_logs()
+
+    if journal_logs:
+        return {
+            "source": "journalctl",
+            "available": True,
+            "lines": journal_logs,
+        }
+
+    fallback_paths = (
+        "/var/log/auth.log",
+        "/var/log/secure",
+    )
+
+    for path in fallback_paths:
+        if not os.path.isfile(path):
+            continue
+
+        try:
+            with open(
+                path,
+                "r",
+                encoding="utf-8",
+                errors="replace",
+            ) as file:
+                lines = file.readlines()
+        except OSError:
+            continue
+
+        return {
+            "source": path,
+            "available": True,
+            "lines": lines[-1000:],
+        }
+
+    return {
+        "source": "unavailable",
+        "available": False,
+        "lines": [],
+    }
+
+
 # Log parsing function
 def parse_logs(lines):
     failed_ssh = 0
@@ -91,12 +153,14 @@ def parse_logs(lines):
     root_ssh_details = []  # raw lines
 
     sudo_events = 0
-    sudo_details = []  # raw lines (last MAX_DETAIL)
-    sudo_to_root = 0  # sudo where USER=root (best-effort)
-    sudo_to_root_details = []  # raw lines
+    sudo_details = []
+    sudo_to_root = 0
+    sudo_to_root_details = []
+    sudo_root_sessions = 0
+    sudo_root_session_details = []
 
     su_to_root = 0
-    su_to_root_details = []  # raw lines
+    su_to_root_details = []
 
     for line in lines:
         # SSH fail
@@ -119,31 +183,36 @@ def parse_logs(lines):
 
         # su -> root session opened
         # (common: "su: pam_unix(su:session): session opened for user root by <user>(uid=...)")
-        if (
-            " su:" in line
-            or line.strip().startswith("su:")
-            or "pam_unix(su:session)" in line
-        ):
-            if RE_SU_ROOT.search(line):
-                su_to_root += 1
-                su_to_root_details.append(line.strip())
-                if len(su_to_root_details) > MAX_DETAIL:
-                    su_to_root_details = su_to_root_details[-MAX_DETAIL:]
+        if RE_SU_ROOT_SESSION.search(line):
+            su_to_root += 1
+            su_to_root_details.append(line.strip())
 
-        # sudo usage
-        if "sudo" in line and "COMMAND=" in line:
+            if len(su_to_root_details) > MAX_DETAIL:
+                su_to_root_details = su_to_root_details[-MAX_DETAIL:]
+
+        # sudo command execution
+        if "sudo" in line.lower() and "COMMAND=" in line:
             sudo_events += 1
             sudo_details.append(line.strip())
+
             if len(sudo_details) > MAX_DETAIL:
                 sudo_details = sudo_details[-MAX_DETAIL:]
 
-            # sudo to root (best-effort)
-            # logs often include "USER=root" when elevating
-            if "USER=root" in line:
+            if RE_SUDO_ROOT_TARGET.search(line):
                 sudo_to_root += 1
                 sudo_to_root_details.append(line.strip())
+
                 if len(sudo_to_root_details) > MAX_DETAIL:
                     sudo_to_root_details = sudo_to_root_details[-MAX_DETAIL:]
+
+
+        # sudo-created root session
+        if RE_SUDO_ROOT_SESSION.search(line):
+            sudo_root_sessions += 1
+            sudo_root_session_details.append(line.strip())
+
+            if len(sudo_root_session_details) > MAX_DETAIL:
+                sudo_root_session_details = sudo_root_session_details[-MAX_DETAIL:]
 
     top_failed_ips = failed_ips.most_common(3)
     # keep only last MAX_DETAIL successes for display
@@ -160,6 +229,8 @@ def parse_logs(lines):
         "sudo_details": sudo_details,
         "sudo_to_root": sudo_to_root,
         "sudo_to_root_details": sudo_to_root_details,
+        "sudo_root_sessions": sudo_root_sessions,
+        "sudo_root_session_details": sudo_root_session_details,
         "su_to_root": su_to_root,
         "su_to_root_details": su_to_root_details,
     }
@@ -174,8 +245,12 @@ def compute_status(parsed, warning_count):
     - STABLE: otherwise
     """
     root_activity_total = (
-        parsed["root_ssh_success"] + parsed["su_to_root"] + parsed["sudo_to_root"]
+        parsed["root_ssh_success"]
+        + parsed["su_to_root"]
+        + parsed["sudo_to_root"]
+        + parsed["sudo_root_sessions"]
     )
+
     if root_activity_total > 0:
         return "ACTION REQUIRED"
 
@@ -221,7 +296,9 @@ def compute_score(parsed, warning_count):
         score += 10
 
     # root activity is critical
-    if (parsed["root_ssh_success"] + parsed["su_to_root"] + parsed["sudo_to_root"]) > 0:
+    root_activity_total = (parsed["root_ssh_success"] + parsed["su_to_root"] + parsed["sudo_to_root"] + parsed["sudo_root_sessions"])
+
+    if root_activity_total > 0:
         score = max(score, 85)
 
     return min(score, 100)
@@ -237,13 +314,12 @@ def build_attention(parsed, warning_count):
         items.append(f"su → root sessions detected ({parsed['su_to_root']})")
     if parsed["sudo_to_root"] > 0:
         items.append(f"sudo → root executions detected ({parsed['sudo_to_root']})")
-
     if parsed["failed_ssh"] >= 10:
         items.append(f"SSH failure spike ({parsed['failed_ssh']})")
-
+    if parsed["sudo_root_sessions"] > 0:
+        items.append(f"sudo-created root sessions detected " f"({parsed['sudo_root_sessions']})")
     if parsed["sudo_events"] >= 5:
         items.append(f"High sudo activity ({parsed['sudo_events']})")
-
     if warning_count >= 15:
         items.append(f"Elevated system warnings ({warning_count})")
 
@@ -259,33 +335,75 @@ def export_snapshot(snapshot):
         json.dump(snapshot, f, indent=2)
     return path
 
+def load_latest_sweep_summary():
+    if not LAST_SWEEP_FILE.exists():
+        return None
+
+    try:
+        with open(
+            LAST_SWEEP_FILE,
+            "r",
+            encoding="utf-8",
+        ) as file:
+            data = json.load(file)
+    except Exception:
+        return None
+
+    changes = data.get("changes", {})
+
+    return {
+        "timestamp": data.get("timestamp", "Unknown"),
+        "profile": data.get("profile", "unknown"),
+        "risk_score": data.get("risk_score"),
+        "risk_max": data.get("risk_max"),
+        "risk_percent": data.get("risk_percent"),
+        "new": list(changes.get("new", [])),
+        "persisting": list(changes.get("persisting", [])),
+        "resolved": list(changes.get("resolved", [])),
+    }
 
 # --- Main Interactive Function ---
 # This function is the main entry point for the SOC Mode feature. It collects logs, parses them, computes the posture status and score, and displays an interactive report to the user. The user can view details about root activity and auth events, or export a snapshot of the current posture for later analysis.
 def interactive_soc_mode():
     clear_screen()
 
-    logs = collect_journal_logs()
+    auth_source = collect_auth_logs()
     warn_logs = collect_warning_logs()
     warning_count = len(warn_logs)
 
-    if logs is None:
-        console.print(
-            Panel(
-                "[yellow]No journal logs available.[/]\n"
-                "[dim]Try running ErisLITE with elevated permissions.[/]",
-                title="[bold cyan]SOC MODE[/]",
-                border_style="yellow",
-                box=box.ROUNDED,
-            )
-        )
-        pause_return()
-        return
+    event_source_available = auth_source["available"]
+    event_source_name = auth_source["source"]
 
-    parsed = parse_logs(logs)
+    if event_source_available:
+        parsed = parse_logs(auth_source["lines"])
+    else:
+        parsed = parse_logs([])
     status = compute_status(parsed, warning_count)
     score = compute_score(parsed, warning_count)
     attention = build_attention(parsed, warning_count)
+    privilege = get_current_privilege_state()
+    sweep_summary = load_latest_sweep_summary()
+
+    if not event_source_available:
+        attention.append(
+            "Authentication event source unavailable; "
+            "privilege-escalation event visibility is limited"
+        )
+
+    if privilege["elevated_via_sudo"]:
+        attention.append(
+            f"Current session elevated via sudo "
+            f"from {privilege['sudo_user']}"
+        )
+
+    if sweep_summary and sweep_summary["new"]:
+        attention.append(
+            f"New Threat Sweep findings detected "
+            f"({len(sweep_summary['new'])})"
+        )
+
+        if status == "STABLE":
+            status = "WATCH"
 
     status_color = {
         "STABLE": "green",
@@ -319,6 +437,8 @@ def interactive_soc_mode():
     )
     console.print()
 
+    event_na = "N/A" if not event_source_available else None
+
     top_ips = (
         ", ".join(f"{ip} ({count})" for ip, count in parsed["failed_ips_top"])
         if parsed["failed_ips_top"]
@@ -336,17 +456,86 @@ def interactive_soc_mode():
     table.add_column("Metric", style="white")
     table.add_column("Value", style="white")
 
-    table.add_row("AUTH", "Failed SSH", str(parsed["failed_ssh"]))
-    table.add_row("AUTH", "Top Failed IPs", top_ips)
-    table.add_row("AUTH", "SSH Success", str(parsed["ssh_success_count"]))
-    table.add_row("AUTH", "Sudo Events", str(parsed["sudo_events"]))
-    table.add_row("ROOT", "Root SSH", str(parsed["root_ssh_success"]))
-    table.add_row("ROOT", "su → root", str(parsed["su_to_root"]))
-    table.add_row("ROOT", "sudo → root", str(parsed["sudo_to_root"]))
-    table.add_row("SYSTEM", "Warnings+", str(warning_count))
+    table.add_row("AUTH", "Failed SSH", event_na or str(parsed["failed_ssh"]),)
+    table.add_row("AUTH", "Top Failed IPs", event_na or top_ips,)
+    table.add_row("AUTH", "SSH Success", event_na or str(parsed["ssh_success_count"]),)
+    table.add_row("AUTH", "Sudo Events", event_na or str(parsed["sudo_events"]),)
+    table.add_row("ROOT", "Root SSH", event_na or str(parsed["root_ssh_success"]),)
+    table.add_row("ROOT", "su → root", event_na or str(parsed["su_to_root"]),)
+    table.add_row("ROOT", "sudo → root", event_na or str(parsed["sudo_to_root"]),)
+    table.add_row("ROOT", "sudo root session", event_na or str(parsed["sudo_root_sessions"]),)
+    table.add_row("SYSTEM", "Warnings+", str(warning_count),)
+    table.add_row("SESSION", "Effective UID", str(privilege["euid"]),)
+    table.add_row("SESSION", "Running as Root", "Yes" if privilege["is_root"] else "No",)
+    table.add_row("SESSION", "Original User", privilege["sudo_user"] or "N/A",)
+    table.add_row("SOURCE", "Auth Event Source", event_source_name,)
+    table.add_row("SOURCE", "Event Visibility", "Available" if event_source_available else "Limited", )
 
     console.print(table)
     console.print()
+
+    if sweep_summary:
+        sweep_table = Table(
+            title="[italic cyan]Latest Threat Sweep[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+
+        sweep_table.add_column(
+            "Metric",
+            style="cyan",
+            no_wrap=True,
+        )
+        sweep_table.add_column(
+            "Value",
+            style="white",
+        )
+
+        risk_score = sweep_summary["risk_score"]
+        risk_max = sweep_summary["risk_max"]
+        risk_percent = sweep_summary["risk_percent"]
+
+        if (
+            risk_score is not None
+            and risk_max is not None
+            and risk_percent is not None
+        ):
+            risk_text = (
+                f"{risk_score}/{risk_max} "
+                f"({risk_percent}%)"
+            )
+        else:
+            risk_text = "N/A"
+
+        sweep_table.add_row(
+            "Profile",
+            str(sweep_summary["profile"]).capitalize(),
+        )
+        sweep_table.add_row(
+            "Risk",
+            risk_text,
+        )
+        sweep_table.add_row(
+            "NEW",
+            str(len(sweep_summary["new"])),
+        )
+        sweep_table.add_row(
+            "PERSISTING",
+            str(len(sweep_summary["persisting"])),
+        )
+        sweep_table.add_row(
+            "RESOLVED",
+            str(len(sweep_summary["resolved"])),
+        )
+        sweep_table.add_row(
+            "Last Sweep",
+            str(sweep_summary["timestamp"]),
+        )
+
+        console.print(sweep_table)
+        console.print()
 
     if attention:
         attention_text = "\n".join(f"[yellow]•[/] {item}" for item in attention)
@@ -372,7 +561,8 @@ def interactive_soc_mode():
     menu.add_row("[bold cyan]DETAILS[/]", "")
     menu.add_row("[cyan][1][/]", "View Root Details")
     menu.add_row("[cyan][2][/]", "View Auth Details")
-    menu.add_row("[cyan][3][/]", "Export Snapshot")
+    menu.add_row("[cyan][3][/]", "View New Sweep Findings")
+    menu.add_row("[cyan][4][/]", "Export Snapshot")
     menu.add_row("", "")
     menu.add_row("[cyan][0][/]", "Back")
 
@@ -396,7 +586,16 @@ def interactive_soc_mode():
                     + (parsed["su_to_root_details"] or ["[dim]None[/]"])
                     + [""]
                     + ["[bold cyan]sudo → root[/]"]
-                    + (parsed["sudo_to_root_details"] or ["[dim]None[/]"])
+                    + (
+                        parsed["sudo_to_root_details"]
+                        or ["[dim]None[/]"]
+                    )
+                    + [""]
+                    + ["[bold cyan]sudo root sessions[/]"]
+                    + (
+                        parsed["sudo_root_session_details"]
+                        or ["[dim]None[/]"]
+                    )
                 ),
                 title="[bold cyan]Root Details[/]",
                 border_style="cyan",
@@ -424,12 +623,78 @@ def interactive_soc_mode():
         pause_return()
 
     elif choice == "3":
+        console.print()
+
+        if not sweep_summary:
+            console.print(
+                Panel(
+                    "[dim]No saved Threat Sweep is available.[/]",
+                    title="[bold cyan]New Sweep Findings[/]",
+                    border_style="grey37",
+                    box=box.ROUNDED,
+                )
+            )
+
+        elif not sweep_summary["new"]:
+            console.print(
+                Panel(
+                    "[green]No new findings since the previous comparable sweep.[/]",
+                    title="[bold cyan]New Sweep Findings[/]",
+                    border_style="green",
+                    box=box.ROUNDED,
+                )
+            )
+
+        else:
+            findings_table = Table(
+                title="[italic cyan]New Threat Sweep Findings[/]",
+                box=box.SIMPLE_HEAVY,
+                header_style="bold cyan",
+                show_edge=False,
+                padding=(0, 1),
+            )
+
+            findings_table.add_column(
+                "#",
+                style="cyan",
+                justify="right",
+                no_wrap=True,
+            )
+            findings_table.add_column(
+                "Module",
+                style="cyan",
+                no_wrap=True,
+            )
+            findings_table.add_column(
+                "Signal",
+                style="white",
+            )
+
+            for index, signal in enumerate(
+                sweep_summary["new"],
+                start=1,
+            ):
+                module, _, finding = signal.partition(":")
+
+                findings_table.add_row(
+                    str(index),
+                    module.replace("_", " ").title(),
+                    finding or signal,
+                )
+
+            console.print(findings_table)
+
+        pause_return()
+
+    elif choice == "4":
         snapshot = {
             "timestamp": datetime.now().isoformat(),
             "window_minutes": WINDOW_MINUTES,
             "status": status,
             "score": score,
             "attention": attention,
+            "privilege": privilege,
+            "sweep": sweep_summary,
             "auth": {
                 "failed_ssh": parsed["failed_ssh"],
                 "failed_ips_top": parsed["failed_ips_top"],
@@ -441,9 +706,14 @@ def interactive_soc_mode():
                 "root_ssh_success": parsed["root_ssh_success"],
                 "su_to_root": parsed["su_to_root"],
                 "sudo_to_root": parsed["sudo_to_root"],
+                "sudo_root_sessions": parsed["sudo_root_sessions"],
             },
             "system": {
                 "warning_count": warning_count,
+            },
+            "event_source": {
+                "source": event_source_name,
+                "available": event_source_available,
             },
         }
 
@@ -451,4 +721,4 @@ def interactive_soc_mode():
         console.print(f"\n[green]Snapshot exported:[/] {path}")
         pause_return()
 
-    # choice "4" or anything else: return to menu
+    # choice "5" or anything else: return to menu

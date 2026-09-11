@@ -1,16 +1,20 @@
 # Project: ErisLITE
 # Module: tools.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: Network utilities: addressing, DNS, diagnostics, WHOIS, and connections.
 
-import os, platform, psutil, re, socket, subprocess
-
+import os
+import platform
+import re
+import socket
+import subprocess
 from datetime import datetime
 
+import psutil
 from rich import box
 from rich.panel import Panel
 from rich.prompt import Prompt
@@ -20,7 +24,6 @@ from rich.text import Text
 from erislite.config.settings import APP_NAME, APP_VERSION, NETWORK_LOG_DIR
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
-
 
 COMMON_PORTS = {
     22: "SSH",

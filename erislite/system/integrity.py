@@ -1,13 +1,16 @@
 # Project: ErisLITE
 # Module: integrity.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: SHA-256 file integrity baseline creation and change detection.
 
-import glob, hashlib, json, os
+import glob
+import hashlib
+import json
+import os
 from datetime import datetime
 
 from rich import box
@@ -185,6 +188,8 @@ def create_baseline() -> None:
         "_metadata": {
             "created_at": datetime.now().isoformat(),
             "algorithm": "SHA-256",
+            "monitored": MONITORED_FILES,
+            "unavailable": unavailable,
         },
         "hashes": baseline,
     }
@@ -200,16 +205,6 @@ def create_baseline() -> None:
         encoding="utf-8",
     ) as file:
         json.dump(payload, file, indent=2)
-
-    baseline_payload = {
-        "_metadata": {
-            "created_at": datetime.now().isoformat(),
-            "algorithm": "SHA-256",
-            "monitored": MONITORED_FILES,
-            "unavailable": unavailable,
-        },
-        "hashes": baseline,
-    }
 
     console.print(
         Panel.fit(

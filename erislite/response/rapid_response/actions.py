@@ -1,15 +1,17 @@
 # Project: ErisLITE
 # Module: actions.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: Rapid Response containment and remediation actions.
 
 from __future__ import annotations
 
-import os, shutil, time
+import os
+import shutil
+import time
 from typing import Any, Dict, List
 
 from erislite.response.rapid_response.utils import have, now, run_cmd
