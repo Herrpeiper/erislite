@@ -149,6 +149,58 @@ RESPONSE_GUIDANCE = {
             "before editing /etc/hosts."
         ),
     },
+
+    "suspicious_listener": {
+        "severity": "high",
+        "summary": (
+            "One or more network listeners matched ErisLITE indicators for "
+            "unexpected exposure or suspicious service behavior."
+        ),
+        "investigate": [
+            "ss -tulpn",
+            "lsof -i -P -n",
+            "ps -fp <PID>",
+        ],
+        "recommendation": (
+            "Identify the owning process, service, bind address, and business "
+            "purpose before stopping the process or blocking the port."
+        ),
+    },
+
+    "firewall_ip_empty": {
+        "severity": "medium",
+        "summary": (
+            "ErisLITE received no usable iptables rule listing. The ruleset may "
+            "be empty, or the current account may lack permission to inspect it."
+        ),
+        "investigate": [
+            "sudo iptables -L -n -v",
+            "sudo iptables -S",
+            "sudo nft list ruleset",
+        ],
+        "recommendation": (
+            "Confirm the active firewall platform, inspection permissions, and "
+            "intended policy before adding or changing firewall rules."
+        ),
+    },
+
+    "weak_ssh_config": {
+        "severity": "high",
+        "summary": (
+            "One or more effective SSH server settings differ from the "
+            "ErisLITE hardening baseline."
+        ),
+        "investigate": [
+            "sshd -T",
+            "grep -RniE '^(PermitRootLogin|PasswordAuthentication|PermitEmptyPasswords|PubkeyAuthentication|MaxAuthTries)' /etc/ssh/sshd_config /etc/ssh/sshd_config.d 2>/dev/null",
+            "journalctl -u ssh -u sshd --since today",
+        ],
+        "recommendation": (
+            "Review each reported setting against operational requirements, "
+            "back up the configuration, and validate changes with sshd -t "
+            "before reloading the SSH service."
+        ),
+    },
 }
 
 

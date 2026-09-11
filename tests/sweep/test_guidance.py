@@ -1,3 +1,5 @@
+import pytest
+
 from erislite.response.guidance import (
     DEFAULT_GUIDANCE,
     get_guidance,
@@ -38,3 +40,20 @@ def test_guidance_for_result_returns_known_tags_only():
         "uid0_clone",
         "firewall_disabled",
     ]
+
+@pytest.mark.parametrize(
+    ("tag", "expected_severity"),
+    [
+        ("suspicious_listener", "high"),
+        ("firewall_ip_empty", "medium"),
+        ("weak_ssh_config", "high"),
+    ],
+)
+def test_live_sweep_tags_have_guidance(tag, expected_severity):
+    guidance = get_guidance(tag)
+
+    assert has_guidance(tag) is True
+    assert guidance["severity"] == expected_severity
+    assert guidance["summary"]
+    assert guidance["investigate"]
+    assert guidance["recommendation"]
