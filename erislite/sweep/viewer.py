@@ -1,15 +1,16 @@
 # Project: ErisLITE
 # Module: viewer.py
 # Author: Liam Piper-Brandon
-# Version: 1.1.0
+# Version: 1.2.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-02
+# Last Updated: 2026-09-11
 # Description: Threat sweep log viewer for browsing and inspecting saved sweep results.
 
 import json
 
 from rich import box
+from rich.console import Group
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
@@ -20,6 +21,7 @@ from erislite.config.settings import (
     APP_VERSION,
     SWEEP_LOG_DIR,
 )
+from erislite.response.guidance import get_guidance, has_guidance
 from erislite.sweep.threat_sweep import prioritize_findings
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
@@ -85,6 +87,50 @@ def _guidance_for_result(result: dict) -> list:
 
     return guidance_items
 
+def _render_guidance(result: dict) -> None:
+    severity_colors = {
+        "critical": "red",
+        "high": "bright_red",
+        "medium": "yellow",
+        "low": "green",
+        "unknown": "dim",
+    }
+
+    for tag, guidance in _guidance_for_result(result):
+        severity = guidance.get("severity", "unknown")
+        border_color = severity_colors.get(severity, "dim")
+
+        content = [
+            Text(guidance["summary"], style="bold"),
+            Text(),
+            Text("Investigate:", style="cyan"),
+        ]
+
+        content.extend(
+            Text(f"• {command}", style="white")
+            for command in guidance.get("investigate", [])
+        )
+
+        content.extend(
+            [
+                Text(),
+                Text("Recommendation:", style="cyan"),
+                Text(guidance["recommendation"]),
+            ]
+        )
+
+        console.print(
+            Panel.fit(
+                Group(*content),
+                title=(
+                    f"[bold {border_color}]Response Guidance — "
+                    f"{tag} [{severity.upper()}][/]"
+                ),
+                border_style=border_color,
+                box=box.ROUNDED,
+            )
+        )
+        console.print()
 
 def _module_label(module: str) -> str:
     return MODULE_LABELS.get(
@@ -183,27 +229,24 @@ def show_recent_sweeps(limit=5):
     for timestamp, data, _ in logs:
         tag_set = set()
 
-    for result in data.get("results", {}).values():
-        tag_set.update(result.get("tags", []))
+        for result in data.get("results", {}).values():
+            tag_set.update(result.get("tags", []))
 
-    tags = ", ".join(sorted(tag_set)) if tag_set else "None"
+        tags = ", ".join(sorted(tag_set)) if tag_set else "None"
+        priorities = _get_priorities(data)
 
-    priorities = _get_priorities(data)
+        if priorities:
+            top_priority = _module_label(priorities[0]["module"])
+        else:
+            top_priority = "None"
 
-    if priorities:
-        top_priority = _module_label(
-            priorities[0]["module"]
+        table.add_row(
+            timestamp,
+            _get_profile(data),
+            _format_risk(data),
+            top_priority,
+            tags,
         )
-    else:
-        top_priority = "None"
-
-    table.add_row(
-        timestamp,
-        _get_profile(data),
-        _format_risk(data),
-        top_priority,
-        tags,
-    )
 
     console.print(table)
     return logs
@@ -281,7 +324,7 @@ def view_full_report():
     if all_tags:
         console.print(f"[dim]Tags:[/] [cyan]{', '.join(sorted(all_tags))}[/]\n")
 
-        priorities = _get_priorities(selected)
+    priorities = _get_priorities(selected)
 
     if priorities:
         priority_table = Table(
@@ -402,18 +445,6 @@ def view_full_report():
                 display_signals,
             )
 
-        console.print(change_table)
-        console.print()
-
-    if any(changes.values()):
-        change_table = Table(
-            title="[italic cyan]Changes Since Previous Comparable Sweep[/]",
-            box=box.SIMPLE_HEAVY,
-            header_style="bold cyan",
-            show_edge=False,
-            padding=(0, 1),
-        )
-
         change_table.add_column(
             "State",
             no_wrap=True,
@@ -489,6 +520,18 @@ def view_full_report():
             )
         )
         console.print()
+
+        console.print(
+            Panel.fit(
+                body,
+                title=f"[bold cyan]{_module_label(module)}[/]  {status_text}",
+                border_style="cyan",
+                box=box.ROUNDED,
+            )
+        )
+        console.print()
+
+        _render_guidance(result)
 
     pause_return()
 
