@@ -41,7 +41,15 @@ def build_action_plan(procs, conns, users, crons) -> List[Dict[str, Any]]:
                     f"(from {conn['laddr']})"
                 ),
                 "data": conn,
-                "undo": f"iptables -D OUTPUT -d {conn['remote_ip']} -j DROP",
+                "undo": [
+                    "iptables",
+                    "-D",
+                    "OUTPUT",
+                    "-d",
+                    conn["remote_ip"],
+                    "-j",
+                    "DROP",
+                ],
             }
         )
 
@@ -51,7 +59,11 @@ def build_action_plan(procs, conns, users, crons) -> List[Dict[str, Any]]:
                 "type": "lock_user",
                 "label": f"Lock account: {user}",
                 "data": {"username": user},
-                "undo": f"usermod -U {user}",
+                "undo": [
+                    "usermod",
+                    "-U",
+                    user,
+                ],
             }
         )
 
@@ -149,7 +161,11 @@ def execute_action(action: Dict[str, Any], log: List[Dict]) -> bool:
             os.remove(path)
 
             entry["result"] = f"Removed {path} (backup: {backup})"
-            entry["undo"] = f"cp {backup} {path}"
+            entry["undo"] = {
+                "type": "restore_file",
+                "source": backup,
+                "destination": path,
+            }
 
             console.print(f"[green]Removed {path} (backup: {backup})[/]")
             log.append(entry)
