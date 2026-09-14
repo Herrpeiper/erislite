@@ -10,6 +10,7 @@
 import json
 import os
 import platform
+import subprocess
 from datetime import datetime
 from typing import Optional
 
@@ -18,6 +19,10 @@ from rich.panel import Panel
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.security.command_resolver import (
+    CommandResolutionError,
+    resolve_command,
+)
 from erislite.ui.console import console
 
 
@@ -37,12 +42,18 @@ def get_os() -> str:
 
 
 def clear_screen() -> None:
-    os.system(
-        "cls"
-        if get_os() == "Windows"
-        else "clear"
-    )
+    if get_os() == "Windows":
+        os.system("cls")
+        return
 
+    try:
+        subprocess.run(
+            [resolve_command("clear")],
+            check=False,
+        )
+    except (CommandResolutionError, OSError):
+        # Best-effort fallback if clear is unavailable.
+        print("\033[2J\033[H]", end="")
 
 def show_header(
     title: str = "ERISLITE",
