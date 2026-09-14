@@ -1,15 +1,14 @@
 # Project: ErisLITE
 # Module: kernel_modules.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0-dev
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-14
 # Description: Kernel module inspection for known-bad names, untracked modules, and unusual paths.
 
 import json
 import os
-import shutil
 import subprocess
 from datetime import datetime
 
@@ -19,6 +18,10 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.security.command_resolver import (
+    CommandResolutionError,
+    resolve_command,
+)
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -52,7 +55,7 @@ def _header() -> None:
 def _kernel_release() -> str:
     try:
         result = subprocess.run(
-            ["uname", "-r"],
+            [resolve_command("uname"), "-r"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -64,7 +67,7 @@ def _kernel_release() -> str:
 def get_module_path(modname: str) -> str:
     try:
         result = subprocess.run(
-            ["modinfo", "-n", modname],
+            [resolve_command("modinfo"), "-n", modname],
             capture_output=True,
             text=True,
             timeout=5,
@@ -79,12 +82,14 @@ def get_module_path(modname: str) -> str:
     return "Unknown"
 
 def get_loaded_modules():
-    if shutil.which("lsmod") is None:
+    try:
+        lsmod = resolve_command("lsmod")
+    except CommandResolutionError:
         return [], "lsmod is not available on this system"
 
     try:
         result = subprocess.run(
-            ["lsmod"],
+            [lsmod],
             capture_output=True,
             text=True,
             timeout=10,
