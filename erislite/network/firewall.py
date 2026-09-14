@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: firewall.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0-dev
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-14
 # Description: Firewall status inspection for UFW, firewalld, nftables, and iptables.
 
 import subprocess
@@ -14,6 +14,10 @@ from rich.console import Console
 from rich.table import Table
 
 from erislite.config.settings import DEFAULT_COMMAND_TIMEOUT
+from erislite.security.command_resolver import (
+    CommandResolutionError,
+    resolve_command,
+)
 from erislite.ui.utils import clear_screen, pause_return, show_header
 
 console = Console()
@@ -28,14 +32,17 @@ PERMISSION_ERRORS = (
 
 def _run_command(command):
     try:
+        resolved = [resolve_command(command[0]), *command[1:]]
+
         result = subprocess.run(
-            command,
+            resolved,
             capture_output=True,
             text=True,
             timeout=DEFAULT_COMMAND_TIMEOUT,
         )
         return result, None
-    except FileNotFoundError:
+
+    except CommandResolutionError:
         return None, "unavailable"
     except subprocess.TimeoutExpired:
         return None, "timeout"
