@@ -159,7 +159,7 @@ echo hello
 def test_user_crontab_detects_suspicious_job(monkeypatch):
     monkeypatch.setattr(
         cron,
-        "shutil_which",
+        "resolve_command",
         lambda command: "/usr/bin/crontab",
     )
 
@@ -196,7 +196,7 @@ def test_user_crontab_detects_suspicious_job(monkeypatch):
 def test_user_crontab_skips_system_users(monkeypatch):
     monkeypatch.setattr(
         cron,
-        "shutil_which",
+        "resolve_command",
         lambda command: "/usr/bin/crontab",
     )
 

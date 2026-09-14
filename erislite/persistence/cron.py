@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: cron.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0-dev
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-14
 # Description: Cron job and systemd timer inspection for suspicious scheduled tasks.
 
 import os
@@ -19,6 +19,10 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.security.command_resolver import (
+    CommandResolutionError,
+    resolve_command,
+)
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -257,7 +261,9 @@ def check_cron_jobs() -> List[Dict]:
 def check_user_crontabs() -> List[Dict]:
     flagged = []
 
-    if not shutil_which("crontab"):
+    try:
+        crontab = resolve_command("crontab")
+    except CommandResolutionError:
         return flagged
 
     for user in pwd.getpwall():
@@ -267,7 +273,7 @@ def check_user_crontabs() -> List[Dict]:
         try:
             result = subprocess.run(
                 [
-                    "crontab",
+                    crontab,
                     "-l",
                     "-u",
                     user.pw_name,
@@ -333,19 +339,17 @@ def check_user_crontabs() -> List[Dict]:
 
     return flagged
 
-def shutil_which(command: str):
-    from shutil import which
-
-    return which(command)
 
 def check_systemd_timers() -> List[Dict]:
-    if not shutil_which("systemctl"):
+    try:
+        systemctl = resolve_command("systemctl")
+    except CommandResolutionError:
         return []
 
     try:
         result = subprocess.run(
             [
-                "systemctl",
+                systemctl,
                 "list-timers",
                 "--all",
                 "--no-pager",
@@ -392,7 +396,7 @@ def check_systemd_timers() -> List[Dict]:
         try:
             show = subprocess.run(
                 [
-                    "systemctl",
+                    systemctl,
                     "show",
                     timer,
                     "-p",
@@ -431,7 +435,7 @@ def check_systemd_timers() -> List[Dict]:
 
                 service_result = subprocess.run(
                     [
-                        "systemctl",
+                        systemctl,
                         "show",
                         service,
                         "-p",
@@ -511,9 +515,14 @@ def check_windows_scheduled_tasks() -> List[Dict]:
     flagged = []
 
     try:
+        schtasks = resolve_command("schtasks")
+    except CommandResolutionError:
+        return flagged
+
+    try:
         result = subprocess.run(
             [
-                "schtasks",
+                schtasks,
                 "/query",
                 "/fo",
                 "LIST",
