@@ -198,7 +198,11 @@ def show_active_connections() -> None:
 
     try:
         result = subprocess.run(
-            [resolve_command("curl"), "-s", "https://ifconfig.me"],
+            [
+                resolve_command("curl"),
+                "-s",
+                "https://ifconfig.me",
+            ],
             capture_output=True,
             text=True,
         )
