@@ -75,8 +75,14 @@ def load_or_create_profile() -> dict:
 
         profile, changed = _migrate(profile)
 
+        current_hostname = socket.gethostname()
+
+        if profile.get("hostname") != current_hostname:
+            profile["hostname"] = current_hostname
+            changed = True
+
         if changed:
-            console.print("[yellow]User profile updated with new default fields.[/]")
+            console.print("[yellow]User profile updated with current system information.[/]")
             _unlock(PROFILE_PATH)
             try:
                 with open(PROFILE_PATH, "w") as f:
