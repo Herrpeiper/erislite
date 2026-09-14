@@ -200,8 +200,6 @@ def run_sweep(user_profile, sweep_profile="standard"):
     if "docker" in profiles[sweep_profile]:
         results["docker"] = docker.run_docker_scan(silent=True)
 
-    # FIX #7: suid was in the weights dict and in the full profile list but was never
-    # assigned to results{}, so it could never contribute to the risk score. Wired in now.
     if "suid" in profiles[sweep_profile]:
         results["suid"] = suid.run_suid_scan(silent=True)
 
@@ -619,7 +617,7 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
     pause_return()
 
 
-def _save_sweep(results, sweep_profile, user_profile):
+def _save_sweep(results, sweep_profile, user_profile, changes):
     """Persist the latest sweep and a timestamped historical sweep log."""
     try:
         all_tags = []
@@ -651,6 +649,7 @@ def _save_sweep(results, sweep_profile, user_profile):
             "risk_percent": risk_percent,
             "tags": sorted(set(all_tags)),
             "priorities": priorities,
+            "changes": changes,
             "results": results,
         }
 
