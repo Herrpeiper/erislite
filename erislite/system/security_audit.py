@@ -1,15 +1,14 @@
 # Project: ErisLITE
 # Module: security_audit.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0-dev
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-14
 # Description: Snapshot-style host security posture assessment.
 
 import os
 import re
-import shutil
 import stat
 import subprocess
 from datetime import datetime
@@ -23,6 +22,10 @@ from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.response.security_log import write_audit_log
+from erislite.security.command_resolver import (
+    CommandResolutionError,
+    resolve_command,
+)
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
@@ -31,13 +34,22 @@ from erislite.ui.utils import clear_screen, pause_return
 # Helpers
 # ----------------------------
 def _have(cmd: str) -> bool:
-    return shutil.which(cmd) is not None
+    try:
+        resolve_command(cmd)
+    except CommandResolutionError:
+        return False
+
+    return True
 
 
 def _safe_run(args: list[str]) -> subprocess.CompletedProcess:
-    # Avoid throwing on nonzero return codes; we interpret stdout/stderr ourselves.
-    return subprocess.run(args, capture_output=True, text=True)
+    resolved = [resolve_command(args[0]), *args[1:]]
 
+    return subprocess.run(
+        resolved,
+        capture_output=True,
+        text=True,
+    )
 
 # ----------------------------
 # Checks
