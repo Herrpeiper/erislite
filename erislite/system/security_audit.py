@@ -20,7 +20,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
 from erislite.response.security_log import write_audit_log
 from erislite.security.command_resolver import (
     CommandResolutionError,
@@ -29,7 +29,7 @@ from erislite.security.command_resolver import (
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
-
+timeout=DEFAULT_COMMAND_TIMEOUT
 # ----------------------------
 # Helpers
 # ----------------------------
@@ -49,6 +49,7 @@ def _safe_run(args: list[str]) -> subprocess.CompletedProcess:
         resolved,
         capture_output=True,
         text=True,
+        timeout=DEFAULT_COMMAND_TIMEOUT,
     )
 
 # ----------------------------

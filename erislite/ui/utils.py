@@ -18,13 +18,14 @@ from rich import box
 from rich.panel import Panel
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
 from erislite.security.command_resolver import (
     CommandResolutionError,
     resolve_command,
 )
 from erislite.ui.console import console
 
+timeout = DEFAULT_COMMAND_TIMEOUT
 
 def get_os() -> str:
     """
@@ -50,6 +51,7 @@ def clear_screen() -> None:
         subprocess.run(
             [resolve_command("clear")],
             check=False,
+            timeout=2,
         )
     except (CommandResolutionError, OSError):
         # Best-effort fallback if clear is unavailable.

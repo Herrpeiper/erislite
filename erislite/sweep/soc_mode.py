@@ -23,6 +23,7 @@ from rich.text import Text
 from erislite.config.settings import (
     APP_NAME,
     APP_VERSION,
+    DEFAULT_COMMAND_TIMEOUT,
     LAST_SWEEP_FILE,
     SOC_LOG_DIR,
 )
@@ -36,6 +37,7 @@ from erislite.ui.utils import clear_screen, pause_return
 WINDOW_MINUTES = 15
 EXPORT_DIR = SOC_LOG_DIR
 MAX_DETAIL = 5
+timeout = DEFAULT_COMMAND_TIMEOUT
 
 # --- Regex (best-effort, stable across common sshd/sudo formats) ---
 RE_SSH_FAIL = re.compile(r"Failed password for .* from (?P<ip>\d{1,3}(?:\.\d{1,3}){3})")
@@ -64,6 +66,7 @@ def _run_cmd(cmd):
             resolved,
             capture_output=True,
             text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
 
         return result.returncode, result.stdout

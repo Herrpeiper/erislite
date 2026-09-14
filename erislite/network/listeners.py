@@ -15,11 +15,12 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
 from erislite.security.command_resolver import resolve_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
+timeout = DEFAULT_COMMAND_TIMEOUT
 WHITELISTED_PROCS = {
     "sshd",
     "cupsd",
@@ -89,6 +90,7 @@ def parse_listeners():
         [resolve_command("ss"), "-tulnp"],
         capture_output=True,
         text=True,
+        timeout=DEFAULT_COMMAND_TIMEOUT,
     )
 
         flagged = []

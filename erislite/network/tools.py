@@ -21,11 +21,12 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION, NETWORK_LOG_DIR
+from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT, NETWORK_LOG_DIR
 from erislite.security.command_resolver import resolve_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
+timeout = DEFAULT_COMMAND_TIMEOUT
 COMMON_PORTS = {
     22: "SSH",
     23: "Telnet",
@@ -112,6 +113,7 @@ def show_gateway() -> None:
             [resolve_command("ip"), "route"],
             capture_output=True,
             text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
 
         for line in result.stdout.splitlines():
@@ -176,7 +178,7 @@ def ping_host() -> None:
 
         console.print(f"\n[cyan]Pinging[/] [white]{target}[/]\n")
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=DEFAULT_COMMAND_TIMEOUT)
 
         if result.returncode == 0:
             console.print(result.stdout)
@@ -205,6 +207,7 @@ def show_active_connections() -> None:
             ],
             capture_output=True,
             text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
         lines = result.stdout.strip().splitlines()
 
@@ -305,6 +308,7 @@ def show_external_ip() -> None:
             ["curl", "-s", "https://ifconfig.me"],
             capture_output=True,
             text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
 
         ip = result.stdout.strip()
@@ -332,7 +336,7 @@ def trace_route() -> None:
             [resolve_command("tracepath"), host],
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
         console.print(result.stdout)
 
@@ -357,6 +361,7 @@ def whois_lookup() -> None:
             [resolve_command("whois"), target],
             capture_output=True,
             text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
         output = result.stdout
 

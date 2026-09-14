@@ -15,11 +15,12 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
 from erislite.security.command_resolver import resolve_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
+timeout = DEFAULT_COMMAND_TIMEOUT
 FAILED_LOGIN_THRESHOLD = 3
 
 ROOT_SHELLS = {
@@ -57,6 +58,7 @@ def get_failed_logins() -> list[str]:
             [resolve_command("journalctl"), "-u", "ssh", "-n", "100"],
             capture_output=True,
             text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
 
         if result.returncode == 0:
@@ -89,6 +91,7 @@ def get_recent_logins() -> list[str]:
             [resolve_command("last"), "-n", "10"],
             capture_output=True,
             text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
 
         if result.returncode != 0:
@@ -114,6 +117,7 @@ def get_uid0_shells() -> list[str]:
             ],
             capture_output=True,
             text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
 
         if result.returncode != 0:
