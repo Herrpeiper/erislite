@@ -10,7 +10,6 @@
 import json
 import os
 import re
-import shutil
 import subprocess
 from collections import Counter
 from datetime import datetime
@@ -26,6 +25,10 @@ from erislite.config.settings import (
     APP_VERSION,
     LAST_SWEEP_FILE,
     SOC_LOG_DIR,
+)
+from erislite.security.command_resolver import (
+    CommandResolutionError,
+    resolve_command,
 )
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
@@ -51,15 +54,34 @@ RE_SU_ROOT_SESSION = re.compile(r"pam_unix\(su(?::session)?\):.*" r"session open
 
 # Helper functions for command execution and availability checks
 def _run_cmd(cmd):
+    if not cmd:
+        return 1, ""
+
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        resolved = [resolve_command(cmd[0]), *cmd[1:]]
+
+        result = subprocess.run(
+            resolved,
+            capture_output=True,
+            text=True,
+        )
+
         return result.returncode, result.stdout
+
+    except CommandResolutionError:
+        return 1, ""
+
     except Exception:
         return 1, ""
 
 
 def _have_cmd(name):
-    return shutil.which(name) is not None
+    try:
+        resolve_command(name)
+    except CommandResolutionError:
+        return False
+
+    return True
 
 
 # Log collection functions
