@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: listeners.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0-dev
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-14
 # Description: Heuristic network listener inspection and suspicious bind detection.
 
 import re
@@ -16,6 +16,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.security.command_resolver import resolve_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -85,10 +86,10 @@ def parse_listeners():
     """
     try:
         result = subprocess.run(
-            ["ss", "-tulnp"],
-            capture_output=True,
-            text=True,
-        )
+        [resolve_command("ss"), "-tulnp"],
+        capture_output=True,
+        text=True,
+    )
 
         flagged = []
 
