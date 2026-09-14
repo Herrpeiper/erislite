@@ -22,6 +22,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION, NETWORK_LOG_DIR
+from erislite.security.command_resolver import resolve_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
@@ -107,7 +108,11 @@ def show_gateway() -> None:
             pause_return()
             return
 
-        result = subprocess.run(["ip", "route"], capture_output=True, text=True)
+        result = subprocess.run(
+            [resolve_command("ip"), "route"],
+            capture_output=True,
+            text=True,
+        )
 
         for line in result.stdout.splitlines():
             if not line.startswith("default"):
@@ -161,11 +166,14 @@ def ping_host() -> None:
     target = Prompt.ask("[cyan]Target[/]", default="8.8.8.8")
 
     try:
+        ping_cmd = resolve_command("ping")
+
         cmd = (
-            ["ping", "-n", "4", target]
+            [ping_cmd, "-n", "4", target]
             if platform.system() == "Windows"
-            else ["ping", "-c", "4", target]
+            else [ping_cmd, "-c", "4", target]
         )
+
         console.print(f"\n[cyan]Pinging[/] [white]{target}[/]\n")
 
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -189,7 +197,11 @@ def show_active_connections() -> None:
     show_network_header("ACTIVE CONNECTIONS")
 
     try:
-        result = subprocess.run(["ss", "-tunp"], capture_output=True, text=True)
+        result = subprocess.run(
+            [resolve_command("curl"), "-s", "https://ifconfig.me"],
+            capture_output=True,
+            text=True,
+        )
         lines = result.stdout.strip().splitlines()
 
         if len(lines) < 2:
@@ -313,7 +325,7 @@ def trace_route() -> None:
 
     try:
         result = subprocess.run(
-            ["tracepath", host],
+            [resolve_command("tracepath"), host],
             capture_output=True,
             text=True,
             timeout=20,
@@ -337,7 +349,11 @@ def whois_lookup() -> None:
     target = Prompt.ask("[cyan]Domain or IP[/]", default="example.com")
 
     try:
-        result = subprocess.run(["whois", target], capture_output=True, text=True)
+        result = subprocess.run(
+            [resolve_command("whois"), target],
+            capture_output=True,
+            text=True,
+        )
         output = result.stdout
 
         summary_fields = {
