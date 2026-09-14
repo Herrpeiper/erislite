@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [1.3.0] - In Development
+
+### Competition Hardening
+- Harden Python module/import handling
+- Add ErisLITE self-integrity verification
+- Review execution environment and filesystem permissions
+- Reduce privileged execution where possible
+- Evaluate compiled deployment using Nuitka
+- Add hostile-environment and tamper-resistance testing
+
+---
+
 ## [1.2.0] - 2026-09-11
 
 ### Added
