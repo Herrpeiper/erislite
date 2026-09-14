@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: login_audit.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0-dev
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-14
 # Description: Login and authentication audit: failed logins, root shells, and recent login history.
 
 import re
@@ -16,6 +16,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.security.command_resolver import resolve_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -53,7 +54,7 @@ def get_failed_logins() -> list[str]:
 
     try:
         result = subprocess.run(
-            ["journalctl", "-u", "ssh", "-n", "100"],
+            [resolve_command("journalctl"), "-u", "ssh", "-n", "100"],
             capture_output=True,
             text=True,
         )
@@ -85,7 +86,7 @@ def get_failed_logins() -> list[str]:
 def get_recent_logins() -> list[str]:
     try:
         result = subprocess.run(
-            ["last", "-n", "10"],
+            [resolve_command("last"), "-n", "10"],
             capture_output=True,
             text=True,
         )
@@ -106,7 +107,11 @@ def get_recent_logins() -> list[str]:
 def get_uid0_shells() -> list[str]:
     try:
         result = subprocess.run(
-            ["ps", "-eo", "uid=,pid=,tty=,comm=,args="],
+            [
+                resolve_command("ps"),
+                "-eo",
+                "uid=,pid=,tty=,comm=,args=",
+            ],
             capture_output=True,
             text=True,
         )
