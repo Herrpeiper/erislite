@@ -64,7 +64,7 @@ def _kernel_release() -> str:
     except Exception:
         return ""
 
-def get_module_path(modname: str) -> str:
+def get_module_path(modname: str):
     try:
         result = subprocess.run(
             [resolve_command("modinfo"), "-n", modname],
@@ -73,13 +73,27 @@ def get_module_path(modname: str) -> str:
             timeout=5,
         )
 
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
+        if result.returncode != 0:
+            return None, (
+                result.stderr.strip()
+                or f"modinfo exited with code {result.returncode}"
+            )
 
-    except Exception:
-        pass
+        path = result.stdout.strip()
 
-    return "Unknown"
+        if not path:
+            return None, "modinfo returned no module path"
+
+        return path, None
+
+    except CommandResolutionError:
+        return None, "modinfo is unavailable"
+
+    except subprocess.TimeoutExpired:
+        return None, f"modinfo timed out for {modname}"
+
+    except OSError as exc:
+        return None, str(exc)
 
 def get_loaded_modules():
     try:
@@ -206,7 +220,7 @@ def run_kernel_module_check(
     module_log = []
 
     for name, size, used_by in modules:
-        path = get_module_path(name)
+        path, path_error = get_module_path(name)
         flags = []
 
         if name.lower() in KNOWN_BAD_MODULES:
@@ -214,7 +228,7 @@ def run_kernel_module_check(
             bad_named.append(name)
 
         is_legit = (
-            path != "Unknown"
+            path is not None
             and path.startswith(expected_prefix)
         )
 
