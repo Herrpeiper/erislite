@@ -74,6 +74,17 @@ PERIODIC_CRON_DIRS = (
     "/etc/cron.monthly",
 )
 
+def _collection_error(source: str, reason: str) -> Dict:
+    return {
+        "type": "Collection Error",
+        "path": source,
+        "owner": "-",
+        "line": "-",
+        "command": reason,
+        "tags": ["cron_scan_incomplete"],
+        "kind": "error",
+    }
+
 def _header() -> None:
     console.print(
         Panel(
@@ -171,8 +182,13 @@ def _parse_system_crontab(path: str) -> List[Dict]:
                         }
                     )
 
-    except Exception:
-        pass
+    except OSError as exc:
+        flagged.append(
+            _collection_error(
+                path,
+                f"Could not read crontab: {exc}",
+            )
+        )
 
     return flagged
 
@@ -185,7 +201,13 @@ def _inspect_periodic_scripts() -> List[Dict]:
 
         try:
             entries = os.listdir(directory)
-        except Exception:
+        except OSError as exc:
+            flagged.append(
+                _collection_error(
+                    directory,
+                    f"Could not enumerate periodic cron directory: {exc}",
+                )
+            )
             continue
 
         for name in entries:
@@ -217,8 +239,16 @@ def _inspect_periodic_scripts() -> List[Dict]:
                         }
                     )
 
-            except Exception:
+            except FileNotFoundError:
                 continue
+
+            except OSError as exc:
+                flagged.append(
+                    _collection_error(
+                        path,
+                        f"Could not inspect periodic cron script: {exc}",
+                    )
+                )
 
     return flagged
 
@@ -251,8 +281,13 @@ def check_cron_jobs() -> List[Dict]:
                     flagged.extend(
                         _parse_system_crontab(path)
                     )
-        except Exception:
-            pass
+        except OSError as exc:
+            flagged.append(
+                _collection_error(
+                    "/etc/cron.d",
+                    f"Could not enumerate cron directory: {exc}",
+                )
+            )
 
     flagged.extend(_inspect_periodic_scripts())
 
@@ -263,10 +298,27 @@ def check_user_crontabs() -> List[Dict]:
 
     try:
         crontab = resolve_command("crontab")
-    except CommandResolutionError:
-        return flagged
 
-    for user in pwd.getpwall():
+    except CommandResolutionError:
+        return [
+            _collection_error(
+                "user crontabs",
+                "crontab command is unavailable",
+            )
+        ]
+
+    try:
+        users = pwd.getpwall()
+
+    except Exception as exc:
+        return [
+            _collection_error(
+                "/etc/passwd",
+                f"Could not enumerate users for crontab inspection: {exc}",
+            )
+        ]
+
+    for user in users:
         if user.pw_uid < 1000:
             continue
 
@@ -332,7 +384,12 @@ def check_user_crontabs() -> List[Dict]:
                     )
 
         except subprocess.TimeoutExpired:
-            continue
+            flagged.append(
+                _collection_error(
+                    f"crontab -u {user.pw_name}",
+                    "User crontab inspection timed out",
+                )
+            )
 
         except Exception:
             continue
@@ -344,7 +401,12 @@ def check_systemd_timers() -> List[Dict]:
     try:
         systemctl = resolve_command("systemctl")
     except CommandResolutionError:
-        return []
+        return [
+            _collection_error(
+                "systemd timers",
+                "systemctl is unavailable",
+            )
+        ]
 
     try:
         result = subprocess.run(
@@ -361,10 +423,29 @@ def check_systemd_timers() -> List[Dict]:
         )
 
         if result.returncode != 0:
-            return []
+            return [
+                _collection_error(
+                    "systemd timers",
+                    result.stderr.strip()
+                    or f"systemctl list-timers exited with code {result.returncode}",
+                )
+            ]
 
-    except Exception:
-        return []
+    except subprocess.TimeoutExpired:
+        return [
+            _collection_error(
+                "systemd timers",
+                "systemctl list-timers timed out",
+            )
+        ]
+
+    except OSError as exc:
+        return [
+            _collection_error(
+                "systemd timers",
+                f"Could not inspect systemd timers: {exc}",
+            )
+        ]
 
     flagged = []
 
@@ -517,7 +598,12 @@ def check_windows_scheduled_tasks() -> List[Dict]:
     try:
         schtasks = resolve_command("schtasks")
     except CommandResolutionError:
-        return flagged
+        return [
+            _collection_error(
+                "Windows scheduled tasks",
+                "schtasks is unavailable",
+            )
+        ]
 
     try:
         result = subprocess.run(
@@ -534,7 +620,13 @@ def check_windows_scheduled_tasks() -> List[Dict]:
         )
 
         if result.returncode != 0:
-            return flagged
+            return [
+                _collection_error(
+                    "Windows scheduled tasks",
+                    result.stderr.strip()
+                    or f"schtasks exited with code {result.returncode}",
+                )
+            ]
 
         tasks = re.split(
             r"\r?\n\r?\n",
@@ -576,8 +668,21 @@ def check_windows_scheduled_tasks() -> List[Dict]:
                     }
                 )
 
-    except Exception:
-        pass
+    except subprocess.TimeoutExpired:
+        flagged.append(
+            _collection_error(
+                "Windows scheduled tasks",
+                "schtasks query timed out",
+            )
+        )
+
+    except OSError as exc:
+        flagged.append(
+            _collection_error(
+                "Windows scheduled tasks",
+                f"Could not inspect scheduled tasks: {exc}",
+            )
+        )
 
     return flagged
 
@@ -617,16 +722,52 @@ def run_cron_timer_scan(silent: bool = False):
             "tags": [],
         }
 
-    total = len(findings)
+    errors = [
+        entry
+        for entry in findings
+        if entry.get("kind") == "error"
+    ]
+
+    scheduled_findings = [
+        entry
+        for entry in findings
+        if entry.get("kind") != "error"
+    ]
+
+    total = len(scheduled_findings)
+
+    if scheduled_findings:
+        status = "warning"
+    elif errors:
+        status = "error"
+    else:
+        status = "ok"
+
+    details = []
+
+    if scheduled_findings:
+        details.append(
+            f"{total} suspicious scheduled task(s) flagged"
+        )
+
+    if errors:
+        details.extend(
+            f"{entry['path']} — {entry['command']}"
+            for entry in errors
+        )
+
+    tags = []
+
+    if scheduled_findings:
+        tags.append("suspicious_cron")
+
+    if errors:
+        tags.append("cron_scan_incomplete")
 
     result = {
-        "status": "warning" if findings else "ok",
-        "details": (
-            [f"{total} suspicious scheduled task(s) flagged"]
-            if findings
-            else []
-        ),
-        "tags": ["suspicious_cron"] if findings else [],
+        "status": status,
+        "details": details,
+        "tags": tags,
     }
 
     if silent:
@@ -638,7 +779,7 @@ def run_cron_timer_scan(silent: bool = False):
     console.print(
         Panel.fit(
             f"[dim]Findings:[/] "
-            f"[{'yellow' if findings else 'green'}]{total}[/]   "
+            f"[{'yellow' if scheduled_findings else 'green'}]{total}[/]   "
             f"[dim]Platform:[/] [white]{os_type}[/]",
             title="[bold cyan]SUMMARY[/]",
             border_style="cyan",
@@ -647,7 +788,7 @@ def run_cron_timer_scan(silent: bool = False):
     )
     console.print()
 
-    if findings:
+    if scheduled_findings:
         table = Table(
             title="[italic cyan]Scheduled Task Findings[/]",
             box=box.SIMPLE_HEAVY,
@@ -656,12 +797,12 @@ def run_cron_timer_scan(silent: bool = False):
             padding=(0, 1),
         )
 
-        table.add_column("Type", style="cyan", no_wrap=True, )
-        table.add_column("Path / Task", style="white", )
-        table.add_column("Owner", style="white", no_wrap=True, )
-        table.add_column("Signals", style="yellow", )
+        table.add_column("Type", style="cyan", no_wrap=True)
+        table.add_column("Path / Task", style="white")
+        table.add_column("Owner", style="white", no_wrap=True)
+        table.add_column("Signals", style="yellow")
 
-        for entry in findings:
+        for entry in scheduled_findings:
             table.add_row(
                 entry["type"],
                 entry["path"],
@@ -672,11 +813,44 @@ def run_cron_timer_scan(silent: bool = False):
         console.print(table)
         console.print()
 
+    if errors:
+        error_table = Table(
+            title="[italic cyan]Collection Issues[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+
+        error_table.add_column("Source", style="white")
+        error_table.add_column("Issue", style="yellow")
+
+        for entry in errors:
+            error_table.add_row(
+                entry["path"],
+                entry["command"],
+            )
+
+        console.print(error_table)
+        console.print()
+
+    if scheduled_findings:
         console.print(
             Panel.fit(
                 f"[yellow]{total} scheduled task(s) require review.[/]\n"
                 "[dim]Validate command content, ownership, execution path, and whether the schedule is expected.[/]",
                 title="[bold yellow]REVIEW REQUIRED[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+
+    elif errors:
+        console.print(
+            Panel.fit(
+                "[yellow]Scheduled-task inspection completed with collection errors.[/]\n"
+                "[dim]Results may be incomplete; review unavailable sources.[/]",
+                title="[bold yellow]INCOMPLETE[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
             )
