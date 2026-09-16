@@ -74,7 +74,10 @@ def _run_cmd(cmd):
     except CommandResolutionError:
         return 1, ""
 
-    except Exception:
+    except subprocess.TimeoutExpired:
+        return 1, ""
+
+    except OSError:
         return 1, ""
 
 
@@ -94,8 +97,12 @@ def collect_journal_logs():
 
     since = f"{WINDOW_MINUTES} minutes ago"
     code, out = _run_cmd(["journalctl", "--since", since, "--no-pager"])
-    if code != 0 or not out.strip():
+    if code != 0:
         return None
+
+    if not out.strip():
+        return []
+
     return out.splitlines()
 
 
@@ -103,13 +110,27 @@ def collect_journal_logs():
 def collect_warning_logs():
     """Warnings/errors help SOC posture without going 'too detailed'."""
     if not _have_cmd("journalctl"):
-        return []
+        return None
+
     since = f"{WINDOW_MINUTES} minutes ago"
+
     code, out = _run_cmd(
-        ["journalctl", "--since", since, "-p", "warning..alert", "--no-pager"]
+        [
+            "journalctl",
+            "--since",
+            since,
+            "-p",
+            "warning..alert",
+            "--no-pager",
+        ]
     )
-    if code != 0 or not out.strip():
+
+    if code != 0:
+        return None
+
+    if not out.strip():
         return []
+
     return out.splitlines()
 
 
@@ -128,7 +149,7 @@ def get_current_privilege_state():
 def collect_auth_logs():
     journal_logs = collect_journal_logs()
 
-    if journal_logs:
+    if journal_logs is not None:
         return {
             "source": "journalctl",
             "available": True,
@@ -371,7 +392,7 @@ def load_latest_sweep_summary():
             encoding="utf-8",
         ) as file:
             data = json.load(file)
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         return None
 
     changes = data.get("changes", {})
@@ -394,7 +415,9 @@ def interactive_soc_mode():
 
     auth_source = collect_auth_logs()
     warn_logs = collect_warning_logs()
-    warning_count = len(warn_logs)
+
+    warning_source_available = warn_logs is not None
+    warning_count = len(warn_logs) if warn_logs is not None else 0
 
     event_source_available = auth_source["available"]
     event_source_name = auth_source["source"]
@@ -406,6 +429,10 @@ def interactive_soc_mode():
     status = compute_status(parsed, warning_count)
     score = compute_score(parsed, warning_count)
     attention = build_attention(parsed, warning_count)
+
+    if not event_source_available or not warning_source_available:
+        if status == "STABLE":
+            status = "WATCH"
     privilege = get_current_privilege_state()
     sweep_summary = load_latest_sweep_summary()
 
@@ -413,6 +440,12 @@ def interactive_soc_mode():
         attention.append(
             "Authentication event source unavailable; "
             "privilege-escalation event visibility is limited"
+        )
+
+    if not warning_source_available:
+        attention.append(
+            "Warning/error event source unavailable; "
+            "system posture visibility is limited"
         )
 
     if privilege["elevated_via_sudo"]:
@@ -470,6 +503,12 @@ def interactive_soc_mode():
         else "None"
     )
 
+    warning_display = (
+        str(warning_count)
+        if warning_source_available
+        else "N/A"
+    )
+
     table = Table(
         title="[italic cyan]Activity Summary[/]",
         box=box.SIMPLE_HEAVY,
@@ -489,7 +528,7 @@ def interactive_soc_mode():
     table.add_row("ROOT", "su → root", event_na or str(parsed["su_to_root"]),)
     table.add_row("ROOT", "sudo → root", event_na or str(parsed["sudo_to_root"]),)
     table.add_row("ROOT", "sudo root session", event_na or str(parsed["sudo_root_sessions"]),)
-    table.add_row("SYSTEM", "Warnings+", str(warning_count),)
+    table.add_row("SYSTEM", "Warnings+", str(warning_display),)
     table.add_row("SESSION", "Effective UID", str(privilege["euid"]),)
     table.add_row("SESSION", "Running as Root", "Yes" if privilege["is_root"] else "No",)
     table.add_row("SESSION", "Original User", privilege["sudo_user"] or "N/A",)
@@ -734,7 +773,12 @@ def interactive_soc_mode():
                 "sudo_root_sessions": parsed["sudo_root_sessions"],
             },
             "system": {
-                "warning_count": warning_count,
+                "warning_count": (
+                    warning_count
+                    if warning_source_available
+                    else None
+                ),
+                "warning_source_available": warning_source_available,
             },
             "event_source": {
                 "source": event_source_name,
