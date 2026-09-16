@@ -97,6 +97,8 @@ THREAT_TAG_MAP = {
     "weak_ssh_config": "One or more SSH server settings differ from the hardening baseline.",
     "firewall_permission_denied": ("Firewall state could not be fully inspected with the current privileges."),
     "firewall_check_failed": "One or more firewall inspection commands failed.",
+    "auth_audit_incomplete": ("One or more authentication audit data sources could not be inspected."),
+    "kernel_module_inspection_incomplete": ("One or more loaded kernel modules could not be fully inspected."),
 }
 
 
@@ -218,8 +220,17 @@ def run_sweep(user_profile, sweep_profile="standard"):
     # Firewall check is always run as a baseline signal
     try:
         results["firewall"] = firewall.run_firewall_check(silent=True)
-    except Exception:
-        pass
+
+    except Exception as exc:
+        results["firewall"] = {
+            "status": "error",
+            "details": [
+                f"Firewall check failed: {exc}"
+            ],
+            "tags": [
+                "firewall_check_failed"
+            ],
+        }
 
     hostname = user_profile.get(
         "hostname",

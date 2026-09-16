@@ -86,8 +86,21 @@ def _parse_key(line: str) -> dict:
 
 def find_authorized_keys():
     entries = []
+    errors = []
 
-    for user in pwd.getpwall():
+    try:
+        users = pwd.getpwall()
+
+    except Exception as exc:
+        errors.append(
+            {
+                "path": "/etc/passwd",
+                "reason": f"Could not enumerate local users: {exc}",
+            }
+        )
+        return entries, errors
+
+    for user in users:
         if user.pw_uid < 1000 and user.pw_name != "root":
             continue
 
@@ -130,10 +143,26 @@ def find_authorized_keys():
                         }
                     )
 
-        except Exception:
+        except FileNotFoundError:
             continue
 
-    return entries
+        except PermissionError as exc:
+            errors.append(
+                {
+                    "path": auth_keys_path,
+                    "reason": f"Permission denied while reading: {exc}",
+                }
+            )
+
+        except OSError as exc:
+            errors.append(
+                {
+                    "path": auth_keys_path,
+                    "reason": f"Could not read authorized_keys: {exc}",
+                }
+            )
+
+    return entries, errors
 
 
 def _analyze_entry(entry: dict) -> tuple[list[str], set[str]]:
@@ -177,7 +206,7 @@ def run_ssh_key_check(silent: bool = False):
             "tags": [],
         }
 
-    entries = find_authorized_keys()
+    entries, errors = find_authorized_keys()
 
     findings = []
     tags = set()
@@ -207,15 +236,30 @@ def run_ssh_key_check(silent: bool = False):
             f"{len(findings)} SSH authorized key(s) require review"
         )
 
+    if errors:
+        details.extend(
+            f"{error['path']} — {error['reason']}"
+            for error in errors
+        )
+
+    if findings:
+        status = "warning"
+    elif errors:
+        status = "error"
+    else:
+        status = "ok"
+
+    if errors:
+        tags.add("ssh_keys_scan_incomplete")
+
     result = {
-        "status": "warning" if findings else "ok",
+        "status": status,
         "details": details,
         "tags": sorted(tags),
         "flagged": bool(findings),
         "key_count": len(entries),
         "user_count": len(users),
     }
-
     if silent:
         return result
 
@@ -227,7 +271,9 @@ def run_ssh_key_check(silent: bool = False):
             f"[dim]Keys:[/] [white]{len(entries)}[/]   "
             f"[dim]Users:[/] [white]{len(users)}[/]   "
             f"[dim]Review:[/] "
-            f"[{'yellow' if findings else 'green'}]{len(findings)}[/]",
+            f"[{'yellow' if findings else 'green'}]{len(findings)}[/]   "
+            f"[dim]Errors:[/] "
+            f"[{'yellow' if errors else 'green'}]{len(errors)}[/]",
             title="[bold cyan]SUMMARY[/]",
             border_style="cyan",
             box=box.ROUNDED,
@@ -296,12 +342,50 @@ def run_ssh_key_check(silent: bool = False):
         console.print(table)
         console.print()
 
+    if errors:
+        error_table = Table(
+            title="[italic cyan]Collection Issues[/]",
+            box=box.SIMPLE_HEAVY,
+            header_style="bold cyan",
+            show_edge=False,
+            padding=(0, 1),
+        )
+
+        error_table.add_column(
+            "Path",
+            style="white",
+        )
+        error_table.add_column(
+            "Issue",
+            style="yellow",
+        )
+
+        for error in errors:
+            error_table.add_row(
+                error["path"],
+                error["reason"],
+            )
+
+        console.print(error_table)
+        console.print()
+
     if findings:
         console.print(
             Panel.fit(
                 f"[yellow]{len(findings)} SSH authorized key(s) require review.[/]\n"
                 "[dim]Validate privileged-account keys, ownership, source, and whether access is expected.[/]",
                 title="[bold yellow]REVIEW REQUIRED[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+
+    elif errors:
+        console.print(
+            Panel.fit(
+                "[yellow]SSH authorized-key inspection completed with collection errors.[/]\n"
+                "[dim]Results may be incomplete; review inaccessible accounts or key files.[/]",
+                title="[bold yellow]INCOMPLETE[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
             )

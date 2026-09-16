@@ -317,8 +317,11 @@ def run_kernel_module_check(
                 indent=2,
             )
 
-    except Exception:
-        pass
+    except OSError as exc:
+        if not silent:
+            console.print(
+                f"[yellow]Warning: could not save kernel module log: {exc}[/]"
+            )
 
     if silent:
         return {

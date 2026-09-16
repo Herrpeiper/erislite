@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: soc_mode.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0-dev
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-16
 # Description: SOC Mode rolling snapshot and posture assessment.
 
 import json
@@ -37,7 +37,6 @@ from erislite.ui.utils import clear_screen, pause_return
 WINDOW_MINUTES = 15
 EXPORT_DIR = SOC_LOG_DIR
 MAX_DETAIL = 5
-timeout = DEFAULT_COMMAND_TIMEOUT
 
 # --- Regex (best-effort, stable across common sshd/sudo formats) ---
 RE_SSH_FAIL = re.compile(r"Failed password for .* from (?P<ip>\d{1,3}(?:\.\d{1,3}){3})")
@@ -533,7 +532,7 @@ def interactive_soc_mode():
     table.add_row("SESSION", "Running as Root", "Yes" if privilege["is_root"] else "No",)
     table.add_row("SESSION", "Original User", privilege["sudo_user"] or "N/A",)
     table.add_row("SOURCE", "Auth Event Source", event_source_name,)
-    table.add_row("SOURCE", "Event Visibility", "Available" if event_source_available else "Limited", )
+    table.add_row("SOURCE", "Event Visibility", "Available" if warning_source_available else "Limited", )
 
     console.print(table)
     console.print()

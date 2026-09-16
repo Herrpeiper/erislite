@@ -25,6 +25,7 @@ from erislite.security.command_resolver import (
 )
 from erislite.ui.console import console
 
+
 timeout = DEFAULT_COMMAND_TIMEOUT
 
 def get_os() -> str:
@@ -51,7 +52,7 @@ def clear_screen() -> None:
         subprocess.run(
             [resolve_command("clear")],
             check=False,
-            timeout=2,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
     except (CommandResolutionError, OSError):
         # Best-effort fallback if clear is unavailable.

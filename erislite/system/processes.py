@@ -138,10 +138,10 @@ def _cmdline_str(proc) -> str:
     try:
         parts = proc.cmdline()
         return " ".join(parts) if parts else proc.name()
-    except Exception:
+    except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
         try:
             return proc.name()
-        except Exception:
+        except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
             return ""
 
 
@@ -159,7 +159,7 @@ def _is_deleted(proc) -> bool:
 def _is_kernel_thread(proc) -> bool:
     try:
         return not proc.cmdline() and not proc.exe()
-    except (psutil.AccessDenied, psutil.NoSuchProcess):
+    except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
         return True
     except Exception:
         return False
@@ -168,7 +168,7 @@ def _is_kernel_thread(proc) -> bool:
 def _get_username(uid: int) -> str:
     try:
         return pwd.getpwuid(uid).pw_name
-    except Exception:
+    except (KeyError, OSError):
         return str(uid)
 
 
@@ -203,7 +203,7 @@ def scan_processes():
 
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-        except Exception:
+        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
             continue
 
         if _is_kernel_thread(proc):
