@@ -155,17 +155,47 @@ def run_rapid_response(dry_run: bool = False) -> None:
     console.print()
 
     procs = suspicious_processes()
-    conns = suspicious_connections()
-    users = flagged_users()
-    crons = writable_crons()
+    conns, conn_error = suspicious_connections()
+    users, user_error = flagged_users()
+    crons, cron_errors = writable_crons()
+
+    collection_errors = []
+
+    if conn_error:
+        collection_errors.append(conn_error)
+
+    if user_error:
+        collection_errors.append(user_error)
+
+    collection_errors.extend(cron_errors)
 
     total = len(procs) + len(conns) + len(users) + len(crons)
 
     if total == 0:
-        console.print("[green]Triage complete — no immediate threats detected.[/]")
-        console.print(
-            "[dim]Consider running a full Threat Sweep for deeper analysis.[/]"
-        )
+        if collection_errors:
+            console.print(
+                "[yellow]Triage completed with collection errors.[/]"
+            )
+
+            for error in collection_errors:
+                console.print(
+                    f"  [yellow]•[/] {error}"
+                )
+
+            console.print()
+            console.print(
+                "[dim]No immediate threats were detected in the data that "
+                "could be inspected, but visibility was incomplete.[/]"
+            )
+
+        else:
+            console.print(
+                "[green]Triage complete — no immediate threats detected.[/]"
+            )
+            console.print(
+                "[dim]Consider running a full Threat Sweep for deeper analysis.[/]"
+            )
+
         pause_return()
         return
 
@@ -179,6 +209,19 @@ def run_rapid_response(dry_run: bool = False) -> None:
         console.print("[red]World-Writable Cron Files[/]")
         for path in crons:
             console.print(f"  [yellow]{path}[/]")
+        console.print()
+    
+    if collection_errors:
+        console.print("[yellow]Collection Issues[/]")
+
+        for error in collection_errors:
+            console.print(
+                f"  [yellow]•[/] {error}"
+            )
+
+        console.print(
+            "[dim]Triage results may be incomplete.[/]"
+        )
         console.print()
 
     actions = build_action_plan(procs, conns, users, crons)
