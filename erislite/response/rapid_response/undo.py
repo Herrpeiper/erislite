@@ -16,6 +16,7 @@ from rich import box
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
+from erislite.network.firewall import build_ip_block_commands
 from erislite.response.rapid_response.utils import LOG_DIR, run_cmd
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
@@ -48,16 +49,20 @@ def _validate_command_undo(entry: dict, args: list[str]) -> bool:
 
     if action_type == "block_ip":
         ip = data.get("remote_ip")
+        backend = data.get("firewall_backend")
 
-        return args == [
-            "iptables",
-            "-D",
-            "OUTPUT",
-            "-d",
+        if not ip or not backend:
+            return False
+
+        commands = build_ip_block_commands(
             ip,
-            "-j",
-            "DROP",
-        ]
+            backend,
+        )
+
+        if commands is None:
+            return False
+
+        return args == commands["undo"]
 
     if action_type == "lock_user":
         username = data.get("username")
