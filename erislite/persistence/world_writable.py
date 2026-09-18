@@ -100,17 +100,26 @@ def _is_risky_file(path: str) -> bool:
     return path.endswith(RISKY_EXTENSIONS)
 
 
-def _walk_roots(roots: List[str]) -> Set[str]:
+def _walk_roots(roots: List[str]) -> tuple[Set[str], List[str]]:
     """
     Walk selected roots and return a set of high-signal world-writable paths.
     """
     suspicious: Set[str] = set()
+    errors: List[str] = []
+
+    def _walk_error(exc: OSError) -> None:
+        errors.append(str(exc))
 
     for base in roots:
         if not os.path.exists(base):
             continue
 
-        for root, dirs, files in os.walk(base, topdown=True, followlinks=False):
+        for root, dirs, files in os.walk(
+            base,
+            topdown=True,
+            followlinks=False,
+            onerror=_walk_error,
+        ):
             if _should_skip(root):
                 dirs[:] = []
                 continue
@@ -150,21 +159,30 @@ def _walk_roots(roots: List[str]) -> Set[str]:
 
                 except (FileNotFoundError, PermissionError):
                     continue
-                except Exception:
+                except OSError:
                     continue
 
-    return suspicious
+    return suspicious, errors
 
 
-def _walk_full_filesystem() -> Set[str]:
+def _walk_full_filesystem() -> tuple[Set[str], List[str]]:
     """
     Full/raw mode: walk / (still skipping virtual/noisy trees),
     returning all world-writable dirs + risky-type files.
     Use for manual inspection only.
     """
     suspicious: Set[str] = set()
+    errors: List[str] = []
 
-    for root, dirs, files in os.walk("/", topdown=True, followlinks=False):
+    def _walk_error(exc: OSError) -> None:
+        errors.append(str(exc))
+
+    for root, dirs, files in os.walk(
+        "/",
+        topdown=True,
+        followlinks=False,
+        onerror=_walk_error,
+    ):
         if _should_skip(root):
             dirs[:] = []
             continue
@@ -197,10 +215,10 @@ def _walk_full_filesystem() -> Set[str]:
 
             except (FileNotFoundError, PermissionError):
                 continue
-            except Exception:
+            except OSError:
                 continue
 
-    return suspicious
+    return suspicious, errors
 
 
 def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, full_scan: bool = False) -> Dict:
@@ -225,9 +243,9 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
 
     # Decide scan scope
     if full_scan:
-        suspicious = _walk_full_filesystem()
+        suspicious, scan_errors = _walk_full_filesystem()
     else:
-        suspicious = _walk_roots(list(CRITICAL_ROOTS))
+        suspicious, scan_errors = _walk_roots(list(CRITICAL_ROOTS))
 
     # Optionally keep the old "filter_by_type" behavior:
     # If filter_by_type=False, include all world-writable regular files in critical roots too (noisy).
@@ -237,7 +255,12 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
         for base in CRITICAL_ROOTS:
             if not os.path.exists(base):
                 continue
-            for root, dirs, files in os.walk(base, topdown=True, followlinks=False):
+            for root, dirs, files in os.walk(
+                base,
+                topdown=True,
+                followlinks=False,
+                onerror=lambda exc: scan_errors.append(str(exc)),
+            ):
                 if _should_skip(root):
                     dirs[:] = []
                     continue
@@ -249,7 +272,7 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
                         st = os.lstat(path)
                         if stat.S_ISREG(st.st_mode) and _is_world_writable(st.st_mode):
                             expanded.add(path)
-                    except Exception:
+                    except OSError:
                         continue
         suspicious = expanded
 
@@ -264,7 +287,9 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
             Panel.fit(
                 f"[dim]Scope:[/] [white]{scope}[/]   "
                 f"[dim]Findings:[/] "
-                f"[{'yellow' if suspicious else 'green'}]{len(suspicious)}[/]",
+                f"[{'yellow' if suspicious else 'green'}]{len(suspicious)}[/]   "
+                f"[dim]Errors:[/] "
+                f"[{'yellow' if scan_errors else 'green'}]{len(scan_errors)}[/]",
                 title="[bold cyan]SUMMARY[/]",
                 border_style="cyan",
                 box=box.ROUNDED,
@@ -308,7 +333,7 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
                         risk,
                     )
 
-                except Exception:
+                except OSError:
                     continue
 
             console.print(table)
@@ -325,6 +350,23 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
                 )
             )
 
+        elif scan_errors:
+            console.print(
+                Panel.fit(
+                    "[yellow]No high-signal world-writable items were detected, "
+                    "but the scan was incomplete.[/]\n"
+                    "[dim]One or more filesystem locations could not be traversed.[/]",
+                    title="[bold yellow]STATUS: INCOMPLETE[/]",
+                    border_style="yellow",
+                    box=box.ROUNDED,
+                )
+            )
+
+            for error in scan_errors[:10]:
+                console.print(f"  [yellow]•[/] {error}")
+
+            console.print()
+
         else:
             console.print(
                 Panel.fit(
@@ -338,21 +380,37 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
 
         pause_return()
 
+    details = []
+    tags = []
+
     if suspicious:
-        preview = sorted(suspicious)[:MAX_PREVIEW]
+        details.append(
+            f"{len(suspicious)} high-signal world-writable item(s) found "
+            f"({'full filesystem' if full_scan else 'critical paths'})"
+        )
+        tags.append("world_writable")
 
-        return {
-            "status": "warning",
-            "details": [
-                f"{len(suspicious)} high-signal world-writable item(s) found "
-                f"({'full filesystem' if full_scan else 'critical paths'})"
-            ],
-            "tags": ["world_writable"],
-            "preview": preview,
-        }
+    if scan_errors:
+        details.extend(
+            f"Traversal error: {error}"
+            for error in scan_errors[:10]
+        )
+        tags.append("world_writable_scan_incomplete")
 
-    return {
-        "status": "ok",
-        "details": [],
-        "tags": [],
+    if suspicious:
+        status = "warning"
+    elif scan_errors:
+        status = "error"
+    else:
+        status = "ok"
+
+    result = {
+        "status": status,
+        "details": details,
+        "tags": tags,
     }
+
+    if suspicious:
+        result["preview"] = sorted(suspicious)[:MAX_PREVIEW]
+
+    return result
