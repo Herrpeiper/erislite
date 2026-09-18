@@ -9,55 +9,93 @@
 
 import getpass
 import os
-import pwd
-import shutil
 import subprocess
-from pathlib import Path
 
 from rich import box
 from rich.panel import Panel
 from rich.table import Table
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.security.command_resolver import (
+    CommandResolutionError,
+    resolve_command,
+)
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen
 
 
 def resolve_user_shell() -> str | None:
     """
-    Resolve an available interactive shell.
+    Resolve a trusted interactive shell.
 
-    Resolution order:
-    1. SHELL environment variable
-    2. Current user's passwd entry
-    3. bash
-    4. sh
+    Environment variables and PATH-based shell discovery are intentionally
+    not trusted because ErisLITE may be running on a compromised host.
     """
-    candidates = []
-
-    environment_shell = os.environ.get("SHELL")
-    if environment_shell:
-        candidates.append(environment_shell)
-
-    try:
-        account_shell = pwd.getpwuid(os.geteuid()).pw_shell
-        if account_shell:
-            candidates.append(account_shell)
-    except (KeyError, OSError):
-        pass
-
-    for fallback in ("bash", "sh"):
-        resolved = shutil.which(fallback)
-        if resolved:
-            candidates.append(resolved)
-
-    for candidate in candidates:
-        path = Path(candidate)
-
-        if path.is_file() and os.access(path, os.X_OK):
-            return str(path)
+    for shell in ("bash", "sh"):
+        try:
+            return resolve_command(shell)
+        except CommandResolutionError:
+            continue
 
     return None
+
+
+def build_shell_environment() -> dict[str, str]:
+    """
+    Build a reduced environment for the interactive shell.
+
+    Remove variables that can alter executable loading, shell startup,
+    command execution, or prompt behavior.
+    """
+    env = os.environ.copy()
+
+    unsafe_variables = {
+        "BASH_ENV",
+        "ENV",
+        "PROMPT_COMMAND",
+        "PS1",
+        "PS2",
+        "PS4",
+        "CDPATH",
+        "GLOBIGNORE",
+        "IFS",
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "LD_AUDIT",
+        "PYTHONPATH",
+        "PYTHONHOME",
+    }
+
+    for name in unsafe_variables:
+        env.pop(name, None)
+
+    env["PATH"] = (
+        "/usr/local/sbin:"
+        "/usr/local/bin:"
+        "/usr/sbin:"
+        "/usr/bin:"
+        "/sbin:"
+        "/bin"
+    )
+
+    return env
+
+
+def build_shell_command(shell_path: str) -> list[str]:
+    """
+    Build a shell command that avoids user-controlled startup files
+    where supported.
+    """
+    shell_name = os.path.basename(shell_path)
+
+    if shell_name == "bash":
+        return [
+            shell_path,
+            "--noprofile",
+            "--norc",
+        ]
+
+    return [shell_path]
 
 
 def get_privilege_label() -> str:
@@ -129,18 +167,19 @@ def launch_shell_console(profile: dict) -> None:
     )
 
     try:
+        shell_command = build_shell_command(shell_path)
+        shell_environment = build_shell_environment()
+
         subprocess.run(
-            [shell_path],
+            shell_command,
             check=False,
+            env=shell_environment,
         )
-    except FileNotFoundError:
+    except OSError as exc:
         console.print(
-            f"\n[bold red]Shell not found:[/] [white]{shell_path}[/]"
-        )
-        console.input("\n[dim cyan][ENTER] Return to menu[/]")
-    except PermissionError:
-        console.print(
-            f"\n[bold red]Shell is not executable:[/] [white]{shell_path}[/]"
+            f"\n[bold red]Unable to launch shell:[/] "
+            f"[white]{shell_path}[/]\n"
+            f"[dim]{exc}[/]"
         )
         console.input("\n[dim cyan][ENTER] Return to menu[/]")
     except KeyboardInterrupt:

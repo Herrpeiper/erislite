@@ -7,75 +7,68 @@
 # Last Updated: 2026-09-18
 # Description: Tests for interactive shell resolution and launching.
 
-from types import SimpleNamespace
 from unittest.mock import Mock
 
 from erislite.ui import shell_console
 
 
-def make_executable_shell(tmp_path, name="test-shell"):
-    shell_path = tmp_path / name
-    shell_path.write_text("#!/bin/sh\n", encoding="utf-8")
-    shell_path.chmod(0o755)
-    return shell_path
-
-
-def test_resolve_prefers_environment_shell(monkeypatch, tmp_path):
-    shell_path = make_executable_shell(tmp_path)
-
-    monkeypatch.setenv(
-        "SHELL",
-        str(shell_path),
-    )
+def test_resolve_uses_trusted_bash(monkeypatch):
     monkeypatch.setattr(
-        shell_console.pwd,
-        "getpwuid",
-        lambda uid: SimpleNamespace(pw_shell="/bin/sh"),
+        shell_console,
+        "resolve_command",
+        lambda command: "/bin/bash" if command == "bash" else "/bin/sh",
     )
 
-    assert shell_console.resolve_user_shell() == str(shell_path)
+    assert shell_console.resolve_user_shell() == "/bin/bash"
 
 
-def test_resolve_uses_account_shell(monkeypatch, tmp_path):
-    shell_path = make_executable_shell(tmp_path)
-
-    monkeypatch.delenv(
-        "SHELL",
-        raising=False,
-    )
-    monkeypatch.setattr(
-        shell_console.pwd,
-        "getpwuid",
-        lambda uid: SimpleNamespace(pw_shell=str(shell_path)),
-    )
-
-    assert shell_console.resolve_user_shell() == str(shell_path)
-
-
-def test_resolve_returns_none_when_no_shell_exists(monkeypatch):
-    monkeypatch.delenv(
-        "SHELL",
-        raising=False,
-    )
-
-    def missing_account(uid):
-        raise KeyError(uid)
+def test_resolve_falls_back_to_trusted_sh(monkeypatch):
+    def fake_resolve(command):
+        if command == "bash":
+            raise shell_console.CommandResolutionError("missing")
+        if command == "sh":
+            return "/bin/sh"
+        raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr(
-        shell_console.pwd,
-        "getpwuid",
-        missing_account,
+        shell_console,
+        "resolve_command",
+        fake_resolve,
     )
+
+    assert shell_console.resolve_user_shell() == "/bin/sh"
+
+
+def test_resolve_returns_none_when_no_trusted_shell_exists(monkeypatch):
+    def fake_resolve(command):
+        raise shell_console.CommandResolutionError(
+            f"{command} unavailable"
+        )
+
     monkeypatch.setattr(
-        shell_console.shutil,
-        "which",
-        lambda command: None,
+        shell_console,
+        "resolve_command",
+        fake_resolve,
     )
 
     assert shell_console.resolve_user_shell() is None
 
+def test_resolve_ignores_environment_shell(monkeypatch):
+    monkeypatch.setenv(
+        "SHELL",
+        "/tmp/evil-shell",
+    )
 
-def test_launch_shell_uses_argument_list(monkeypatch):
+    monkeypatch.setattr(
+        shell_console,
+        "resolve_command",
+        lambda command: "/bin/bash",
+    )
+
+    assert shell_console.resolve_user_shell() == "/bin/bash"
+
+
+def test_launch_shell_uses_hardened_command_and_environment(monkeypatch):
     run_mock = Mock()
 
     monkeypatch.setattr(
@@ -99,15 +92,82 @@ def test_launch_shell_uses_argument_list(monkeypatch):
         run_mock,
     )
 
+    monkeypatch.setenv("LD_PRELOAD", "/tmp/evil.so")
+    monkeypatch.setenv("BASH_ENV", "/tmp/evilrc")
+    monkeypatch.setenv("PROMPT_COMMAND", "evil")
+
     profile = {
         "hostname": "test-host",
     }
 
     shell_console.launch_shell_console(profile)
 
-    run_mock.assert_called_once_with(
-        ["/bin/bash"],
-        check=False,
+    run_mock.assert_called_once()
+
+    args, kwargs = run_mock.call_args
+
+    assert args[0] == [
+        "/bin/bash",
+        "--noprofile",
+        "--norc",
+    ]
+
+    assert kwargs["check"] is False
+
+    env = kwargs["env"]
+
+    assert env["PATH"] == (
+        "/usr/local/sbin:"
+        "/usr/local/bin:"
+        "/usr/sbin:"
+        "/usr/bin:"
+        "/sbin:"
+        "/bin"
+    )
+
+    assert "LD_PRELOAD" not in env
+    assert "BASH_ENV" not in env
+    assert "PROMPT_COMMAND" not in env
+
+
+def test_build_shell_command_hardens_bash():
+    assert shell_console.build_shell_command("/bin/bash") == [
+        "/bin/bash",
+        "--noprofile",
+        "--norc",
+    ]
+
+
+def test_build_shell_command_plain_sh():
+    assert shell_console.build_shell_command("/bin/sh") == [
+        "/bin/sh",
+    ]
+
+
+def test_build_shell_environment_removes_unsafe_variables(monkeypatch):
+    monkeypatch.setenv("LD_PRELOAD", "/tmp/evil.so")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/evil")
+    monkeypatch.setenv("BASH_ENV", "/tmp/evilrc")
+    monkeypatch.setenv("ENV", "/tmp/evilenv")
+    monkeypatch.setenv("PROMPT_COMMAND", "evil-command")
+    monkeypatch.setenv("PYTHONPATH", "/tmp/python")
+
+    env = shell_console.build_shell_environment()
+
+    assert "LD_PRELOAD" not in env
+    assert "LD_LIBRARY_PATH" not in env
+    assert "BASH_ENV" not in env
+    assert "ENV" not in env
+    assert "PROMPT_COMMAND" not in env
+    assert "PYTHONPATH" not in env
+
+    assert env["PATH"] == (
+        "/usr/local/sbin:"
+        "/usr/local/bin:"
+        "/usr/sbin:"
+        "/usr/bin:"
+        "/sbin:"
+        "/bin"
     )
 
 
