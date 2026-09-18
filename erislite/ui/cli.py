@@ -17,6 +17,7 @@ from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.sweep import log_viewer, snapshot
+from erislite.ui import shell_console
 from erislite.ui.console import console
 from erislite.ui.menus import (
     cve_tools_menu,
@@ -49,9 +50,13 @@ def build_menu() -> Table:
     menu.add_row("[cyan][6][/]", "CVE Tools")
 
     menu.add_row("", "")
+    menu.add_row("[bold cyan]OPERATIONS[/]", "")
+    menu.add_row("[cyan][7][/]", "Shell Console")
+
+    menu.add_row("", "")
     menu.add_row("[bold cyan]SUPPORT[/]", "")
-    menu.add_row("[cyan][7][/]", "Help / About")
-    menu.add_row("[cyan][8][/]", "Exit")
+    menu.add_row("[cyan][8][/]", "Help / About")
+    menu.add_row("[cyan][9][/]", "Exit")
 
     return menu
 
@@ -103,8 +108,10 @@ def launch_cli(profile: dict) -> None:
         elif choice == "6":
             cve_tools_menu.launch_cve_tools_menu()
         elif choice == "7":
-            help_menu.show_help()
+            shell_console.launch_shell_console(profile)
         elif choice == "8":
+            help_menu.show_help()
+        elif choice == "9":
             console.print(f"\n[bold yellow]Exiting {APP_NAME}. Stay frosty.[/]\n")
             break
         else:
