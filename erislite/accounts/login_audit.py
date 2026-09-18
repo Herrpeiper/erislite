@@ -9,13 +9,12 @@
 
 import re
 import subprocess
+from typing import Optional, Tuple
 
 from rich import box
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-
-from typing import Optional, Tuple
 
 from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
 from erislite.security.command_resolver import (

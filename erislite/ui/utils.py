@@ -25,7 +25,6 @@ from erislite.security.command_resolver import (
 )
 from erislite.ui.console import console
 
-
 timeout = DEFAULT_COMMAND_TIMEOUT
 
 def get_os() -> str:
