@@ -4,11 +4,11 @@
 # Version: 1.3.0
 # License: MIT
 # Created: 2026-09-18
-# Last Updated: 2026-09-18
+# Last Updated: 2026-09-19
 # Description: Launches an interactive system shell from ErisLITE.
 
-import getpass
 import os
+import pwd
 import subprocess
 
 from rich import box
@@ -42,41 +42,30 @@ def resolve_user_shell() -> str | None:
 
 def build_shell_environment() -> dict[str, str]:
     """
-    Build a reduced environment for the interactive shell.
+    Build a minimal environment for the interactive shell.
 
-    Remove variables that can alter executable loading, shell startup,
-    command execution, or prompt behavior.
+    Only a small allowlist of terminal and locale-related variables is
+    inherited from ErisLITE. Execution-sensitive and credential-bearing
+    variables are intentionally excluded.
     """
-    env = os.environ.copy()
-
-    unsafe_variables = {
-        "BASH_ENV",
-        "ENV",
-        "PROMPT_COMMAND",
-        "PS1",
-        "PS2",
-        "PS4",
-        "CDPATH",
-        "GLOBIGNORE",
-        "IFS",
-        "LD_PRELOAD",
-        "LD_LIBRARY_PATH",
-        "LD_AUDIT",
-        "PYTHONPATH",
-        "PYTHONHOME",
+    env = {
+        "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
     }
 
-    for name in unsafe_variables:
-        env.pop(name, None)
+    for name in (
+        "HOME",
+        "LANG",
+        "TERM",
+        "COLORTERM",
+        "TZ",
+    ):
+        value = os.environ.get(name)
+        if value:
+            env[name] = value
 
-    env["PATH"] = (
-        "/usr/local/sbin:"
-        "/usr/local/bin:"
-        "/usr/sbin:"
-        "/usr/bin:"
-        "/sbin:"
-        "/bin"
-    )
+    for name, value in os.environ.items():
+        if name.startswith("LC_"):
+            env[name] = value
 
     return env
 
@@ -105,12 +94,22 @@ def get_privilege_label() -> str:
     return "[green]User Session[/]"
 
 
+def get_effective_username() -> str:
+    """Return the account name associated with the effective UID."""
+    effective_uid = os.geteuid()
+
+    try:
+        return pwd.getpwuid(effective_uid).pw_name
+    except (KeyError, OSError):
+        return str(effective_uid)
+
+
 def show_shell_header(
     profile: dict,
     shell_path: str,
 ) -> None:
     hostname = profile.get("hostname", "unknown-host")
-    username = getpass.getuser()
+    username = get_effective_username()
 
     details = Table(
         show_header=False,
@@ -145,10 +144,11 @@ def show_shell_header(
 
 def launch_shell_console(profile: dict) -> None:
     """
-    Launch the user's interactive shell with the current terminal attached.
+    Launch a trusted interactive shell with the current terminal attached.
 
-    The shell inherits ErisLITE's current user, environment, working
-    directory, and privileges. Exiting the shell returns to ErisLITE.
+    The shell inherits ErisLITE's current user, working directory, and
+    privileges, but starts with a restricted execution environment.
+    Exiting the shell returns to ErisLITE.
     """
     clear_screen()
 
