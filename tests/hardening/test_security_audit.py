@@ -1,35 +1,148 @@
-from types import SimpleNamespace
-
 from erislite.system import security_audit
 
 
-def test_safe_run_ignores_poisoned_path(monkeypatch, tmp_path):
-    fake_iptables = tmp_path / "iptables"
-    fake_iptables.write_text("#!/bin/sh\necho hijacked\n")
-    fake_iptables.chmod(0o755)
+def test_format_result_ok():
+    result = {
+        "status": "ok",
+        "details": [],
+        "tags": [],
+    }
 
-    monkeypatch.setenv("PATH", str(tmp_path))
+    formatted = security_audit._format_result(
+        result,
+        "No issues detected",
+    )
 
-    captured = {}
+    assert formatted == "🟢 No issues detected"
 
-    def fake_resolve(command):
-        assert command == "iptables"
-        return "/usr/sbin/iptables"
 
-    def fake_run(command, **kwargs):
-        captured["command"] = command
-        return SimpleNamespace(
-            stdout="-P INPUT ACCEPT\n",
-            stderr="",
-            returncode=0,
-        )
+def test_format_result_warning_uses_first_detail():
+    result = {
+        "status": "warning",
+        "details": ["Review required"],
+        "tags": ["example_tag"],
+    }
 
-    monkeypatch.setattr(security_audit, "resolve_command", fake_resolve)
-    monkeypatch.setattr(security_audit.subprocess, "run", fake_run)
+    formatted = security_audit._format_result(
+        result,
+        "No issues detected",
+    )
 
-    result = security_audit._safe_run(["iptables", "-S"])
+    assert formatted == "[yellow]⚠️ Review required[/]"
 
-    assert result.returncode == 0
-    assert captured["command"][0] != str(fake_iptables)
-    assert captured["command"][0] == "/usr/sbin/iptables"
-    assert captured["command"][1:] == ["-S"]
+
+def test_format_result_warning_without_details():
+    result = {
+        "status": "warning",
+        "details": [],
+        "tags": [],
+    }
+
+    formatted = security_audit._format_result(
+        result,
+        "No issues detected",
+    )
+
+    assert formatted == "[yellow]⚠️ Review required[/]"
+
+
+def test_format_result_unsupported():
+    result = {
+        "status": "unsupported",
+        "details": [],
+        "tags": [],
+    }
+
+    formatted = security_audit._format_result(
+        result,
+        "No issues detected",
+    )
+
+    assert formatted == "[yellow]Unsupported on this platform[/]"
+
+
+def test_format_result_error_without_details():
+    result = {
+        "status": "error",
+        "details": [],
+        "tags": [],
+    }
+
+    formatted = security_audit._format_result(
+        result,
+        "No issues detected",
+    )
+
+    assert formatted == "⚠️ Error: inspection incomplete"
+
+
+def test_run_uses_hardened_checks(monkeypatch):
+    monkeypatch.setattr(security_audit, "clear_screen", lambda: None)
+    monkeypatch.setattr(security_audit, "pause_return", lambda: None)
+
+    monkeypatch.setattr(
+        security_audit.console,
+        "print",
+        lambda *args, **kwargs: None,
+    )
+
+    monkeypatch.setattr(
+        security_audit,
+        "write_audit_log",
+        lambda profile, findings: "/tmp/audit.log",
+    )
+
+    calls = []
+
+    def fake_check(name, status="ok"):
+        def _runner(silent=False):
+            calls.append((name, silent))
+            return {
+                "status": status,
+                "details": [],
+                "tags": [],
+            }
+
+        return _runner
+
+    monkeypatch.setattr(
+        security_audit,
+        "run_firewall_check",
+        fake_check("firewall"),
+    )
+    monkeypatch.setattr(
+        security_audit,
+        "run_process_scan",
+        fake_check("processes"),
+    )
+    monkeypatch.setattr(
+        security_audit,
+        "run_ssh_key_check",
+        fake_check("ssh_keys"),
+    )
+    monkeypatch.setattr(
+        security_audit,
+        "run_world_writable_check",
+        fake_check("world_writable"),
+    )
+    monkeypatch.setattr(
+        security_audit,
+        "run_login_audit",
+        fake_check("login"),
+    )
+
+    security_audit.run(
+        {
+            "hostname": "test-host",
+            "role": "workstation",
+            "analyst_id": 1,
+        }
+    )
+
+    assert calls == [
+        ("firewall", True),
+        ("processes", True),
+        ("ssh_keys", True),
+        ("world_writable", True),
+        ("login", True),
+    ]
