@@ -12,6 +12,7 @@ import os
 from rich.console import Console
 
 from erislite.accounts.profile import load_or_create_profile
+from erislite.security.import_guard import check_import_environment
 from erislite.ui.cli import launch_cli
 from erislite.ui.splash import show_splash
 
