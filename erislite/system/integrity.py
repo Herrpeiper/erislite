@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 from datetime import datetime
+from typing import Optional, Tuple
 
 from rich import box
 from rich.panel import Panel
@@ -55,7 +56,7 @@ def _header(title: str, subtitle: str) -> None:
     )
     console.print()
 
-def get_sha256(path: str):
+def get_sha256(path: str) -> Tuple[Optional[str], Optional[str]]:
     try:
         digest = hashlib.sha256()
 
@@ -63,10 +64,16 @@ def get_sha256(path: str):
             for chunk in iter(lambda: file.read(65536), b""):
                 digest.update(chunk)
 
-        return digest.hexdigest()
+        return digest.hexdigest(), None
 
-    except Exception:
-        return None
+    except FileNotFoundError:
+        return None, "missing"
+
+    except PermissionError as exc:
+        return None, f"permission denied: {exc}"
+
+    except OSError as exc:
+        return None, f"read failed: {exc}"
 
 def check_baseline_integrity() -> dict:
     if not os.path.exists(BASELINE_PATH):
@@ -151,7 +158,10 @@ def scan_for_copies(baseline: dict):
                 if not os.path.isfile(path):
                     continue
 
-                copy_hash = get_sha256(path)
+                copy_hash, copy_error = get_sha256(path)
+
+                if copy_error:
+                    continue
 
                 for base_path, base_hash in baseline.items():
                     if (
@@ -177,8 +187,8 @@ def create_baseline() -> None:
     unavailable = []
 
     for path in MONITORED_FILES:
-        hash_value = get_sha256(path)
-
+        hash_value, _ = get_sha256(path)
+    
         if hash_value:
             baseline[path] = hash_value
         else:
@@ -236,21 +246,33 @@ def create_baseline() -> None:
 
     pause_return()
 
-def _collect_targets(profile: str) -> list[str]:
+def _collect_targets(profile: str) -> Tuple[list[str], list[str]]:
     targets = []
+    errors = []
+
+    def _walk_error(exc: OSError) -> None:
+        errors.append(str(exc))
 
     for item in SCAN_PROFILES.get(profile, MONITORED_FILES):
         if os.path.isdir(item):
-            for root, _, files in os.walk(item):
+            for root, _, files in os.walk(
+                item,
+                onerror=_walk_error,
+            ):
                 for filename in files:
                     targets.append(
                         os.path.join(root, filename)
                     )
 
-        elif os.path.isfile(item):
+        elif item.endswith(os.sep):
+            errors.append(
+                f"Expected directory unavailable: {item}"
+            )
+
+        else:
             targets.append(item)
 
-    return targets
+    return targets, errors
 
 def scan_integrity(
     profile: str = "critical",
@@ -347,9 +369,19 @@ def scan_integrity(
             "tags": ["file_integrity_issue"],
         }
 
-    targets = _collect_targets(profile)
+    targets, target_errors = _collect_targets(profile)
 
     if not targets:
+        if target_errors:
+            return {
+                "status": "error",
+                "details": [
+                    f"Integrity target collection incomplete: {error}"
+                    for error in target_errors
+                ],
+                "tags": ["integrity_scan_incomplete"],
+            }
+    
         return {
             "status": "ok",
             "details": ["No files found for selected profile"],
@@ -358,6 +390,7 @@ def scan_integrity(
 
     rows = []
     issues = []
+    scan_errors = list(target_errors)
 
     for path in targets:
         old_hash = baseline.get(path)
@@ -367,23 +400,59 @@ def scan_integrity(
         if old_hash is None:
             continue
 
-        new_hash = get_sha256(path)
+        new_hash, hash_error = get_sha256(path)
 
-        if new_hash is None:
+        if hash_error == "missing":
             rows.append((path, "MISSING"))
             issues.append(f"{path} is missing")
-
+        
+        elif hash_error:
+            rows.append((path, "UNAVAILABLE"))
+            scan_errors.append(
+                f"{path} could not be inspected: {hash_error}"
+            )
+        
         elif new_hash != old_hash:
             rows.append((path, "MODIFIED"))
             issues.append(f"{path} was modified")
-
+        
         else:
             rows.append((path, "UNCHANGED"))
 
+    tags = []
+
+    if issues:
+        tags.append("file_integrity_issue")
+    
+    if scan_errors and (issues or copies):
+        console.print(
+            Panel.fit(
+                "\n".join(
+                    f"[yellow]{error}[/]"
+                    for error in scan_errors[:10]
+                ),
+                title="[bold yellow]COLLECTION WARNING[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+        console.print()
+    
+    if issues:
+        status = "warning"
+    elif scan_errors:
+        status = "error"
+    else:
+        status = "ok"
+    
     result = {
-        "status": "warning" if issues else "ok",
-        "details": issues,
-        "tags": ["file_integrity_issue"] if issues else [],
+        "status": status,
+        "details": issues
+        + [
+            f"Integrity inspection incomplete: {error}"
+            for error in scan_errors
+        ],
+        "tags": tags,
     }
 
     if silent:
@@ -423,9 +492,11 @@ def scan_integrity(
             rendered = "[green]UNCHANGED[/]"
         elif status == "MODIFIED":
             rendered = "[yellow]MODIFIED[/]"
-        else:
+        elif status == "MISSING":
             rendered = "[red]MISSING[/]"
-
+        else:
+            rendered = "[yellow]UNAVAILABLE[/]"
+    
         table.add_row(path, rendered)
 
     console.print(table)
@@ -461,6 +532,19 @@ def scan_integrity(
                 box=box.ROUNDED,
             )
         )
+
+    elif scan_errors:
+        console.print(
+            Panel.fit(
+                "[yellow]No integrity changes were detected, "
+                "but the scan was incomplete.[/]\n"
+                "[dim]One or more monitored files could not be inspected.[/]",
+                title="[bold yellow]STATUS: INCOMPLETE[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+    
     else:
         console.print(
             Panel.fit(
