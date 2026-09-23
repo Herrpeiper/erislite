@@ -9,10 +9,15 @@
 
 import os
 
+from erislite.security.import_guard import check_import_environment
+
+# Import guard intentionally runs before third-party imports.
+# Do not move below Rich or other external dependencies.
+IMPORT_STATUS = check_import_environment()
+
 from rich.console import Console
 
 from erislite.accounts.profile import load_or_create_profile
-from erislite.security.import_guard import check_import_environment
 from erislite.ui.cli import launch_cli
 from erislite.ui.splash import show_splash
 
@@ -24,7 +29,28 @@ console = Console()
 DEV_MODE = os.getenv("ERISLITE_DEV", "0") == "1"
 
 
+def _show_import_warning() -> None:
+    if IMPORT_STATUS["status"] == "ok":
+        return
+
+    console.print(
+        "\n[bold yellow]IMPORT ENVIRONMENT WARNING[/]"
+    )
+
+    for detail in IMPORT_STATUS["details"]:
+        console.print(
+            f"[yellow]•[/] {detail}"
+        )
+
+    console.print(
+        "[dim]ErisLITE will continue, but the Python "
+        "import environment should be reviewed.[/]\n"
+    )
+
+
 def main():
+    _show_import_warning()
+
     profile = load_or_create_profile()
     show_splash(profile)
     launch_cli(profile)
@@ -37,4 +63,6 @@ if __name__ == "__main__":
         if DEV_MODE:
             raise
         else:
-            console.print("\n[bold red]Interrupted by user. Exiting...[/]")
+            console.print(
+                "\n[bold red]Interrupted by user. Exiting...[/]"
+            )
