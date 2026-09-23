@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from erislite.security import import_guard
 
 
@@ -128,9 +126,7 @@ def test_clean_cwd_has_no_shadow_files(
     assert issues == []
 
 
-def test_project_root_skips_shadow_check(
-    monkeypatch,
-):
+def test_project_root_skips_shadow_check(monkeypatch):
     monkeypatch.chdir(
         import_guard.PROJECT_ROOT
     )
@@ -193,3 +189,20 @@ def test_import_environment_suspicious(
         in result["tags"]
     )
     assert result["details"]
+
+def test_sys_path_var_tmp_is_flagged(monkeypatch):
+    monkeypatch.setattr(
+        import_guard.sys,
+        "path",
+        [
+            "/var/tmp/evil",
+        ],
+    )
+
+    issues = import_guard.check_sys_path()
+
+    assert issues
+    assert any(
+        "/var/tmp/evil" in issue
+        for issue in issues
+    )
