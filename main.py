@@ -11,15 +11,15 @@ import os
 
 from erislite.security.import_guard import check_import_environment
 
-# Import guard intentionally runs before third-party imports.
-# Do not move below Rich or other external dependencies.
+# Import guard intentionally runs before third-party and application imports.
+# Do not move the delayed imports above this check.
 IMPORT_STATUS = check_import_environment()
 
-from rich.console import Console
+from rich.console import Console  # noqa: E402
 
-from erislite.accounts.profile import load_or_create_profile
-from erislite.ui.cli import launch_cli
-from erislite.ui.splash import show_splash
+from erislite.accounts.profile import load_or_create_profile  # noqa: E402
+from erislite.ui.cli import launch_cli  # noqa: E402
+from erislite.ui.splash import show_splash  # noqa: E402
 
 console = Console()
 

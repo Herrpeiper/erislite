@@ -423,21 +423,10 @@ def scan_integrity(
 
     if issues:
         tags.append("file_integrity_issue")
-    
-    if scan_errors and (issues or copies):
-        console.print(
-            Panel.fit(
-                "\n".join(
-                    f"[yellow]{error}[/]"
-                    for error in scan_errors[:10]
-                ),
-                title="[bold yellow]COLLECTION WARNING[/]",
-                border_style="yellow",
-                box=box.ROUNDED,
-            )
-        )
-        console.print()
-    
+
+    if scan_errors:
+        tags.append("integrity_scan_incomplete")
+
     if issues:
         status = "warning"
     elif scan_errors:
@@ -512,6 +501,7 @@ def scan_integrity(
             show_edge=False,
             padding=(0, 1),
         )
+
         copy_table.add_column("Path", style="white")
         copy_table.add_column("Reason", style="yellow")
 
@@ -519,6 +509,20 @@ def scan_integrity(
             copy_table.add_row(path, reason)
 
         console.print(copy_table)
+        console.print()
+
+    if scan_errors and (issues or copies):
+        console.print(
+            Panel.fit(
+                "\n".join(
+                    f"[yellow]{error}[/]"
+                    for error in scan_errors[:10]
+                ),
+                title="[bold yellow]COLLECTION WARNING[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
         console.print()
 
     if issues or copies:

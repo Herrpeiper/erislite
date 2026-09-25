@@ -9,13 +9,13 @@
 
 import os
 import pwd
+from typing import Optional, Tuple
 
 import psutil
 from rich import box
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-from typing import Optional, Tuple
 
 from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.ui.console import console

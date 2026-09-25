@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 from typing import List
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 SENSITIVE_MODULE_NAMES = {

@@ -22,6 +22,7 @@ from erislite.system.processes import run_process_scan
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
+
 def _format_result(result: dict, ok_text: str) -> str:
     status = result.get("status", "error")
     details = result.get("details") or []

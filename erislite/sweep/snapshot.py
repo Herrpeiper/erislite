@@ -17,7 +17,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from erislite.config.settings import SNAPSHOT_LOG_DIR
-from erislite.system.security_audit import check_firewall_status
+from erislite.network.firewall import run_firewall_check
 from erislite.ui.utils import clear_screen, pause_return, show_header
 
 console = Console()
@@ -54,7 +54,21 @@ def capture(profile: dict):
             f.write(f"Role: {profile.get('role')}\n")
             f.write(f"Segment: {profile.get('segment')}\n")
             f.write(f"Analyst ID: {profile.get('analyst_id')}\n")
-            f.write(f"Firewall: {check_firewall_status()}\n")
+
+            firewall = run_firewall_check(silent=True)
+            firewall_status = firewall.get("status", "error")
+            firewall_details = firewall.get("details") or []
+
+            if firewall_status == "ok":
+                firewall_text = "active"
+            elif firewall_status == "unsupported":
+                firewall_text = "unsupported"
+            elif firewall_details:
+                firewall_text = f"{firewall_status}: {firewall_details[0]}"
+            else:
+                firewall_text = firewall_status
+
+            f.write(f"Firewall: {firewall_text}\n")
             f.write("-" * 40 + "\n\n")
 
             # System Info

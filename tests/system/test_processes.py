@@ -49,6 +49,11 @@ def test_process_scan_clean(monkeypatch):
         "get_os",
         lambda: "Linux",
     )
+    monkeypatch.setattr(
+        processes.os.path,
+        "exists",
+        lambda path: True,
+    )
 
     result = processes.run_process_scan(silent=True)
 
