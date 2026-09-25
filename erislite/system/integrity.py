@@ -24,7 +24,13 @@ from erislite.config.settings import APP_NAME, APP_VERSION, INTEGRITY_BASELINE_F
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
-BASELINE_PATH = INTEGRITY_BASELINE_FILE
+def get_baseline_path(profile: str) -> str:
+    base_dir = os.path.dirname(INTEGRITY_BASELINE_FILE)
+
+    return os.path.join(
+        base_dir,
+        f"integrity_baseline_{profile}.json",
+    )
 
 MONITORED_FILES = [
     "/etc/passwd",
@@ -35,7 +41,29 @@ MONITORED_FILES = [
 
 SCAN_PROFILES = {
     "critical": MONITORED_FILES,
-    "system": ["/etc/", "/usr/bin/", "/lib/", "/lib64/"],
+
+    "system": [
+        "/etc/ssh/",
+        "/etc/systemd/",
+        "/etc/sudoers",
+        "/etc/sudoers.d/",
+        "/etc/pam.d/",
+        "/etc/cron.d/",
+        "/etc/cron.daily/",
+        "/etc/cron.hourly/",
+        "/etc/cron.weekly/",
+        "/etc/cron.monthly/",
+        "/etc/crontab",
+        "/etc/passwd",
+        "/etc/shadow",
+        "/etc/group",
+        "/etc/gshadow",
+        "/etc/hosts",
+        "/etc/resolv.conf",
+        "/usr/bin/",
+        "/usr/sbin/",
+    ],
+
     "user": [
         os.path.expanduser("~/.bashrc"),
         os.path.expanduser("~/.ssh/authorized_keys"),
@@ -75,42 +103,68 @@ def get_sha256(path: str) -> Tuple[Optional[str], Optional[str]]:
     except OSError as exc:
         return None, f"read failed: {exc}"
 
-def check_baseline_integrity() -> dict:
-    if not os.path.exists(BASELINE_PATH):
+def check_baseline_integrity(profile: str = "critical") -> dict:
+    baseline_path = get_baseline_path(profile)
+
+    if not os.path.exists(baseline_path):
         return {
             "status": "error",
-            "details": ["Baseline file missing"],
+            "details": [
+                f"{profile.capitalize()} baseline file missing"
+            ],
             "tags": ["baseline_missing"],
         }
 
     try:
-        with open(BASELINE_PATH, "r", encoding="utf-8") as file:
+        with open(
+            baseline_path,
+            "r",
+            encoding="utf-8",
+        ) as file:
             data = json.load(file)
 
         metadata = data.get("_metadata", {})
         created_at = metadata.get("created_at")
         hashes = data.get("hashes")
-        profile = metadata.get("profile")
+        baseline_profile = metadata.get("profile")
 
         issues = []
 
         if not created_at:
-            issues.append("Baseline creation metadata is missing")
+            issues.append(
+                "Baseline creation metadata is missing"
+            )
 
-        if not profile:
-            issues.append("Baseline profile metadata is missing")
-        elif profile not in SCAN_PROFILES:
-            issues.append(f"Baseline profile is invalid: {profile}")
+        if not baseline_profile:
+            issues.append(
+                "Baseline profile metadata is missing"
+            )
+        elif baseline_profile not in SCAN_PROFILES:
+            issues.append(
+                f"Baseline profile is invalid: {baseline_profile}"
+            )
+        elif baseline_profile != profile:
+            issues.append(
+                f"Baseline profile '{baseline_profile}' does not match "
+                f"expected profile '{profile}'"
+            )
 
         if not isinstance(hashes, dict):
-            issues.append("Baseline hash data is malformed")
+            issues.append(
+                "Baseline hash data is malformed"
+            )
+
         monitored = metadata.get("monitored", [])
         unavailable = metadata.get("unavailable", [])
 
         if not hashes:
-            issues.append("Baseline contains no readable file hashes")
+            issues.append(
+                "Baseline contains no readable file hashes"
+            )
 
-        elif monitored and len(hashes) + len(unavailable) != len(monitored):
+        elif monitored and (
+            len(hashes) + len(unavailable) != len(monitored)
+        ):
             issues.append(
                 "Baseline contents do not match recorded monitored files"
             )
@@ -183,16 +237,20 @@ def scan_for_copies(baseline: dict):
     return flagged
 
 def create_baseline(profile: str = "critical") -> None:
+    baseline_path = get_baseline_path(profile)
+
     clear_screen()
     _header(
         "FILE INTEGRITY",
-        f"Create a SHA-256 baseline • Profile: {profile.capitalize()}",
+        f"Create a SHA-256 baseline • Profile: "
+        f"{profile.capitalize()}",
     )
 
     targets, target_errors = _collect_targets(profile)
 
     baseline = {}
-    unavailable = list(target_errors)
+    unavailable = []
+    collection_errors = list(target_errors)
 
     for path in targets:
         hash_value, hash_error = get_sha256(path)
@@ -211,17 +269,18 @@ def create_baseline(profile: str = "critical") -> None:
             "profile": profile,
             "monitored": targets,
             "unavailable": unavailable,
+            "collection_errors": collection_errors,
         },
         "hashes": baseline,
     }
 
     os.makedirs(
-        os.path.dirname(BASELINE_PATH),
+        os.path.dirname(baseline_path),
         exist_ok=True,
     )
 
     with open(
-        BASELINE_PATH,
+        baseline_path,
         "w",
         encoding="utf-8",
     ) as file:
@@ -230,10 +289,14 @@ def create_baseline(profile: str = "critical") -> None:
     console.print(
         Panel.fit(
             f"[green]Baseline created successfully.[/]\n"
-            f"[dim]Profile:[/] [white]{profile.capitalize()}[/]   "
-            f"[dim]Files Recorded:[/] [white]{len(baseline)}[/]   "
-            f"[dim]Unavailable:[/] [white]{len(unavailable)}[/]\n"
-            f"[dim]Path:[/] [white]{BASELINE_PATH}[/]",
+            f"[dim]Profile:[/] "
+            f"[white]{profile.capitalize()}[/]   "
+            f"[dim]Files Recorded:[/] "
+            f"[white]{len(baseline)}[/]   "
+            f"[dim]Unavailable:[/] "
+            f"[white]{len(unavailable)}[/]\n"
+            f"[dim]Path:[/] "
+            f"[white]{baseline_path}[/]",
             title="[bold green]BASELINE CREATED[/]",
             border_style="green",
             box=box.ROUNDED,
@@ -295,7 +358,7 @@ def scan_integrity(
             clear_screen()
             _header(
                 "FILE INTEGRITY",
-                "Validate critical files against a known baseline",
+                "Validate files against a known baseline",
             )
 
             console.print(
@@ -314,18 +377,23 @@ def scan_integrity(
             "tags": [],
         }
 
-    if not os.path.exists(BASELINE_PATH):
+    baseline_path = get_baseline_path(profile)
+
+    if not os.path.exists(baseline_path):
         if not silent:
             clear_screen()
             _header(
                 "FILE INTEGRITY",
-                "Validate critical files against a known baseline",
+                f"Validate files against the baseline • "
+                f"Profile: {profile.capitalize()}",
             )
 
             console.print(
                 Panel.fit(
-                    "[yellow]No integrity baseline exists.[/]\n"
-                    "[dim]Create a baseline before running an integrity scan.[/]",
+                    f"[yellow]No {profile.capitalize()} "
+                    f"integrity baseline exists.[/]\n"
+                    f"[dim]Create a {profile.capitalize()} "
+                    f"baseline before running this scan.[/]",
                     title="[bold yellow]BASELINE REQUIRED[/]",
                     border_style="yellow",
                     box=box.ROUNDED,
@@ -336,18 +404,21 @@ def scan_integrity(
 
         return {
             "status": "error",
-            "details": ["Baseline file missing"],
-            "tags": ["file_integrity_issue"],
+            "details": [
+                f"{profile.capitalize()} baseline file missing"
+            ],
+            "tags": ["baseline_missing"],
         }
 
-    baseline_check = check_baseline_integrity()
+    baseline_check = check_baseline_integrity(profile)
 
     if baseline_check["status"] != "ok":
         if not silent:
             clear_screen()
             _header(
                 "FILE INTEGRITY",
-                "Validate critical files against a known baseline",
+                f"Validate files against the baseline • "
+                f"Profile: {profile.capitalize()}",
             )
 
             console.print(
@@ -368,54 +439,23 @@ def scan_integrity(
 
     try:
         with open(
-            BASELINE_PATH,
+            baseline_path,
             "r",
             encoding="utf-8",
         ) as file:
             baseline_data = json.load(file)
 
         baseline = baseline_data.get("hashes", {})
-        baseline_metadata = baseline_data.get("_metadata", {})
-        baseline_profile = baseline_metadata.get("profile")
 
     except Exception as e:
         return {
             "status": "error",
-            "details": [f"Unable to load baseline: {e}"],
+            "details": [
+                f"Unable to load baseline: {e}"
+            ],
             "tags": ["file_integrity_issue"],
         }
 
-    if baseline_profile != profile:
-        if not silent:
-            clear_screen()
-            _header(
-                "FILE INTEGRITY",
-                f"Validate files against the baseline • Profile: {profile.capitalize()}",
-            )
-
-            console.print(
-                Panel.fit(
-                    f"[yellow]The active baseline was created for the "
-                    f"{str(baseline_profile).capitalize()} profile.[/]\n"
-                    f"[dim]Create a {profile.capitalize()} baseline before "
-                    f"running this scan.[/]",
-                    title="[bold yellow]BASELINE PROFILE MISMATCH[/]",
-                    border_style="yellow",
-                    box=box.ROUNDED,
-                )
-            )
-
-            pause_return()
-
-        return {
-            "status": "error",
-            "details": [
-                f"Baseline profile '{baseline_profile}' does not match "
-                f"requested scan profile '{profile}'"
-            ],
-            "tags": ["integrity_baseline_profile_mismatch"],
-        }
-        
     targets, target_errors = _collect_targets(profile)
 
     if not targets:
@@ -428,10 +468,12 @@ def scan_integrity(
                 ],
                 "tags": ["integrity_scan_incomplete"],
             }
-    
+
         return {
             "status": "ok",
-            "details": ["No files found for selected profile"],
+            "details": [
+                "No files found for selected profile"
+            ],
             "tags": [],
         }
 
@@ -442,8 +484,6 @@ def scan_integrity(
     for path in targets:
         old_hash = baseline.get(path)
 
-        # Current baseline format only has hashes for files
-        # that were included when the baseline was created.
         if old_hash is None:
             rows.append((path, "UNAVAILABLE"))
             scan_errors.append(
@@ -455,18 +495,22 @@ def scan_integrity(
 
         if hash_error == "missing":
             rows.append((path, "MISSING"))
-            issues.append(f"{path} is missing")
-        
+            issues.append(
+                f"{path} is missing"
+            )
+
         elif hash_error:
             rows.append((path, "UNAVAILABLE"))
             scan_errors.append(
                 f"{path} could not be inspected: {hash_error}"
             )
-        
+
         elif new_hash != old_hash:
             rows.append((path, "MODIFIED"))
-            issues.append(f"{path} was modified")
-        
+            issues.append(
+                f"{path} was modified"
+            )
+
         else:
             rows.append((path, "UNCHANGED"))
 
@@ -484,7 +528,7 @@ def scan_integrity(
         status = "error"
     else:
         status = "ok"
-    
+
     result = {
         "status": status,
         "details": issues
@@ -501,7 +545,8 @@ def scan_integrity(
     clear_screen()
     _header(
         "FILE INTEGRITY SCAN",
-        f"Validate files against the baseline • Profile: {profile.capitalize()}",
+        f"Validate files against the baseline • "
+        f"Profile: {profile.capitalize()}",
     )
 
     console.print(
@@ -527,16 +572,16 @@ def scan_integrity(
     table.add_column("File", style="white")
     table.add_column("Status", no_wrap=True)
 
-    for path, status in rows:
-        if status == "UNCHANGED":
+    for path, row_status in rows:
+        if row_status == "UNCHANGED":
             rendered = "[green]UNCHANGED[/]"
-        elif status == "MODIFIED":
+        elif row_status == "MODIFIED":
             rendered = "[yellow]MODIFIED[/]"
-        elif status == "MISSING":
+        elif row_status == "MISSING":
             rendered = "[red]MISSING[/]"
         else:
             rendered = "[yellow]UNAVAILABLE[/]"
-    
+
         table.add_row(path, rendered)
 
     console.print(table)
@@ -552,7 +597,6 @@ def scan_integrity(
             show_edge=False,
             padding=(0, 1),
         )
-
         copy_table.add_column("Path", style="white")
         copy_table.add_column("Reason", style="yellow")
 
@@ -581,7 +625,8 @@ def scan_integrity(
             Panel.fit(
                 f"[yellow]{len(issues)} integrity issue(s), "
                 f"{len(copies)} suspicious copy finding(s).[/]\n"
-                "[dim]Validate unexpected changes before restoring or replacing files.[/]",
+                "[dim]Validate unexpected changes before restoring "
+                "or replacing files.[/]",
                 title="[bold yellow]REVIEW REQUIRED[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
@@ -599,7 +644,7 @@ def scan_integrity(
                 box=box.ROUNDED,
             )
         )
-    
+
     else:
         console.print(
             Panel.fit(
@@ -619,7 +664,7 @@ def integrity_menu() -> None:
         clear_screen()
         _header(
             "FILE INTEGRITY",
-            "Create and validate SHA-256 baselines for critical files",
+            "Create and validate SHA-256 baselines",
         )
 
         menu = Table(
@@ -636,12 +681,12 @@ def integrity_menu() -> None:
         menu.add_row(
             "[cyan][1][/]",
             "Create Integrity Baseline",
-            "[dim]Hash monitored critical files[/]",
+            "[dim]Create a profile-specific baseline[/]",
         )
         menu.add_row(
             "[cyan][2][/]",
             "Run Integrity Scan",
-            "[dim]Compare files against baseline[/]",
+            "[dim]Compare files against the matching baseline[/]",
         )
         menu.add_row("", "", "")
         menu.add_row("[cyan][0][/]", "Back", "")
@@ -675,7 +720,8 @@ def integrity_menu() -> None:
             profiles.add_row(
                 "[cyan][2][/]",
                 "System",
-                "[dim]/etc, /usr/bin, /lib[/]",
+                "[dim]Security configs, persistence paths, "
+                "and system binaries[/]",
             )
             profiles.add_row(
                 "[cyan][3][/]",
@@ -717,6 +763,7 @@ def integrity_menu() -> None:
                 box=None,
                 padding=(0, 1),
             )
+
             profiles.add_row(
                 "[cyan][1][/]",
                 "Critical",
@@ -725,7 +772,8 @@ def integrity_menu() -> None:
             profiles.add_row(
                 "[cyan][2][/]",
                 "System",
-                "[dim]/etc, /usr/bin, /lib[/]",
+                "[dim]Security configs, persistence paths, "
+                "and system binaries[/]",
             )
             profiles.add_row(
                 "[cyan][3][/]",
