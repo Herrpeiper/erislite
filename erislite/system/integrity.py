@@ -90,11 +90,17 @@ def check_baseline_integrity() -> dict:
         metadata = data.get("_metadata", {})
         created_at = metadata.get("created_at")
         hashes = data.get("hashes")
+        profile = metadata.get("profile")
 
         issues = []
 
         if not created_at:
             issues.append("Baseline creation metadata is missing")
+
+        if not profile:
+            issues.append("Baseline profile metadata is missing")
+        elif profile not in SCAN_PROFILES:
+            issues.append(f"Baseline profile is invalid: {profile}")
 
         if not isinstance(hashes, dict):
             issues.append("Baseline hash data is malformed")
@@ -176,29 +182,34 @@ def scan_for_copies(baseline: dict):
 
     return flagged
 
-def create_baseline() -> None:
+def create_baseline(profile: str = "critical") -> None:
     clear_screen()
     _header(
         "FILE INTEGRITY",
-        "Create a SHA-256 baseline for critical system files",
+        f"Create a SHA-256 baseline • Profile: {profile.capitalize()}",
     )
 
-    baseline = {}
-    unavailable = []
+    targets, target_errors = _collect_targets(profile)
 
-    for path in MONITORED_FILES:
-        hash_value, _ = get_sha256(path)
-    
+    baseline = {}
+    unavailable = list(target_errors)
+
+    for path in targets:
+        hash_value, hash_error = get_sha256(path)
+
         if hash_value:
             baseline[path] = hash_value
         else:
-            unavailable.append(path)
+            unavailable.append(
+                f"{path}: {hash_error or 'unavailable'}"
+            )
 
     payload = {
         "_metadata": {
             "created_at": datetime.now().isoformat(),
             "algorithm": "SHA-256",
-            "monitored": MONITORED_FILES,
+            "profile": profile,
+            "monitored": targets,
             "unavailable": unavailable,
         },
         "hashes": baseline,
@@ -219,6 +230,7 @@ def create_baseline() -> None:
     console.print(
         Panel.fit(
             f"[green]Baseline created successfully.[/]\n"
+            f"[dim]Profile:[/] [white]{profile.capitalize()}[/]   "
             f"[dim]Files Recorded:[/] [white]{len(baseline)}[/]   "
             f"[dim]Unavailable:[/] [white]{len(unavailable)}[/]\n"
             f"[dim]Path:[/] [white]{BASELINE_PATH}[/]",
@@ -237,10 +249,10 @@ def create_baseline() -> None:
             header_style="bold cyan",
             show_edge=False,
         )
-        table.add_column("Path", style="white")
+        table.add_column("Path / Error", style="white")
 
-        for path in unavailable:
-            table.add_row(path)
+        for item in unavailable:
+            table.add_row(str(item))
 
         console.print(table)
 
@@ -360,7 +372,11 @@ def scan_integrity(
             "r",
             encoding="utf-8",
         ) as file:
-            baseline = json.load(file).get("hashes", {})
+            baseline_data = json.load(file)
+
+        baseline = baseline_data.get("hashes", {})
+        baseline_metadata = baseline_data.get("_metadata", {})
+        baseline_profile = baseline_metadata.get("profile")
 
     except Exception as e:
         return {
@@ -369,6 +385,37 @@ def scan_integrity(
             "tags": ["file_integrity_issue"],
         }
 
+    if baseline_profile != profile:
+        if not silent:
+            clear_screen()
+            _header(
+                "FILE INTEGRITY",
+                f"Validate files against the baseline • Profile: {profile.capitalize()}",
+            )
+
+            console.print(
+                Panel.fit(
+                    f"[yellow]The active baseline was created for the "
+                    f"{str(baseline_profile).capitalize()} profile.[/]\n"
+                    f"[dim]Create a {profile.capitalize()} baseline before "
+                    f"running this scan.[/]",
+                    title="[bold yellow]BASELINE PROFILE MISMATCH[/]",
+                    border_style="yellow",
+                    box=box.ROUNDED,
+                )
+            )
+
+            pause_return()
+
+        return {
+            "status": "error",
+            "details": [
+                f"Baseline profile '{baseline_profile}' does not match "
+                f"requested scan profile '{profile}'"
+            ],
+            "tags": ["integrity_baseline_profile_mismatch"],
+        }
+        
     targets, target_errors = _collect_targets(profile)
 
     if not targets:
@@ -398,6 +445,10 @@ def scan_integrity(
         # Current baseline format only has hashes for files
         # that were included when the baseline was created.
         if old_hash is None:
+            rows.append((path, "UNAVAILABLE"))
+            scan_errors.append(
+                f"{path} is not represented in the active baseline"
+            )
             continue
 
         new_hash, hash_error = get_sha256(path)
@@ -604,7 +655,55 @@ def integrity_menu() -> None:
         )
 
         if choice == "1":
-            create_baseline()
+            clear_screen()
+            _header(
+                "SELECT BASELINE PROFILE",
+                "Choose the scope for the integrity baseline",
+            )
+
+            profiles = Table(
+                show_header=False,
+                box=None,
+                padding=(0, 1),
+            )
+
+            profiles.add_row(
+                "[cyan][1][/]",
+                "Critical",
+                "[dim]passwd, shadow, sudoers, SSH configuration[/]",
+            )
+            profiles.add_row(
+                "[cyan][2][/]",
+                "System",
+                "[dim]/etc, /usr/bin, /lib[/]",
+            )
+            profiles.add_row(
+                "[cyan][3][/]",
+                "User",
+                "[dim]Shell profile and authorized keys[/]",
+            )
+            profiles.add_row(
+                "[cyan][0][/]",
+                "Back",
+                "",
+            )
+
+            console.print(profiles)
+
+            selected = Prompt.ask(
+                "\n[cyan]Select a profile[/]",
+                choices=["0", "1", "2", "3"],
+                default="1",
+            )
+
+            profile_map = {
+                "1": "critical",
+                "2": "system",
+                "3": "user",
+            }
+
+            if selected in profile_map:
+                create_baseline(profile_map[selected])
 
         elif choice == "2":
             clear_screen()

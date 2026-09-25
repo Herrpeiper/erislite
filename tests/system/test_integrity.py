@@ -109,6 +109,7 @@ def test_scan_integrity_missing_file_is_warning(
         "_metadata": {
             "created_at": "2026-09-23T12:00:00",
             "algorithm": "SHA-256",
+            "profile": "critical",
             "monitored": [str(monitored_file)],
             "unavailable": [],
         },
@@ -164,6 +165,7 @@ def test_scan_integrity_unreadable_file_is_error(
         "_metadata": {
             "created_at": "2026-09-23T12:00:00",
             "algorithm": "SHA-256",
+            "profile": "critical",
             "monitored": [str(monitored_file)],
             "unavailable": [],
         },
@@ -229,6 +231,7 @@ def test_scan_integrity_modified_and_incomplete(
         "_metadata": {
             "created_at": "2026-09-23T12:00:00",
             "algorithm": "SHA-256",
+            "profile": "critical",
             "monitored": [
                 str(changed),
                 str(unreadable),
@@ -299,6 +302,7 @@ def test_scan_integrity_target_collection_failure(
         "_metadata": {
             "created_at": "2026-09-23T12:00:00",
             "algorithm": "SHA-256",
+            "profile": "critical",
             "monitored": ["/etc/example"],
             "unavailable": [],
         },
