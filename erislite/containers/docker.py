@@ -1,14 +1,13 @@
 # Project: ErisLITE
 # Module: docker.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-26
 # Description: Docker security check: privileged containers and risky host exposure.
 
 import json
-import shutil
 import subprocess
 
 from rich import box
@@ -17,6 +16,10 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.security.command_resolver import (
+    CommandResolutionError,
+    resolve_command,
+)
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -46,16 +49,23 @@ def _header() -> None:
 
 
 def _docker_available() -> bool:
-    return shutil.which("docker") is not None
+    try:
+        resolve_command("docker")
+    except CommandResolutionError:
+        return False
+
+    return True
 
 
 def get_running_containers():
-    if not _docker_available():
+    try:
+        docker = resolve_command("docker")
+    except CommandResolutionError:
         return [], "Docker CLI is not available"
 
     try:
         result = subprocess.run(
-            ["docker", "ps", "-q"],
+            [docker, "ps", "-q"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -79,8 +89,10 @@ def get_running_containers():
 
 def inspect_container(container_id: str):
     try:
+        docker = resolve_command("docker")
+
         result = subprocess.run(
-            ["docker", "inspect", container_id],
+            [docker, "inspect", container_id],
             capture_output=True,
             text=True,
             timeout=10,

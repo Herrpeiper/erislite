@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: profile.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-26
 # Description: Manages user profile creation, locking, and migration.
 
 import json
@@ -75,8 +75,14 @@ def load_or_create_profile() -> dict:
 
         profile, changed = _migrate(profile)
 
+        current_hostname = socket.gethostname()
+
+        if profile.get("hostname") != current_hostname:
+            profile["hostname"] = current_hostname
+            changed = True
+
         if changed:
-            console.print("[yellow]User profile updated with new default fields.[/]")
+            console.print("[yellow]User profile updated with current system information.[/]")
             _unlock(PROFILE_PATH)
             try:
                 with open(PROFILE_PATH, "w") as f:

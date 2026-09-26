@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: backdoors.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-26
 # Description: Shell init, profile, and LD_PRELOAD persistence inspection.
 
 import os
@@ -168,7 +168,7 @@ def _check_ld_preload() -> list:
                     )
                 )
 
-    except Exception as exc:
+    except OSError as exc:
         findings.append(
             _error(
                 path,
@@ -184,7 +184,14 @@ def _check_env_ld_preload() -> list:
 
     try:
         proc_entries = os.scandir("/proc")
-    except Exception:
+
+    except OSError as exc:
+        findings.append(
+            _error(
+                "/proc",
+                f"Could not enumerate process environments: {exc}",
+            )
+        )
         return findings
 
     with proc_entries:
@@ -204,7 +211,7 @@ def _check_env_ld_preload() -> list:
             except (PermissionError, FileNotFoundError):
                 continue
 
-            except Exception:
+            except OSError:
                 continue
 
             for variable in env.split("\x00"):
@@ -272,8 +279,16 @@ def _scan_file(path: str) -> list:
                         )
                         break
 
-    except (PermissionError, FileNotFoundError):
+    except FileNotFoundError:
         pass
+
+    except PermissionError as exc:
+        findings.append(
+            _error(
+                path,
+                f"Permission denied while reading: {exc}",
+            )
+        )
 
     except Exception as exc:
         findings.append(
@@ -299,8 +314,13 @@ def _scan_dir(directory: str) -> list:
                     _scan_file(entry.path)
                 )
 
-    except PermissionError:
-        pass
+    except PermissionError as exc:
+        findings.append(
+            _error(
+                directory,
+                f"Permission denied while scanning directory: {exc}",
+            )
+        )
 
     except Exception as exc:
         findings.append(
@@ -329,7 +349,14 @@ def scan_backdoors() -> list:
 
     try:
         users = pwd.getpwall()
-    except Exception:
+
+    except Exception as exc:
+        findings.append(
+            _error(
+                "/etc/passwd",
+                f"Could not enumerate local user accounts: {exc}",
+            )
+        )
         users = []
 
     for user in users:
@@ -408,7 +435,7 @@ def run_backdoor_check(
 
     all_tags = {
         item["tag"]
-        for item in findings
+        for item in collected
     }
 
     details = [

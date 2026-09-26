@@ -13,7 +13,7 @@ from pathlib import Path
 
 from erislite.version import VERSION
 
-TODAY = "2026-09-11"
+TODAY = "2026-09-26"
 
 
 FILES = [
@@ -178,6 +178,21 @@ FILES = [
     ),
 
     # ---------------------------------------------------------------------
+    # Security
+    # ---------------------------------------------------------------------
+    (
+        "erislite/security/command_resolver.py",
+        "command_resolver.py",
+        "Trusted command resolution and executable path validation.",
+    ),
+
+    (
+        "erislite/security/import_guard.py",
+        "import_guard.py",
+        "Monitors and validates dynamic imports to prevent unauthorized code execution.",
+    ),
+
+    # ---------------------------------------------------------------------
     # Sweep
     # ---------------------------------------------------------------------
     (
@@ -297,6 +312,13 @@ FILES = [
         "cve_tools_menu.py",
         "CVE tools launcher menu.",
     ),
+
+    (
+        "erislite/ui/shell_console.py",
+        "shell_console.py",
+        "Restricted shell console for analyst command execution.",
+    ),
+
 
     # ---------------------------------------------------------------------
     # Version

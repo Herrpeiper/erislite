@@ -7,7 +7,7 @@
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-stable-green)
-![Version](https://img.shields.io/badge/version-1.2.0-blue)
+![Version](https://img.shields.io/badge/version-1.3.0-blue)
 
 *A modular Linux security monitoring and triage toolkit for analysts, students, and system administrators.*
 
@@ -30,7 +30,7 @@ ErisLITE is designed primarily for CCDC-style competition environments, cybersec
 | User Account Scan | UID anomalies, shell configuration, suspicious accounts |
 | Login / Auth Logs | Failed logins, interactive root shells, recent login activity |
 | Kernel Modules | Known-bad, unresolved, or unusually located kernel modules |
-| File Integrity | SHA-256 baseline validation for monitored critical files |
+| File Integrity | Profile-specific SHA-256 baselines with incomplete-scan and expected-absence handling |
 | World-Writable Files | Writable execution and persistence paths in sensitive locations |
 | SUID / SGID | Unexpected privileged executables and risky locations |
 | Cron / Timers | Suspicious cron jobs, periodic scripts, and systemd timer services |
@@ -79,7 +79,8 @@ Risk Level: Moderate
 | Snapshot Log Viewer | Reviews previously captured system snapshots |
 | Sweep Log Viewer | Browses recent Threat Sweeps and full per-module reports |
 | SOC Mode | Repeated host posture collection for short-duration monitoring |
-| Rapid Response | Triage, dry-run containment, live response actions, and rollback support |
+| Rapid Response | Triage, dry-run containment, live response actions, firewall-aware IP blocking, and rollback support |
+| Shell Console | Restricted analyst console with hardened command resolution and execution controls |
 | CVE Tools | Offline CVE search against the local cache |
 
 ### CLI
@@ -92,6 +93,8 @@ Risk Level: Moderate
 - Historical Threat Sweep logging and report viewing
 - System snapshot logging
 - SOC Mode rolling posture collection
+- Restricted Shell Console for analyst command execution
+- Hardened command resolution and import validation for hostile environments
 - Consistent `[ENTER] Return to menu` navigation
 
 ---
@@ -179,6 +182,10 @@ ErisLITE/
 │   │       ├── undo.py
 │   │       └── utils.py
 │   │
+│   ├── security/
+│   │   ├── command_resolver.py
+│   │   └── import_guard.py
+│   │
 │   ├── sweep/
 │   │   ├── threat_sweep.py
 │   │   ├── viewer.py
@@ -198,6 +205,7 @@ ErisLITE/
 │   │   ├── utils.py
 │   │   ├── splash.py
 │   │   ├── cli.py
+│   │   ├── shell_console.py
 │   │   └── menus/
 │   │       ├── security_menu.py
 │   │       ├── network_menu.py
@@ -235,9 +243,9 @@ ErisLITE/
 
 ## First Run Notes
 
-**Integrity baseline** — File Integrity requires a baseline before it can detect changes. On first run, go to **Security Tools → File Integrity → Create Integrity Baseline**. Runtime integrity data is stored under `data/integrity/` and is gitignored by design.
+**Integrity baseline** — File Integrity requires a baseline before it can detect changes. On first run, go to **Security Tools → File Integrity → Create Integrity Baseline** and choose the appropriate `critical`, `system`, or `user` profile. Runtime integrity data is stored under `data/integrity/` and is gitignored by design.
 
-ErisLITE records which monitored files were successfully hashed and which were unavailable. Protected files may require root privileges, but unavailable files do not automatically invalidate a correctly recorded baseline.
+ErisLITE v1.3 keeps separate baselines per profile, records files that were expected to be absent when the baseline was created, distinguishes changed files from incomplete inspection, and reports collection/read failures instead of treating them as clean results. Protected files may require root privileges for complete coverage.
 
 **User profile** — ErisLITE maintains user and host profile information used by portions of the CLI and snapshot tooling. Runtime user data is stored under `~/.erislite/`.
 

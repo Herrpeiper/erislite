@@ -1,12 +1,13 @@
 # Project: ErisLITE
 # Module: firewall.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-26
 # Description: Firewall status inspection for UFW, firewalld, nftables, and iptables.
 
+import ipaddress
 import subprocess
 
 from rich.align import Align
@@ -14,6 +15,10 @@ from rich.console import Console
 from rich.table import Table
 
 from erislite.config.settings import DEFAULT_COMMAND_TIMEOUT
+from erislite.security.command_resolver import (
+    CommandResolutionError,
+    resolve_command,
+)
 from erislite.ui.utils import clear_screen, pause_return, show_header
 
 console = Console()
@@ -26,16 +31,134 @@ PERMISSION_ERRORS = (
 )
 
 
+def detect_firewall_backend():
+    ufw, _ = _run_command(["ufw", "status"])
+
+    if ufw is not None:
+        output = ufw.stdout.strip().lower()
+
+        if ufw.returncode == 0 and "status: active" in output:
+            return "ufw"
+
+    firewalld, _ = _run_command(
+        ["systemctl", "is-active", "firewalld"]
+    )
+
+    if (
+        firewalld is not None
+        and firewalld.returncode == 0
+        and firewalld.stdout.strip().lower() == "active"
+    ):
+        return "firewalld"
+
+    nftables, _ = _run_command(
+        ["nft", "list", "ruleset"]
+    )
+
+    if (
+        nftables is not None
+        and nftables.returncode == 0
+        and _nftables_has_rules(nftables.stdout)
+    ):
+        return "nftables"
+
+    iptables, _ = _run_command(
+        ["iptables", "-S"]
+    )
+
+    if (
+        iptables is not None
+        and iptables.returncode == 0
+        and _iptables_has_rules(iptables.stdout)
+    ):
+        return "iptables"
+
+    return None
+
+
+def build_ip_block_commands(ip, backend):
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return None
+
+    if backend == "ufw":
+        return {
+            "apply": [
+                "ufw",
+                "deny",
+                "out",
+                "to",
+                ip,
+            ],
+            "undo": [
+                "ufw",
+                "delete",
+                "deny",
+                "out",
+                "to",
+                ip,
+            ],
+        }
+
+    if backend == "firewalld":
+        if address.version != 4:
+            return None
+
+        rule = (
+            f'rule family="ipv4" '
+            f'destination address="{ip}" drop'
+        )
+
+        return {
+            "apply": [
+                "firewall-cmd",
+                f"--add-rich-rule={rule}",
+            ],
+            "undo": [
+                "firewall-cmd",
+                f"--remove-rich-rule={rule}",
+            ],
+        }
+
+    if backend == "iptables":
+        return {
+            "apply": [
+                "iptables",
+                "-A",
+                "OUTPUT",
+                "-d",
+                ip,
+                "-j",
+                "DROP",
+            ],
+            "undo": [
+                "iptables",
+                "-D",
+                "OUTPUT",
+                "-d",
+                ip,
+                "-j",
+                "DROP",
+            ],
+        }
+
+    return None
+
+
 def _run_command(command):
     try:
+        resolved = [resolve_command(command[0]), *command[1:]]
+
         result = subprocess.run(
-            command,
+            resolved,
             capture_output=True,
             text=True,
             timeout=DEFAULT_COMMAND_TIMEOUT,
         )
         return result, None
-    except FileNotFoundError:
+
+    except CommandResolutionError:
         return None, "unavailable"
     except subprocess.TimeoutExpired:
         return None, "timeout"

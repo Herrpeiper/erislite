@@ -1,15 +1,14 @@
 # Project: ErisLITE
 # Module: kernel_modules.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-26
 # Description: Kernel module inspection for known-bad names, untracked modules, and unusual paths.
 
 import json
 import os
-import shutil
 import subprocess
 from datetime import datetime
 
@@ -19,6 +18,10 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.security.command_resolver import (
+    CommandResolutionError,
+    resolve_command,
+)
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -52,7 +55,7 @@ def _header() -> None:
 def _kernel_release() -> str:
     try:
         result = subprocess.run(
-            ["uname", "-r"],
+            [resolve_command("uname"), "-r"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -61,30 +64,46 @@ def _kernel_release() -> str:
     except Exception:
         return ""
 
-def get_module_path(modname: str) -> str:
+def get_module_path(modname: str):
     try:
         result = subprocess.run(
-            ["modinfo", "-n", modname],
+            [resolve_command("modinfo"), "-n", modname],
             capture_output=True,
             text=True,
             timeout=5,
         )
 
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
+        if result.returncode != 0:
+            return None, (
+                result.stderr.strip()
+                or f"modinfo exited with code {result.returncode}"
+            )
 
-    except Exception:
-        pass
+        path = result.stdout.strip()
 
-    return "Unknown"
+        if not path:
+            return None, "modinfo returned no module path"
+
+        return path, None
+
+    except CommandResolutionError:
+        return None, "modinfo is unavailable"
+
+    except subprocess.TimeoutExpired:
+        return None, f"modinfo timed out for {modname}"
+
+    except OSError as exc:
+        return None, str(exc)
 
 def get_loaded_modules():
-    if shutil.which("lsmod") is None:
+    try:
+        lsmod = resolve_command("lsmod")
+    except CommandResolutionError:
         return [], "lsmod is not available on this system"
 
     try:
         result = subprocess.run(
-            ["lsmod"],
+            [lsmod],
             capture_output=True,
             text=True,
             timeout=10,
@@ -201,7 +220,7 @@ def run_kernel_module_check(
     module_log = []
 
     for name, size, used_by in modules:
-        path = get_module_path(name)
+        path, path_error = get_module_path(name)
         flags = []
 
         if name.lower() in KNOWN_BAD_MODULES:
@@ -209,7 +228,7 @@ def run_kernel_module_check(
             bad_named.append(name)
 
         is_legit = (
-            path != "Unknown"
+            path is not None
             and path.startswith(expected_prefix)
         )
 
@@ -298,8 +317,11 @@ def run_kernel_module_check(
                 indent=2,
             )
 
-    except Exception:
-        pass
+    except OSError as exc:
+        if not silent:
+            console.print(
+                f"[yellow]Warning: could not save kernel module log: {exc}[/]"
+            )
 
     if silent:
         return {

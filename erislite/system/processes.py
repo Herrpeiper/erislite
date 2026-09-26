@@ -1,14 +1,15 @@
 # Project: ErisLITE
 # Module: processes.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-26
 # Description: Process anomaly inspection for suspicious paths and execution context.
 
 import os
 import pwd
+from typing import Optional, Tuple
 
 import psutil
 from rich import box
@@ -138,37 +139,58 @@ def _cmdline_str(proc) -> str:
     try:
         parts = proc.cmdline()
         return " ".join(parts) if parts else proc.name()
-    except Exception:
+    except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
         try:
             return proc.name()
-        except Exception:
+        except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
             return ""
 
 
-def _is_deleted(proc) -> bool:
+def _is_deleted(proc) -> Tuple[bool, Optional[str]]:
     try:
         exe = proc.exe()
-        return bool(exe) and (
+
+        if not exe:
+            return False, None
+
+        deleted = (
             exe.endswith(" (deleted)")
             or not os.path.exists(exe.replace(" (deleted)", ""))
         )
-    except Exception:
-        return False
+
+        return deleted, None
+
+    except psutil.NoSuchProcess:
+        return False, None
+
+    except (
+        psutil.AccessDenied,
+        OSError,
+    ) as exc:
+        return False, str(exc)
 
 
-def _is_kernel_thread(proc) -> bool:
+def _is_kernel_thread(proc) -> Tuple[bool, Optional[str]]:
     try:
-        return not proc.cmdline() and not proc.exe()
-    except (psutil.AccessDenied, psutil.NoSuchProcess):
-        return True
-    except Exception:
-        return False
+        return (
+            not proc.cmdline() and not proc.exe(),
+            None,
+        )
+
+    except psutil.NoSuchProcess:
+        return False, None
+
+    except (
+        psutil.AccessDenied,
+        OSError,
+    ) as exc:
+        return False, str(exc)
 
 
 def _get_username(uid: int) -> str:
     try:
         return pwd.getpwuid(uid).pw_name
-    except Exception:
+    except (KeyError, OSError):
         return str(uid)
 
 
@@ -188,8 +210,19 @@ def _severity(tags) -> str:
 
 def scan_processes():
     flagged = []
+    errors = []
 
-    for proc in psutil.process_iter(["pid", "name", "uids", "cmdline", "ppid"]):
+    try:
+        processes = psutil.process_iter(
+            ["pid", "name", "uids", "cmdline", "ppid"]
+        )
+    except (
+        psutil.Error,
+        OSError,
+    ) as exc:
+        return flagged, [f"Could not enumerate processes: {exc}"]
+
+    for proc in processes:
         try:
             info = proc.info
             pid = info["pid"]
@@ -199,14 +232,24 @@ def scan_processes():
 
             cmdline = _cmdline_str(proc)
             exe = _get_exe_path(proc)
-            base_name = os.path.basename(exe or name).lower().split()[0]
+            base_source = os.path.basename(exe or name).lower()
+            base_name = base_source.split()[0] if base_source else ""
 
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-        except Exception:
+        except (
+            psutil.NoSuchProcess,
+            psutil.AccessDenied,
+            OSError,
+        ):
             continue
 
-        if _is_kernel_thread(proc):
+        is_kernel, kernel_error = _is_kernel_thread(proc)
+
+        if kernel_error:
+            errors.append(
+                f"PID {pid}: kernel-thread inspection failed: {kernel_error}"
+            )
+
+        if is_kernel:
             continue
 
         reasons = []
@@ -215,19 +258,32 @@ def scan_processes():
         if uid == 0 and exe:
             for bad_path in SUSPICIOUS_SPAWN_PATHS:
                 if exe.startswith(bad_path):
-                    reasons.append(f"Root process spawned from {bad_path}")
+                    reasons.append(
+                        f"Root process spawned from {bad_path}"
+                    )
                     tags.add("proc_root_suspicious_path")
                     break
 
-        if _is_deleted(proc):
-            reasons.append("Executable deleted from disk while process remains active")
+        deleted, deleted_error = _is_deleted(proc)
+
+        if deleted_error:
+            errors.append(
+                f"PID {pid}: executable inspection failed: {deleted_error}"
+            )
+
+        if deleted:
+            reasons.append(
+                "Executable deleted from disk while process remains active"
+            )
             tags.add("proc_deleted_exe")
 
         lowered_cmdline = cmdline.lower()
 
         for bad in KNOWN_BAD_NAMES:
             if bad in base_name or bad in lowered_cmdline:
-                reasons.append(f"Matches known offensive tool name: {bad}")
+                reasons.append(
+                    f"Matches known offensive tool name: {bad}"
+                )
                 tags.add("proc_known_bad")
                 break
 
@@ -238,25 +294,36 @@ def scan_processes():
             and base_name not in WHITELISTED_ROOT_PROCS
         ):
             suspicious_args = any(
-                token in cmdline.lower() for token in SUSPICIOUS_INTERPRETER_ARGS
+                token in lowered_cmdline
+                for token in SUSPICIOUS_INTERPRETER_ARGS
             )
 
             suspicious_path = any(
-                exe.startswith(path) for path in SUSPICIOUS_SPAWN_PATHS
+                exe.startswith(path)
+                for path in SUSPICIOUS_SPAWN_PATHS
             )
 
             if suspicious_args or suspicious_path:
                 reasons.append(
-                    f"Privileged interpreter with suspicious execution context: {base_name}"
+                    "Privileged interpreter with suspicious "
+                    f"execution context: {base_name}"
                 )
                 tags.add("proc_root_interpreter")
 
         if name.startswith("."):
-            reasons.append(f"Process name starts with dot: {name}")
+            reasons.append(
+                f"Process name starts with dot: {name}"
+            )
             tags.add("proc_hidden_name")
 
-        if uid == 0 and not exe and name not in WHITELISTED_ROOT_PROCS:
-            reasons.append("Root process with no resolvable executable path")
+        if (
+            uid == 0
+            and not exe
+            and name not in WHITELISTED_ROOT_PROCS
+        ):
+            reasons.append(
+                "Root process with no resolvable executable path"
+            )
             tags.add("proc_no_exe")
 
         if reasons:
@@ -272,7 +339,7 @@ def scan_processes():
                 }
             )
 
-    return flagged
+    return flagged, errors
 
 
 def run_process_scan(silent: bool = False) -> dict:
@@ -297,9 +364,10 @@ def run_process_scan(silent: bool = False) -> dict:
             "tags": [],
         }
 
-    flagged = scan_processes()
+    flagged, scan_errors = scan_processes()
 
     all_tags = set()
+
     for finding in flagged:
         all_tags.update(finding["tags"])
 
@@ -309,17 +377,31 @@ def run_process_scan(silent: bool = False) -> dict:
         for reason in finding["reasons"]
     ]
 
+    if scan_errors:
+        details.extend(
+            f"Process inspection incomplete: {error}"
+            for error in scan_errors[:10]
+        )
+        all_tags.add("process_scan_incomplete")
+
+    if flagged:
+        status = "warning"
+    elif scan_errors:
+        status = "error"
+    else:
+        status = "ok"
+        
     if silent:
         return {
-            "status": "warning" if flagged else "ok",
-            "details": details[:10] if flagged else [],
+            "status": status,
+            "details": details[:10],
             "tags": sorted(all_tags),
         }
 
     clear_screen()
     _header()
 
-    if not flagged:
+    if not flagged and not scan_errors:
         console.print(
             Panel.fit(
                 "[green]No suspicious process conditions detected.[/]\n"
@@ -337,6 +419,29 @@ def run_process_scan(silent: bool = False) -> dict:
             "status": "ok",
             "details": [],
             "tags": [],
+        }
+
+    if scan_errors and not flagged:
+        console.print(
+            Panel.fit(
+                "[yellow]No suspicious process conditions were detected, "
+                "but the scan was incomplete.[/]\n"
+                "[dim]One or more process attributes could not be inspected.[/]",
+                title="[bold yellow]STATUS: INCOMPLETE[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+    
+        for error in scan_errors[:10]:
+            console.print(f"  [yellow]•[/] {error}")
+    
+        pause_return()
+    
+        return {
+            "status": "error",
+            "details": details,
+            "tags": sorted(all_tags),
         }
 
     finding_count = sum(len(finding["reasons"]) for finding in flagged)
@@ -379,7 +484,21 @@ def run_process_scan(silent: bool = False) -> dict:
 
     console.print(table)
     console.print()
-
+    
+    if scan_errors:
+        console.print(
+            Panel.fit(
+                "\n".join(
+                    f"[yellow]{error}[/]"
+                    for error in scan_errors[:10]
+                ),
+                title="[bold yellow]COLLECTION WARNING[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+        console.print()
+    
     console.print(
         Panel.fit(
             f"[yellow]{len(flagged)} process(es) require review.[/]\n"

@@ -1,24 +1,30 @@
 # Project: ErisLITE
 # Module: login_audit.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-26
 # Description: Login and authentication audit: failed logins, root shells, and recent login history.
 
 import re
 import subprocess
+from typing import Optional, Tuple
 
 from rich import box
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
+from erislite.security.command_resolver import (
+    CommandResolutionError,
+    resolve_command,
+)
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
+timeout = DEFAULT_COMMAND_TIMEOUT
 FAILED_LOGIN_THRESHOLD = 3
 
 ROOT_SHELLS = {
@@ -48,20 +54,25 @@ def _header() -> None:
     console.print()
 
 
-def get_failed_logins() -> list[str]:
+def get_failed_logins() -> Tuple[list[str], Optional[str]]:
     output = ""
 
     try:
         result = subprocess.run(
-            ["journalctl", "-u", "ssh", "-n", "100"],
+            [resolve_command("journalctl"), "-u", "ssh", "-n", "100"],
             capture_output=True,
             text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
 
         if result.returncode == 0:
             output = result.stdout
 
-    except Exception:
+    except (
+        CommandResolutionError,
+        subprocess.TimeoutExpired,
+        OSError,
+    ):
         pass
 
     if not output:
@@ -73,46 +84,63 @@ def get_failed_logins() -> list[str]:
                 errors="ignore",
             ) as file:
                 output = file.read()
-        except Exception:
-            return []
 
-    return re.findall(
+        except OSError as exc:
+            return [], f"Failed login data unavailable: {exc}"
+
+    matches = re.findall(
         r"Failed password for.*? from .*? port \d+",
         output,
     )
 
+    return matches, None
 
-def get_recent_logins() -> list[str]:
+
+def get_recent_logins() -> Tuple[list[str], Optional[str]]:
     try:
         result = subprocess.run(
-            ["last", "-n", "10"],
+            [resolve_command("last"), "-n", "10"],
             capture_output=True,
             text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
 
         if result.returncode != 0:
-            return []
+            return [], "Recent login history command failed"
 
-        return [
+        entries = [
             line
             for line in result.stdout.strip().splitlines()
             if line and not line.startswith("wtmp begins")
         ]
 
-    except Exception:
-        return []
+        return entries, None
+
+    except CommandResolutionError:
+        return [], "Recent login history command unavailable"
+
+    except subprocess.TimeoutExpired:
+        return [], "Recent login history command timed out"
+
+    except OSError as exc:
+        return [], f"Recent login history unavailable: {exc}"
 
 
-def get_uid0_shells() -> list[str]:
+def get_uid0_shells() -> Tuple[list[str], Optional[str]]:
     try:
         result = subprocess.run(
-            ["ps", "-eo", "uid=,pid=,tty=,comm=,args="],
+            [
+                resolve_command("ps"),
+                "-eo",
+                "uid=,pid=,tty=,comm=,args=",
+            ],
             capture_output=True,
             text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
 
         if result.returncode != 0:
-            return []
+            return [], "Process inspection command failed"
 
         shells = []
 
@@ -127,8 +155,6 @@ def get_uid0_shells() -> list[str]:
             if uid != "0":
                 continue
 
-            # No terminal attached = service/wrapper/background process,
-            # not an interactive root shell session.
             if tty in ("?", "-"):
                 continue
 
@@ -139,10 +165,16 @@ def get_uid0_shells() -> list[str]:
                     f"PID {pid} — {tty} — {comm} — {args}"
                 )
 
-        return shells
+        return shells, None
 
-    except Exception:
-        return []
+    except CommandResolutionError:
+        return [], "Process inspection command unavailable"
+
+    except subprocess.TimeoutExpired:
+        return [], "Process inspection command timed out"
+
+    except OSError as exc:
+        return [], f"Process inspection failed: {exc}"
 
 def run_login_audit(silent: bool = False) -> dict:
     if get_os() != "Linux":
@@ -166,10 +198,25 @@ def run_login_audit(silent: bool = False) -> dict:
             "tags": [],
         }
 
+    failed_logins, failed_error = get_failed_logins()
+    recent_logins, recent_error = get_recent_logins()
+    uid0_shells, shell_error = get_uid0_shells()
+
+    collection_errors = [
+        error
+        for error in (
+            failed_error,
+            recent_error,
+            shell_error,
+        )
+        if error
+    ]
+
     results = {
-        "failed_logins": get_failed_logins(),
-        "recent_logins": get_recent_logins(),
-        "uid0_shells": get_uid0_shells(),
+        "failed_logins": failed_logins,
+        "recent_logins": recent_logins,
+        "uid0_shells": uid0_shells,
+        "collection_errors": collection_errors,
         "flagged": False,
         "issues": [],
         "status": "ok",
@@ -191,12 +238,17 @@ def run_login_audit(silent: bool = False) -> dict:
         )
         results["tags"].append("uid0_shells")
 
+    if collection_errors:
+        results["flagged"] = True
+        results["issues"].extend(collection_errors)
+        results["tags"].append("auth_audit_incomplete")
+
     if results["flagged"]:
         results["status"] = "warning"
         results["details"] = results["issues"]
     else:
         results["details"] = ["No login anomalies detected."]
-
+        
     if silent:
         return results
 
@@ -271,6 +323,20 @@ def run_login_audit(silent: bool = False) -> dict:
             table.add_row(entry)
 
         console.print(table)
+        console.print()
+
+    if results["collection_errors"]:
+        console.print(
+            Panel.fit(
+                "\n".join(
+                    f"[yellow]{error}[/]"
+                    for error in results["collection_errors"]
+                ),
+                title="[bold yellow]COLLECTION WARNING[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
         console.print()
 
     if results["flagged"]:

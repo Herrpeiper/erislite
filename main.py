@@ -1,19 +1,25 @@
 # Project: ErisLITE
 # Module: main.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-26
 # Description: ErisLITE entry point — initializes user profile and launches the CLI.
 
 import os
 
-from rich.console import Console
+from erislite.security.import_guard import check_import_environment
 
-from erislite.accounts.profile import load_or_create_profile
-from erislite.ui.cli import launch_cli
-from erislite.ui.splash import show_splash
+# Import guard intentionally runs before third-party and application imports.
+# Do not move the delayed imports above this check.
+IMPORT_STATUS = check_import_environment()
+
+from rich.console import Console  # noqa: E402
+
+from erislite.accounts.profile import load_or_create_profile  # noqa: E402
+from erislite.ui.cli import launch_cli  # noqa: E402
+from erislite.ui.splash import show_splash  # noqa: E402
 
 console = Console()
 
@@ -23,7 +29,28 @@ console = Console()
 DEV_MODE = os.getenv("ERISLITE_DEV", "0") == "1"
 
 
+def _show_import_warning() -> None:
+    if IMPORT_STATUS["status"] == "ok":
+        return
+
+    console.print(
+        "\n[bold yellow]IMPORT ENVIRONMENT WARNING[/]"
+    )
+
+    for detail in IMPORT_STATUS["details"]:
+        console.print(
+            f"[yellow]•[/] {detail}"
+        )
+
+    console.print(
+        "[dim]ErisLITE will continue, but the Python "
+        "import environment should be reviewed.[/]\n"
+    )
+
+
 def main():
+    _show_import_warning()
+
     profile = load_or_create_profile()
     show_splash(profile)
     launch_cli(profile)
@@ -36,4 +63,6 @@ if __name__ == "__main__":
         if DEV_MODE:
             raise
         else:
-            console.print("\n[bold red]Interrupted by user. Exiting...[/]")
+            console.print(
+                "\n[bold red]Interrupted by user. Exiting...[/]"
+            )

@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: threat_sweep.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-26
 # Description: Threat sweep orchestrator: runs selected modules, scores risk, and saves results.
 
 import json
@@ -97,6 +97,8 @@ THREAT_TAG_MAP = {
     "weak_ssh_config": "One or more SSH server settings differ from the hardening baseline.",
     "firewall_permission_denied": ("Firewall state could not be fully inspected with the current privileges."),
     "firewall_check_failed": "One or more firewall inspection commands failed.",
+    "auth_audit_incomplete": ("One or more authentication audit data sources could not be inspected."),
+    "kernel_module_inspection_incomplete": ("One or more loaded kernel modules could not be fully inspected."),
 }
 
 
@@ -200,8 +202,6 @@ def run_sweep(user_profile, sweep_profile="standard"):
     if "docker" in profiles[sweep_profile]:
         results["docker"] = docker.run_docker_scan(silent=True)
 
-    # FIX #7: suid was in the weights dict and in the full profile list but was never
-    # assigned to results{}, so it could never contribute to the risk score. Wired in now.
     if "suid" in profiles[sweep_profile]:
         results["suid"] = suid.run_suid_scan(silent=True)
 
@@ -220,8 +220,17 @@ def run_sweep(user_profile, sweep_profile="standard"):
     # Firewall check is always run as a baseline signal
     try:
         results["firewall"] = firewall.run_firewall_check(silent=True)
-    except Exception:
-        pass
+
+    except Exception as exc:
+        results["firewall"] = {
+            "status": "error",
+            "details": [
+                f"Firewall check failed: {exc}"
+            ],
+            "tags": [
+                "firewall_check_failed"
+            ],
+        }
 
     hostname = user_profile.get(
         "hostname",
@@ -619,7 +628,7 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
     pause_return()
 
 
-def _save_sweep(results, sweep_profile, user_profile):
+def _save_sweep(results, sweep_profile, user_profile, changes):
     """Persist the latest sweep and a timestamped historical sweep log."""
     try:
         all_tags = []
@@ -651,6 +660,7 @@ def _save_sweep(results, sweep_profile, user_profile):
             "risk_percent": risk_percent,
             "tags": sorted(set(all_tags)),
             "priorities": priorities,
+            "changes": changes,
             "results": results,
         }
 

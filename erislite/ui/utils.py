@@ -1,15 +1,16 @@
 # Project: ErisLITE
 # Module: utils.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-26
 # Description: Shared UI utilities for screen control, headers, prompts, and platform detection.
 
 import json
 import os
 import platform
+import subprocess
 from datetime import datetime
 from typing import Optional
 
@@ -17,9 +18,14 @@ from rich import box
 from rich.panel import Panel
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
+from erislite.security.command_resolver import (
+    CommandResolutionError,
+    resolve_command,
+)
 from erislite.ui.console import console
 
+timeout = DEFAULT_COMMAND_TIMEOUT
 
 def get_os() -> str:
     """
@@ -37,12 +43,19 @@ def get_os() -> str:
 
 
 def clear_screen() -> None:
-    os.system(
-        "cls"
-        if get_os() == "Windows"
-        else "clear"
-    )
+    if get_os() == "Windows":
+        os.system("cls")
+        return
 
+    try:
+        subprocess.run(
+            [resolve_command("clear")],
+            check=False,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
+        )
+    except (CommandResolutionError, OSError):
+        # Best-effort fallback if clear is unavailable.
+        print("\033[2J\033[H]", end="")
 
 def show_header(
     title: str = "ERISLITE",

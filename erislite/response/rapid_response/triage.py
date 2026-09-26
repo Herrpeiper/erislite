@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: triage.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-26
 # Description: Rapid Response triage and host assessment routines.
 
 from __future__ import annotations
@@ -14,6 +14,72 @@ import pwd
 from typing import Any, Dict, List
 
 import psutil
+
+
+def flagged_users():
+    interactive = {
+        "/bin/bash",
+        "/bin/sh",
+        "/usr/bin/zsh",
+        "/usr/bin/fish",
+    }
+    flagged = []
+
+    try:
+        users = pwd.getpwall()
+
+    except Exception as exc:
+        return [], f"Could not enumerate local users: {exc}"
+
+    for user in users:
+        if user.pw_uid == 0 and user.pw_name != "root":
+            flagged.append(user.pw_name)
+
+        elif (
+            user.pw_uid < 1000
+            and user.pw_shell in interactive
+            and user.pw_name != "root"
+        ):
+            flagged.append(user.pw_name)
+
+    return list(set(flagged)), None
+
+
+def writable_crons():
+    cron_dirs = [
+        "/etc/cron.d",
+        "/etc/cron.daily",
+        "/etc/cron.hourly",
+        "/etc/cron.weekly",
+        "/etc/cron.monthly",
+    ]
+
+    flagged = []
+    errors = []
+
+    for directory in cron_dirs:
+        if not os.path.isdir(directory):
+            continue
+
+        try:
+            entries = os.scandir(directory)
+
+        except OSError as exc:
+            errors.append(
+                f"{directory}: could not enumerate cron directory: {exc}"
+            )
+            continue
+
+        with entries:
+            for entry in entries:
+                try:
+                    if os.lstat(entry.path).st_mode & 0o002:
+                        flagged.append(entry.path)
+
+                except (FileNotFoundError, PermissionError, OSError):
+                    continue
+
+    return flagged, errors
 
 
 def suspicious_processes() -> List[Dict[str, Any]]:
@@ -126,7 +192,12 @@ def suspicious_connections() -> List[Dict[str, Any]]:
             if conn.pid:
                 try:
                     proc_name = psutil.Process(conn.pid).name().lower()
-                except Exception:
+                except (
+                    psutil.NoSuchProcess,
+                    psutil.AccessDenied,
+                    psutil.ZombieProcess,
+                    OSError,
+                ):
                     pass
 
             if proc_name and any(name in proc_name for name in suspicious_procs):
@@ -161,52 +232,7 @@ def suspicious_connections() -> List[Dict[str, Any]]:
                     }
                 )
 
-    except Exception:
-        pass
+    except (psutil.Error, OSError) as exc:
+        return found, f"Could not enumerate network connections: {exc}"
 
-    return found
-
-
-def flagged_users() -> List[str]:
-    interactive = {"/bin/bash", "/bin/sh", "/usr/bin/zsh", "/usr/bin/fish"}
-    flagged = []
-
-    try:
-        for user in pwd.getpwall():
-            if user.pw_uid == 0 and user.pw_name != "root":
-                flagged.append(user.pw_name)
-            elif (
-                user.pw_uid < 1000
-                and user.pw_shell in interactive
-                and user.pw_name != "root"
-            ):
-                flagged.append(user.pw_name)
-    except Exception:
-        pass
-
-    return list(set(flagged))
-
-
-def writable_crons() -> List[str]:
-    cron_dirs = [
-        "/etc/cron.d",
-        "/etc/cron.daily",
-        "/etc/cron.hourly",
-        "/etc/cron.weekly",
-        "/etc/cron.monthly",
-    ]
-
-    flagged = []
-
-    for directory in cron_dirs:
-        if not os.path.isdir(directory):
-            continue
-
-        for entry in os.scandir(directory):
-            try:
-                if os.lstat(entry.path).st_mode & 0o002:
-                    flagged.append(entry.path)
-            except Exception:
-                continue
-
-    return flagged
+    return found, None

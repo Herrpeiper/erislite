@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: tools.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-26
 # Description: Network utilities: addressing, DNS, diagnostics, WHOIS, and connections.
 
 import os
@@ -21,10 +21,12 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION, NETWORK_LOG_DIR
+from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT, NETWORK_LOG_DIR
+from erislite.security.command_resolver import resolve_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
+timeout = DEFAULT_COMMAND_TIMEOUT
 COMMON_PORTS = {
     22: "SSH",
     23: "Telnet",
@@ -107,7 +109,12 @@ def show_gateway() -> None:
             pause_return()
             return
 
-        result = subprocess.run(["ip", "route"], capture_output=True, text=True)
+        result = subprocess.run(
+            [resolve_command("ip"), "route"],
+            capture_output=True,
+            text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
+        )
 
         for line in result.stdout.splitlines():
             if not line.startswith("default"):
@@ -161,14 +168,17 @@ def ping_host() -> None:
     target = Prompt.ask("[cyan]Target[/]", default="8.8.8.8")
 
     try:
+        ping_cmd = resolve_command("ping")
+
         cmd = (
-            ["ping", "-n", "4", target]
+            [ping_cmd, "-n", "4", target]
             if platform.system() == "Windows"
-            else ["ping", "-c", "4", target]
+            else [ping_cmd, "-c", "4", target]
         )
+
         console.print(f"\n[cyan]Pinging[/] [white]{target}[/]\n")
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=DEFAULT_COMMAND_TIMEOUT)
 
         if result.returncode == 0:
             console.print(result.stdout)
@@ -189,7 +199,16 @@ def show_active_connections() -> None:
     show_network_header("ACTIVE CONNECTIONS")
 
     try:
-        result = subprocess.run(["ss", "-tunp"], capture_output=True, text=True)
+        result = subprocess.run(
+            [
+                resolve_command("curl"),
+                "-s",
+                "https://ifconfig.me",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
+        )
         lines = result.stdout.strip().splitlines()
 
         if len(lines) < 2:
@@ -289,6 +308,7 @@ def show_external_ip() -> None:
             ["curl", "-s", "https://ifconfig.me"],
             capture_output=True,
             text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
 
         ip = result.stdout.strip()
@@ -313,10 +333,10 @@ def trace_route() -> None:
 
     try:
         result = subprocess.run(
-            ["tracepath", host],
+            [resolve_command("tracepath"), host],
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
         console.print(result.stdout)
 
@@ -337,7 +357,12 @@ def whois_lookup() -> None:
     target = Prompt.ask("[cyan]Domain or IP[/]", default="example.com")
 
     try:
-        result = subprocess.run(["whois", target], capture_output=True, text=True)
+        result = subprocess.run(
+            [resolve_command("whois"), target],
+            capture_output=True,
+            text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
+        )
         output = result.stdout
 
         summary_fields = {
