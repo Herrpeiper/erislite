@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: integrity.py
 # Author: Liam Piper-Brandon
-# Version: 1.2.0
+# Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-11
+# Last Updated: 2026-09-26
 # Description: SHA-256 file integrity baseline creation and change detection.
 
 import glob
@@ -20,7 +20,11 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION, INTEGRITY_BASELINE_FILE
+from erislite.config.settings import (
+    APP_NAME,
+    APP_VERSION,
+    INTEGRITY_BASELINE_FILE,
+)
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -156,6 +160,7 @@ def check_baseline_integrity(profile: str = "critical") -> dict:
 
         monitored = metadata.get("monitored", [])
         unavailable = metadata.get("unavailable", [])
+        expected_absent = metadata.get("expected_absent", [])
 
         if not hashes:
             issues.append(
@@ -163,7 +168,10 @@ def check_baseline_integrity(profile: str = "critical") -> dict:
             )
 
         elif monitored and (
-            len(hashes) + len(unavailable) != len(monitored)
+            len(hashes)
+            + len(unavailable)
+            + len(expected_absent)
+            != len(monitored)
         ):
             issues.append(
                 "Baseline contents do not match recorded monitored files"
@@ -250,6 +258,7 @@ def create_baseline(profile: str = "critical") -> None:
 
     baseline = {}
     unavailable = []
+    expected_absent = []
     collection_errors = list(target_errors)
 
     for path in targets:
@@ -257,6 +266,10 @@ def create_baseline(profile: str = "critical") -> None:
 
         if hash_value:
             baseline[path] = hash_value
+
+        elif hash_error == "missing":
+            expected_absent.append(path)
+
         else:
             unavailable.append(
                 f"{path}: {hash_error or 'unavailable'}"
@@ -268,6 +281,7 @@ def create_baseline(profile: str = "critical") -> None:
             "algorithm": "SHA-256",
             "profile": profile,
             "monitored": targets,
+            "expected_absent": expected_absent,
             "unavailable": unavailable,
             "collection_errors": collection_errors,
         },
@@ -446,6 +460,10 @@ def scan_integrity(
             baseline_data = json.load(file)
 
         baseline = baseline_data.get("hashes", {})
+        metadata = baseline_data.get("_metadata", {})
+        expected_absent = set(
+            metadata.get("expected_absent", [])
+        )
 
     except Exception as e:
         return {
@@ -482,13 +500,50 @@ def scan_integrity(
     scan_errors = list(target_errors)
 
     for path in targets:
+        if path in expected_absent:
+            if not os.path.lexists(path):
+                rows.append((path, "ABSENT"))
+                continue
+
+            if os.path.islink(path) and not os.path.exists(path):
+                rows.append((path, "BROKEN LINK"))
+                issues.append(
+                    f"{path} appeared after baseline creation "
+                    "as a broken symbolic link"
+                )
+                continue
+
+            new_hash, hash_error = get_sha256(path)
+
+            if hash_error:
+                rows.append((path, "UNAVAILABLE"))
+                scan_errors.append(
+                    f"{path} appeared after baseline creation "
+                    f"but could not be inspected: {hash_error}"
+                )
+            else:
+                rows.append((path, "CREATED"))
+                issues.append(
+                    f"{path} appeared but was absent when "
+                    "the baseline was created"
+                )
+
+            continue
+
         old_hash = baseline.get(path)
 
         if old_hash is None:
-            rows.append((path, "UNAVAILABLE"))
-            scan_errors.append(
-                f"{path} is not represented in the active baseline"
-            )
+            if os.path.islink(path) and not os.path.exists(path):
+                rows.append((path, "UNAVAILABLE"))
+                scan_errors.append(
+                    f"{path} is a broken symbolic link"
+                )
+            else:
+                rows.append((path, "UNAVAILABLE"))
+                scan_errors.append(
+                    f"{path} is not represented in the active baseline"
+                )
+
             continue
 
         new_hash, hash_error = get_sha256(path)
@@ -575,10 +630,22 @@ def scan_integrity(
     for path, row_status in rows:
         if row_status == "UNCHANGED":
             rendered = "[green]UNCHANGED[/]"
+
+        elif row_status == "ABSENT":
+            rendered = "[green]ABSENT[/]"
+
         elif row_status == "MODIFIED":
             rendered = "[yellow]MODIFIED[/]"
+
+        elif row_status == "CREATED":
+            rendered = "[yellow]CREATED[/]"
+
         elif row_status == "MISSING":
             rendered = "[red]MISSING[/]"
+
+        elif row_status == "BROKEN LINK":
+            rendered = "[yellow]BROKEN LINK[/]"
+
         else:
             rendered = "[yellow]UNAVAILABLE[/]"
 
@@ -607,12 +674,20 @@ def scan_integrity(
         console.print()
 
     if scan_errors and (issues or copies):
+        details = "\n".join(
+            f"[yellow]• {error}[/]"
+            for error in scan_errors[:10]
+        )
+
+        if len(scan_errors) > 10:
+            details += (
+                f"\n[dim]...and {len(scan_errors) - 10} "
+                "additional inspection error(s).[/]"
+            )
+
         console.print(
             Panel.fit(
-                "\n".join(
-                    f"[yellow]{error}[/]"
-                    for error in scan_errors[:10]
-                ),
+                details,
                 title="[bold yellow]COLLECTION WARNING[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
@@ -634,11 +709,22 @@ def scan_integrity(
         )
 
     elif scan_errors:
+        details = "\n".join(
+            f"[yellow]• {error}[/]"
+            for error in scan_errors[:10]
+        )
+
+        if len(scan_errors) > 10:
+            details += (
+                f"\n[dim]...and {len(scan_errors) - 10} "
+                "additional inspection error(s).[/]"
+            )
+
         console.print(
             Panel.fit(
                 "[yellow]No integrity changes were detected, "
-                "but the scan was incomplete.[/]\n"
-                "[dim]One or more monitored files could not be inspected.[/]",
+                "but the scan was incomplete.[/]\n\n"
+                + details,
                 title="[bold yellow]STATUS: INCOMPLETE[/]",
                 border_style="yellow",
                 box=box.ROUNDED,

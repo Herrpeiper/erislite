@@ -3,7 +3,9 @@
 # Author: Liam Piper-Brandon
 # Version: 1.3.0
 # License: MIT
-# Description: Detects suspicious Python import environment conditions.
+# Created: 2025-06-01
+# Last Updated: 2026-09-26
+# Description: Monitors and validates dynamic imports to prevent unauthorized code execution.
 
 import os
 import sys

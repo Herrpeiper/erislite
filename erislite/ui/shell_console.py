@@ -3,13 +3,14 @@
 # Author: Liam Piper-Brandon
 # Version: 1.3.0
 # License: MIT
-# Created: 2026-09-18
-# Last Updated: 2026-09-19
-# Description: Launches an interactive system shell from ErisLITE.
+# Created: 2025-06-01
+# Last Updated: 2026-09-26
+# Description: Restricted shell console for analyst command execution.
 
 import os
 import pwd
 import subprocess
+from typing import Optional
 
 from rich import box
 from rich.panel import Panel
@@ -24,7 +25,7 @@ from erislite.ui.console import console
 from erislite.ui.utils import clear_screen
 
 
-def resolve_user_shell() -> str | None:
+def resolve_user_shell() -> Optional[str]:
     """
     Resolve a trusted interactive shell.
 
