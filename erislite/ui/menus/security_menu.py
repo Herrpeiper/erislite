@@ -18,6 +18,7 @@ from rich.text import Text
 from erislite.accounts import login_audit, ssh_config, ssh_keys, users
 from erislite.config.settings import APP_NAME, APP_VERSION, LAST_SWEEP_FILE
 from erislite.containers import docker
+from erislite.deception.odyssey import menu as odyssey_menu
 from erislite.network import hosts, listeners
 from erislite.persistence import backdoors, cron, suid, world_writable
 from erislite.response import rapid_response
@@ -131,27 +132,28 @@ def _build_menu() -> Table:
     menu.add_row("[cyan][6][/]", "Process Anomaly Scan")
     menu.add_row("[cyan][7][/]", "Login / Auth Logs")
     menu.add_row("[cyan][8][/]", "Kernel Module Check")
+    menu.add_row("[cyan][9][/]", "Odyssey Lite")
 
     menu.add_row("", "")
     menu.add_row("[bold cyan]HARDENING[/]", "")
-    menu.add_row("[cyan][9][/]", "File Integrity")
-    menu.add_row("[cyan][10][/]", "World-Writable Files")
-    menu.add_row("[cyan][11][/]", "SUID / SGID Scan")
-    menu.add_row("[cyan][12][/]", "Cron / Timer Check")
-    menu.add_row("[cyan][13][/]", "SSH Config Audit")
+    menu.add_row("[cyan][10][/]", "File Integrity")
+    menu.add_row("[cyan][11][/]", "World-Writable Files")
+    menu.add_row("[cyan][12][/]", "SUID / SGID Scan")
+    menu.add_row("[cyan][13][/]", "Cron / Timer Check")
+    menu.add_row("[cyan][14][/]", "SSH Config Audit")
 
     menu.add_row("", "")
     menu.add_row("[bold cyan]ACCESS / PLATFORM[/]", "")
-    menu.add_row("[cyan][14][/]", "SSH Key Check")
-    menu.add_row("[cyan][15][/]", "Hosts Tamper Check")
-    menu.add_row("[cyan][16][/]", "Docker Security")
-    menu.add_row("[cyan][17][/]", "CVE Version Check")
-    menu.add_row("[cyan][18][/]", "Backdoor Detection")
+    menu.add_row("[cyan][15][/]", "SSH Key Check")
+    menu.add_row("[cyan][16][/]", "Hosts Tamper Check")
+    menu.add_row("[cyan][17][/]", "Docker Security")
+    menu.add_row("[cyan][18][/]", "CVE Version Check")
+    menu.add_row("[cyan][19][/]", "Backdoor Detection")
 
     menu.add_row("", "")
     menu.add_row("[bold cyan]RESPONSE[/]", "")
-    menu.add_row("[cyan][19][/]", "Rapid Response")
-    menu.add_row("[cyan][20][/]", "SOC Mode")
+    menu.add_row("[cyan][20][/]", "Rapid Response")
+    menu.add_row("[cyan][21][/]", "SOC Mode")
 
     menu.add_row("", "")
     menu.add_row("[cyan][0][/]", "Back")
@@ -262,28 +264,30 @@ def run(profile: dict) -> None:
         elif choice == "8":
             kernel_modules.run_kernel_module_check(silent=False)
         elif choice == "9":
-            integrity.integrity_menu()
+            odyssey_menu.run_odyssey_menu()
         elif choice == "10":
-            world_writable.run_world_writable_check()
+            integrity.integrity_menu()
         elif choice == "11":
-            suid.run_suid_scan()
+            world_writable.run_world_writable_check()
         elif choice == "12":
-            cron.run_cron_timer_scan()
+            suid.run_suid_scan()
         elif choice == "13":
-            ssh_config.run_ssh_config_check()
+            cron.run_cron_timer_scan()
         elif choice == "14":
-            ssh_keys.run_ssh_key_check()
+            ssh_config.run_ssh_config_check()
         elif choice == "15":
-            hosts.run_hosts_check()
+            ssh_keys.run_ssh_key_check()
         elif choice == "16":
-            docker.run_docker_scan()
+            hosts.run_hosts_check()
         elif choice == "17":
-            cve_checker.run_cve_check()
+            docker.run_docker_scan()
         elif choice == "18":
-            backdoors.run_backdoor_check()
+            cve_checker.run_cve_check()
         elif choice == "19":
-            rapid_response.run_rapid_response_menu()
+            backdoors.run_backdoor_check()
         elif choice == "20":
+            rapid_response.run_rapid_response_menu()
+        elif choice == "21":
             soc_mode.interactive_soc_mode()
         else:
             console.print("[red]Invalid option.[/]")

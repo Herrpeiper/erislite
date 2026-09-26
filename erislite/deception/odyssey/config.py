@@ -21,8 +21,8 @@ class ListenerConfig:
 
 
 DEFAULT_LISTENERS = (
-    ListenerConfig(port=21, service="ftp", severity="medium"),
-    ListenerConfig(port=23, service="telnet", severity="high"),
+    ListenerConfig(port=2121, service="ftp-alt", severity="medium"),
+    ListenerConfig(port=2323, service="telnet-alt", severity="high"),
     ListenerConfig(port=2222, service="ssh-alt", severity="high"),
     ListenerConfig(port=3389, service="rdp", severity="high"),
     ListenerConfig(port=8080, service="http-alt", severity="medium"),

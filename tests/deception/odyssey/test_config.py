@@ -36,4 +36,4 @@ def test_expected_default_ports_exist():
         for listener in get_default_listeners()
     }
 
-    assert ports == {21, 23, 2222, 3389, 8080}
+    assert ports == {2121, 2323, 2222, 3389, 8080}
