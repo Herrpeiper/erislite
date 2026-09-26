@@ -28,6 +28,7 @@ from erislite.config.settings import (
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
+
 def get_baseline_path(profile: str) -> str:
     base_dir = os.path.dirname(INTEGRITY_BASELINE_FILE)
 
