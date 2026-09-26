@@ -24,7 +24,7 @@ env/
 # ── User profile ─────────────────────────────────
 # Contains real hostname and system metadata.
 # Regenerated automatically on first run by core/user_profile.py.
-data/user_profile.json
+erislite/data/user_profile.json
 
 # ── FIX #2: Integrity baseline ───────────────────
 # Contains SHA-256 hashes of files on YOUR machine.
