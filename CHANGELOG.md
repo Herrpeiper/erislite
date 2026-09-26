@@ -6,15 +6,50 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
-## [1.3.0] - In Development
+## [1.3.0] - 2026-09-26
 
-### Competition Hardening
-- Harden Python module/import handling
-- Add ErisLITE self-integrity verification
-- Review execution environment and filesystem permissions
-- Reduce privileged execution where possible
-- Evaluate compiled deployment using Nuitka
-- Add hostile-environment and tamper-resistance testing
+### Added
+
+- Restricted Shell Console for analyst command execution inside the ErisLITE CLI
+- Trusted command resolver with protection against poisoned `PATH` entries and unsafe executable resolution
+- Import guard checks for module shadowing and unexpected import locations
+- Profile-specific File Integrity baselines for `critical`, `system`, and `user` scopes
+- File Integrity tracking for expected-absent paths, incomplete collection, unreadable files, and broken symbolic links
+- Expanded hardening test coverage for:
+  - command resolution
+  - import security
+  - execution environment behavior
+  - Docker inspection
+  - firewall handling
+  - kernel modules
+  - listeners and network scanning
+  - login auditing
+  - cron persistence
+  - process inspection
+  - File Integrity
+  - Rapid Response actions and rollback
+  - Shell Console behavior
+
+### Changed
+
+- Hardened external command execution across security modules to reduce reliance on untrusted `PATH` resolution
+- File Integrity now keeps independent baselines per scan profile instead of a single shared baseline
+- File Integrity now distinguishes security findings from incomplete inspection and avoids reporting unavailable data as clean
+- File Integrity system scope was narrowed to higher-value operating-system paths to reduce excessive scan volume
+- Security Audit now uses hardened structured collection paths and clearer host/posture reporting
+- Login, SSH key, cron, process, Docker, kernel-module, listener, network, and world-writable checks were hardened against missing tools, permission failures, and partial collection
+- Rapid Response IP blocking now selects the detected firewall backend instead of assuming iptables
+- Rapid Response rollback records command arguments structurally instead of reconstructing commands from fragile string splitting
+- Source headers, build metadata, and module descriptions updated for the 1.3.0 release
+
+### Fixed
+
+- Prevented poisoned or attacker-controlled command paths from being trusted by hardened command execution paths
+- Prevented incomplete File Integrity scans from being reported as successful clean scans
+- Corrected optional missing integrity targets so they can remain expected-absent without permanently forcing an incomplete result
+- Added explicit handling for broken symbolic links during integrity inspection
+- Corrected several hardening edge cases involving unavailable commands, collection failures, and permission errors
+- Restored formatting and compatibility required for the Python 3.9–3.13 CI matrix
 
 ---
 
