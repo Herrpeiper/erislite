@@ -8,5 +8,5 @@
 # Description: Single source of truth for ErisLITE version and build metadata.
 
 VERSION = "1.3.0"
-BUILD_DATE = "14SEP26"
+BUILD_DATE = "26SEP26"
 VERSION_LABEL = f"ErisLITE v{VERSION}"
