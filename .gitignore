@@ -37,6 +37,7 @@ data/integrity/
 # ── Sweep & snapshot logs ────────────────────────
 # Runtime output — personal to each deployment.
 data/logs/
+erislite/data/logs/
 
 # ── Last sweep cache ─────────────────────────────
 # Written to ~/.erislite/ at runtime.

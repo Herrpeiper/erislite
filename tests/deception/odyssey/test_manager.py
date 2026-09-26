@@ -1,7 +1,9 @@
 import socket
 import time
 
+from erislite.deception.odyssey import manager as manager_module
 from erislite.deception.odyssey.config import ListenerConfig
+from erislite.deception.odyssey.events import OdysseyEvent
 from erislite.deception.odyssey.manager import OdysseyManager
 
 
@@ -40,7 +42,13 @@ def test_manager_starts_and_stops_multiple_listeners():
     assert manager.running is False
 
 
-def test_manager_records_events():
+def test_manager_records_events(monkeypatch):
+    monkeypatch.setattr(
+        manager_module,
+        "append_event",
+        lambda event: None,
+    )
+        
     port = _get_free_port()
 
     manager = OdysseyManager(
@@ -107,7 +115,12 @@ def test_manager_skips_disabled_listeners():
         manager.stop()
 
 
-def test_manager_clear_events():
+def test_manager_clear_events(monkeypatch):
+    monkeypatch.setattr(
+        manager_module,
+        "append_event",
+        lambda event: None,
+    )
     port = _get_free_port()
 
     manager = OdysseyManager(
@@ -168,6 +181,7 @@ def test_manager_start_is_idempotent():
     finally:
         manager.stop()
 
+
 def test_manager_cleans_up_after_start_failure():
     first_port = _get_free_port()
 
@@ -204,3 +218,52 @@ def test_manager_cleans_up_after_start_failure():
     finally:
         blocker.close()
         manager.stop()
+
+def test_manager_persists_recorded_event(monkeypatch):
+    persisted = []
+
+    monkeypatch.setattr(
+        manager_module,
+        "append_event",
+        persisted.append,
+    )
+
+    manager = OdysseyManager(configs=())
+
+    event = OdysseyEvent(
+        source_ip="192.0.2.10",
+        source_port=54321,
+        destination_port=2323,
+        service="telnet-alt",
+        severity="high",
+    )
+
+    manager._record_event(event)
+
+    assert manager.events == (event,)
+    assert persisted == [event]
+
+
+def test_manager_keeps_event_when_persistence_fails(monkeypatch):
+    def fail_write(event):
+        raise OSError("disk unavailable")
+
+    monkeypatch.setattr(
+        manager_module,
+        "append_event",
+        fail_write,
+    )
+
+    manager = OdysseyManager(configs=())
+
+    event = OdysseyEvent(
+        source_ip="192.0.2.10",
+        source_port=54321,
+        destination_port=2323,
+        service="telnet-alt",
+        severity="high",
+    )
+
+    manager._record_event(event)
+
+    assert manager.events == (event,)
