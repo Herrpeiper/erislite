@@ -1,3 +1,4 @@
+import functools
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,17 +12,24 @@ from erislite.security.command_resolver import (
 )
 
 
+def _make_executable(directory: Path, name: str) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / name
+    path.write_text("#!/bin/sh\nexit 0\n")
+    path.chmod(0o755)
+    return path
+
+
 def test_resolver_ignores_poisoned_path(monkeypatch, tmp_path):
-    fake_ip = tmp_path / "ip"
-    fake_ip.write_text("#!/bin/sh\nexit 0\n")
-    fake_ip.chmod(0o755)
+    fake_ip = _make_executable(tmp_path / "poisoned", "ip")
+    trusted_ip = _make_executable(tmp_path / "trusted", "ip")
 
-    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setenv("PATH", str(fake_ip.parent))
 
-    resolved = resolve_command("ip")
+    resolved = resolve_command("ip", trusted_dirs=(trusted_ip.parent,))
 
     assert resolved != str(fake_ip)
-    assert Path(resolved).name == "ip"
+    assert resolved == str(trusted_ip)
 
 
 def test_resolver_rejects_explicit_paths():
@@ -42,11 +50,15 @@ def test_resolver_rejects_unknown_command():
 
 
 def test_show_gateway_uses_trusted_ip_binary(monkeypatch, tmp_path):
-    fake_ip = tmp_path / "ip"
-    fake_ip.write_text("#!/bin/sh\nexit 0\n")
-    fake_ip.chmod(0o755)
+    fake_ip = _make_executable(tmp_path / "poisoned", "ip")
+    trusted_ip = _make_executable(tmp_path / "trusted", "ip")
 
-    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setenv("PATH", str(fake_ip.parent))
+    monkeypatch.setattr(
+        tools,
+        "resolve_command",
+        functools.partial(resolve_command, trusted_dirs=(trusted_ip.parent,)),
+    )
     monkeypatch.setattr(tools, "clear_screen", lambda: None)
     monkeypatch.setattr(tools, "pause_return", lambda: None)
     monkeypatch.setattr(tools.platform, "system", lambda: "Linux")
@@ -66,5 +78,5 @@ def test_show_gateway_uses_trusted_ip_binary(monkeypatch, tmp_path):
     tools.show_gateway()
 
     assert captured["args"][0] != str(fake_ip)
-    assert captured["args"][0].endswith("/ip")
+    assert captured["args"][0] == str(trusted_ip)
     assert captured["args"][1:] == ["route"]
