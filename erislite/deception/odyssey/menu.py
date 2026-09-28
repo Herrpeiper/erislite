@@ -7,6 +7,8 @@
 # Last Updated: 2026-09-28
 # Description: Interactive control and status interface for Odyssey Lite.
 
+from __future__ import annotations
+
 from rich import box
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
