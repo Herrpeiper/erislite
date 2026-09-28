@@ -3,10 +3,11 @@
 # Author: Liam Piper-Brandon
 # Version: 1.4.0
 # License: MIT
-# Created: 2026-09-26
+# Created: 2026-09-28
 # Last Updated: 2026-09-26
 # Description: Configuration and defaults for Odyssey Lite deception listeners.
 
+from __future__ import annotations
 from dataclasses import dataclass
 
 
