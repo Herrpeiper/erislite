@@ -8,6 +8,7 @@
 # Description: Event model for Odyssey Lite deception listener activity.
 
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
