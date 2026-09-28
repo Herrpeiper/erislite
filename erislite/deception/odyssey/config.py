@@ -8,6 +8,7 @@
 # Description: Configuration and defaults for Odyssey Lite deception listeners.
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 
 
