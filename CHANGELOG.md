@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- Odyssey Lite deception module with TCP canary listeners on ports 2121, 2222, 2323, 3389 and 8080
+- Odyssey Lite control menu under **Security Tools → [21] Odyssey Lite** with start and stop control, listener status and recent events
+- Persistent JSONL logging of canary connection events
+- Regression tests for Odyssey Lite lifecycle, Python 3.9 compatibility and canary self-detection
+- Tests that lock Security Tools menu numbering and dispatch targets
+
+### Changed
+
+- Listener Check labels ports held by ErisLITE's own running canaries as `ErisLITE Canary` and excludes them from the suspicious listener count, so Threat Sweep does not raise risk for its own decoys
+- Command resolver tests no longer depend on an `ip` binary being installed on the test host
+
+---
+
 ## [1.3.0] - 2026-09-26
 
 ### Added
