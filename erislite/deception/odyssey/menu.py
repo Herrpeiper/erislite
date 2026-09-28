@@ -4,7 +4,7 @@
 # Version: 1.4.0
 # License: MIT
 # Created: 2026-09-26
-# Last Updated: 2026-09-26
+# Last Updated: 2026-09-28
 # Description: Interactive control and status interface for Odyssey Lite.
 
 from rich import box
@@ -14,7 +14,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
-from erislite.deception.odyssey.manager import OdysseyManager
+from erislite.deception.odyssey.manager import OdysseyManager, get_manager
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
@@ -249,7 +249,7 @@ def run_odyssey_menu(manager: OdysseyManager | None = None) -> None:
     """Run the interactive Odyssey Lite control menu."""
 
     if manager is None:
-        manager = OdysseyManager()
+        manager = get_manager()
 
     while True:
         clear_screen()
