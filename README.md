@@ -71,6 +71,28 @@ Rating: 32%
 Risk Level: Moderate
 ```
 
+### Odyssey Lite (Deception)
+
+Odyssey Lite runs lightweight TCP canary listeners on ports that nothing legitimate should use. Any connection to a canary is recorded as an early-warning event: someone is scanning or probing the host.
+
+Canaries accept a connection, record it and close it immediately. They never send data or emulate a service.
+
+| Port | Decoy | Severity |
+|------|-------|----------|
+| 2121 | FTP (alternate) | Medium |
+| 2222 | SSH (alternate) | High |
+| 2323 | Telnet (alternate) | High |
+| 3389 | RDP | High |
+| 8080 | HTTP (alternate) | Medium |
+
+Odyssey Lite provides:
+
+- start and stop control from **Security Tools → Odyssey Lite**
+- per-canary listener status
+- a recent events view with source address, port, service and severity
+- persistent JSONL event logging
+- automatic labeling of its own canaries as `ErisLITE Canary` in Listener Check, so Threat Sweep does not count them as suspicious
+
 ### Additional Tools
 
 | Tool | What it does |
@@ -157,6 +179,15 @@ ErisLITE/
 │   │
 │   ├── containers/
 │   │   └── docker.py
+│   │
+│   ├── deception/
+│   │   └── odyssey/
+│   │       ├── config.py
+│   │       ├── events.py
+│   │       ├── listeners.py
+│   │       ├── manager.py
+│   │       ├── menu.py
+│   │       └── storage.py
 │   │
 │   ├── network/
 │   │   ├── scan.py
@@ -254,6 +285,8 @@ ErisLITE v1.3 keeps separate baselines per profile, records files that were expe
 **CVE version checker** — performs offline version matching against the local CVE cache. A version match does not confirm a vulnerability. Vendors frequently backport fixes without changing the upstream version string. Always verify findings against vendor advisories.
 
 **Threat Sweep history** — historical sweeps are stored under `data/logs/threat_sweeps/`. The latest sweep summary is also stored at `~/.erislite/last_sweep.json`.
+
+**Odyssey Lite canaries** — canaries bind on all interfaces. Before starting Odyssey in a competition environment, confirm none of the default ports (2121, 2222, 2323, 3389, 8080) belong to a scored service. Ports 8080 and 3389 are the most likely conflicts. If any port is already in use, Odyssey does not start and reports the conflict. Canaries run until you stop them or exit ErisLITE. Events are written to `erislite/data/logs/odyssey/odyssey_events.jsonl`. **Clear Events** only clears the in-session view, not the log file.
 
 **Rapid Response live mode** — Rapid Response includes dry-run and live containment actions. Live mode can modify system state, terminate processes, change firewall behavior, and perform other containment actions. Review dry-run output before executing live actions.
 
