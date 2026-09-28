@@ -4,9 +4,13 @@
 # Version: 1.4.0
 # License: MIT
 # Created: 2026-09-26
-# Last Updated: 2026-09-26
+# Last Updated: 2026-09-28
 # Description: Lifecycle and event management for Odyssey Lite.
 
+from __future__ import annotations
+
+import atexit
+import threading
 from collections.abc import Iterable
 
 from erislite.deception.odyssey.config import (
@@ -100,3 +104,43 @@ class OdysseyManager:
             append_event(event)
         except OSError:
             pass
+
+
+_shared_manager: OdysseyManager | None = None
+_shared_lock = threading.Lock()
+
+
+def get_manager() -> OdysseyManager:
+    """Return the process-wide Odyssey manager, creating it on first use.
+
+    The menu is entered and left many times per session, but the listeners
+    and their bound ports live for the whole process. A single shared manager
+    keeps the menu in sync with what is actually running.
+    """
+
+    global _shared_manager
+
+    with _shared_lock:
+        if _shared_manager is None:
+            _shared_manager = OdysseyManager()
+            atexit.register(_shared_manager.stop)
+
+        return _shared_manager
+
+
+def active_canary_ports() -> frozenset[int]:
+    """Return ports bound by running Odyssey listeners in this process.
+
+    Does not create the shared manager if Odyssey was never opened.
+    """
+
+    manager = _shared_manager
+
+    if manager is None:
+        return frozenset()
+
+    return frozenset(
+        listener.config.port
+        for listener in manager.listeners
+        if listener.running
+    )
