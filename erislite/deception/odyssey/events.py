@@ -4,9 +4,10 @@
 # Version: 1.4.0
 # License: MIT
 # Created: 2026-09-26
-# Last Updated: 2026-09-26
+# Last Updated: 2026-09-28
 # Description: Event model for Odyssey Lite deception listener activity.
 
+from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
