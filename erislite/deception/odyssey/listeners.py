@@ -7,9 +7,10 @@
 # Last Updated: 2026-09-28
 # Description: TCP canary listeners for Odyssey Lite.
 
+from __future__ import annotations
+
 import socket
 import threading
-from __future__ import annotations
 from collections.abc import Callable
 
 from erislite.deception.odyssey.config import ListenerConfig
