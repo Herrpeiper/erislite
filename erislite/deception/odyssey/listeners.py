@@ -4,11 +4,12 @@
 # Version: 1.4.0
 # License: MIT
 # Created: 2026-09-26
-# Last Updated: 2026-09-26
+# Last Updated: 2026-09-28
 # Description: TCP canary listeners for Odyssey Lite.
 
 import socket
 import threading
+from __future__ import annotations
 from collections.abc import Callable
 
 from erislite.deception.odyssey.config import ListenerConfig
