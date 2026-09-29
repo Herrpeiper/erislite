@@ -113,6 +113,7 @@ def test_append_event_repairs_existing_log_permissions(tmp_path):
     mode = path.stat().st_mode & 0o777
 
     assert mode == 0o600
+    
 
 def test_append_event_rejects_symlink_directory(tmp_path):
     real_dir = tmp_path / "real_odyssey"
