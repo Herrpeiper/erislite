@@ -113,3 +113,41 @@ def test_append_event_repairs_existing_log_permissions(tmp_path):
     mode = path.stat().st_mode & 0o777
 
     assert mode == 0o600
+
+def test_append_event_rejects_symlink_directory(tmp_path):
+    real_dir = tmp_path / "real_odyssey"
+    real_dir.mkdir()
+
+    log_dir = tmp_path / "odyssey"
+    log_dir.symlink_to(real_dir, target_is_directory=True)
+
+    path = log_dir / "events.jsonl"
+
+    with pytest.raises(OSError):
+        append_event(_make_event(), path)
+
+    assert not (real_dir / "events.jsonl").exists()
+
+
+def test_append_event_repairs_existing_directory_permissions(tmp_path):
+    log_dir = tmp_path / "odyssey"
+    log_dir.mkdir()
+    log_dir.chmod(0o755)
+
+    path = log_dir / "events.jsonl"
+
+    append_event(_make_event(), path)
+
+    mode = log_dir.stat().st_mode & 0o777
+
+    assert mode == 0o700
+
+
+def test_append_event_rejects_non_directory_parent(tmp_path):
+    log_dir = tmp_path / "odyssey"
+    log_dir.write_text("not a directory", encoding="utf-8")
+
+    path = log_dir / "events.jsonl"
+
+    with pytest.raises(OSError):
+        append_event(_make_event(), path)
