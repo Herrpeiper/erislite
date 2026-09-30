@@ -148,12 +148,19 @@ def _rotate_event_log(dir_fd: int, name: str, max_bytes: int) -> None:
     os.replace(name, f"{name}.1", src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
 
 
-def append_event(
-    event: OdysseyEvent,
-    path: Path = DEFAULT_EVENT_LOG,
+def append_record(
+    record: dict[str, object],
+    path: Path | None = None,
     max_bytes: int = MAX_LOG_BYTES,
 ) -> None:
-    """Append an Odyssey event to the persistent JSONL event log."""
+    """Append one JSON record to the persistent Odyssey event log.
+
+    The default path is resolved at call time so tests and future
+    configuration can redirect it by setting DEFAULT_EVENT_LOG.
+    """
+
+    if path is None:
+        path = DEFAULT_EVENT_LOG
 
     dir_fd = _open_log_directory(path.parent)
 
@@ -161,7 +168,17 @@ def append_event(
         _rotate_event_log(dir_fd, path.name, max_bytes)
 
         with _open_event_log(dir_fd, path.name) as file:
-            json.dump(event.to_dict(), file, sort_keys=True)
+            json.dump(record, file, sort_keys=True)
             file.write("\n")
     finally:
         os.close(dir_fd)
+
+
+def append_event(
+    event: OdysseyEvent,
+    path: Path | None = None,
+    max_bytes: int = MAX_LOG_BYTES,
+) -> None:
+    """Append an Odyssey event to the persistent JSONL event log."""
+
+    append_record(event.to_dict(), path, max_bytes)
