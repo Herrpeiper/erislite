@@ -4,7 +4,7 @@
 # Version: 1.4.0
 # License: MIT
 # Created: 2026-09-26
-# Last Updated: 2026-09-28
+# Last Updated: 2026-09-30
 # Description: Event model for Odyssey Lite deception listener activity.
 
 from __future__ import annotations
@@ -36,4 +36,36 @@ class OdysseyEvent:
             "destination_port": self.destination_port,
             "service": self.service,
             "severity": self.severity,
+        }
+
+
+@dataclass(frozen=True)
+class OdysseyRepeatSummary:
+    """Counts connections suppressed as repeats of a logged Odyssey event.
+
+    Written to the event log when the duplicate window for a source and
+    canary closes, so the log records every connection even though only
+    the first in each window is logged as an event.
+    """
+
+    source_ip: str
+    destination_port: int
+    service: str
+    severity: str
+    first_seen: datetime
+    last_seen: datetime
+    repeat_count: int
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a serializable representation of the summary."""
+
+        return {
+            "record": "repeat_summary",
+            "source_ip": self.source_ip,
+            "destination_port": self.destination_port,
+            "service": self.service,
+            "severity": self.severity,
+            "first_seen": self.first_seen.isoformat(),
+            "last_seen": self.last_seen.isoformat(),
+            "repeat_count": self.repeat_count,
         }
