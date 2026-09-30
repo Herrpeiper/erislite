@@ -72,3 +72,30 @@ def test_odyssey_event_default_timestamp_is_utc():
 
     assert event.timestamp.tzinfo is not None
     assert event.timestamp.utcoffset() == timezone.utc.utcoffset(event.timestamp)
+
+def test_repeat_summary_to_dict():
+    from erislite.deception.odyssey.events import OdysseyRepeatSummary
+
+    first = datetime(2026, 9, 30, 17, 0, tzinfo=timezone.utc)
+    last = datetime(2026, 9, 30, 17, 0, 4, tzinfo=timezone.utc)
+
+    summary = OdysseyRepeatSummary(
+        source_ip="192.0.2.10",
+        destination_port=2323,
+        service="telnet-alt",
+        severity="high",
+        first_seen=first,
+        last_seen=last,
+        repeat_count=41,
+    )
+
+    assert summary.to_dict() == {
+        "record": "repeat_summary",
+        "source_ip": "192.0.2.10",
+        "destination_port": 2323,
+        "service": "telnet-alt",
+        "severity": "high",
+        "first_seen": first.isoformat(),
+        "last_seen": last.isoformat(),
+        "repeat_count": 41,
+    }
