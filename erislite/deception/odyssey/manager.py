@@ -13,17 +13,34 @@ import atexit
 import threading
 from collections import deque
 from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import datetime
 
 from erislite.deception.odyssey.config import (
     ListenerConfig,
     get_default_listeners,
 )
-from erislite.deception.odyssey.events import OdysseyEvent
+from erislite.deception.odyssey.events import OdysseyEvent, OdysseyRepeatSummary
 from erislite.deception.odyssey.listeners import CanaryListener
-from erislite.deception.odyssey.storage import append_event
+from erislite.deception.odyssey.storage import append_event, append_record
 
 MAX_IN_MEMORY_EVENTS = 1000
 DUPLICATE_WINDOW_SECONDS = 5
+
+# Upper bound on sources tracked for duplicate suppression. Entries expire
+# once their window closes. The cap only matters when more distinct sources
+# than this hit canaries within one window. Evicting a source fails open:
+# its next connection is logged as a new event instead of being suppressed.
+MAX_TRACKED_SOURCES = 4096
+
+
+@dataclass
+class _TrackedSource:
+    """Duplicate suppression state for one source and canary."""
+
+    event: OdysseyEvent
+    repeats: int = 0
+    last_seen: datetime | None = None
 
 
 class OdysseyManager:
@@ -43,10 +60,9 @@ class OdysseyManager:
         self._events: deque[OdysseyEvent] = deque(
             maxlen=MAX_IN_MEMORY_EVENTS
         )
-        self._last_events: dict[
-            tuple[str, int, str],
-            OdysseyEvent,
-        ] = {}
+        # Insertion order tracks the time each source was last logged, so
+        # the oldest entries are always at the front.
+        self._tracked: dict[tuple[str, int, str], _TrackedSource] = {}
         self._suppressed_events = 0
         self._event_lock = threading.Lock()
         self._listeners: list[CanaryListener] = []
@@ -124,17 +140,32 @@ class OdysseyManager:
             self._listeners.append(listener)
 
     def stop(self) -> None:
-        """Stop all Odyssey listeners."""
+        """Stop all Odyssey listeners and write pending repeat summaries."""
 
         for listener in self._listeners:
             listener.stop()
 
-    def clear_events(self) -> None:
-        """Clear all currently stored Odyssey events."""
+        self.flush_repeat_summaries()
+
+    def flush_repeat_summaries(self) -> None:
+        """Write a summary for every source with suppressed repeats."""
 
         with self._event_lock:
+            for key in list(self._tracked):
+                self._forget_source(key)
+
+    def clear_events(self) -> None:
+        """Clear the in-session event view.
+
+        Pending repeat summaries are written first. Clearing the view never
+        removes information from the event log.
+        """
+
+        with self._event_lock:
+            for key in list(self._tracked):
+                self._forget_source(key)
+
             self._events.clear()
-            self._last_events.clear()
             self._suppressed_events = 0
 
     def _record_event(self, event: OdysseyEvent) -> None:
@@ -147,28 +178,75 @@ class OdysseyManager:
                 event.service,
             )
 
-            previous = self._last_events.get(key)
+            tracked = self._tracked.get(key)
 
-            if previous is not None:
-                elapsed = (
-                    event.timestamp - previous.timestamp
-                ).total_seconds()
+            if tracked is not None:
+                elapsed = (event.timestamp - tracked.event.timestamp).total_seconds()
 
                 if 0 <= elapsed <= DUPLICATE_WINDOW_SECONDS:
+                    tracked.repeats += 1
+                    tracked.last_seen = event.timestamp
                     self._suppressed_events += 1
                     return
 
-            self._last_events[key] = event
-            self._events.append(event)
+                self._forget_source(key)
 
-            try:
-                append_event(event)
-            except OSError as exc:
-                # The event stays in memory. Surface the failure in the menu so
-                # a refused or unwritable log is never silent.
-                self._persistence_error = str(exc)
-            else:
-                self._persistence_error = None
+            self._tracked[key] = _TrackedSource(event=event)
+            self._events.append(event)
+            self._persist(append_event, event)
+            self._expire_tracked_sources(event.timestamp)
+
+    def _expire_tracked_sources(self, now: datetime) -> None:
+        """Drop sources whose window has closed, then enforce the size cap.
+
+        Must be called with the event lock held.
+        """
+
+        while self._tracked:
+            key = next(iter(self._tracked))
+            age = (now - self._tracked[key].event.timestamp).total_seconds()
+
+            if age <= DUPLICATE_WINDOW_SECONDS and len(self._tracked) <= MAX_TRACKED_SOURCES:
+                break
+
+            self._forget_source(key)
+
+    def _forget_source(self, key: tuple[str, int, str]) -> None:
+        """Stop tracking a source and log how many repeats were suppressed.
+
+        Must be called with the event lock held.
+        """
+
+        tracked = self._tracked.pop(key)
+
+        if not tracked.repeats:
+            return
+
+        summary = OdysseyRepeatSummary(
+            source_ip=tracked.event.source_ip,
+            destination_port=tracked.event.destination_port,
+            service=tracked.event.service,
+            severity=tracked.event.severity,
+            first_seen=tracked.event.timestamp,
+            last_seen=tracked.last_seen or tracked.event.timestamp,
+            repeat_count=tracked.repeats,
+        )
+
+        self._persist(append_record, summary.to_dict())
+
+    def _persist(self, write, item) -> None:
+        """Write to the event log and record whether persistence is failing.
+
+        The in-memory view is unaffected by write failures. The menu shows
+        persistence_error so a refused or unwritable log is never silent.
+        """
+
+        try:
+            write(item)
+        except OSError as exc:
+            self._persistence_error = str(exc)
+        else:
+            self._persistence_error = None
 
 
 _shared_manager: OdysseyManager | None = None
