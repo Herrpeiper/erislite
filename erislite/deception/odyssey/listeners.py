@@ -105,6 +105,9 @@ class CanaryListener:
                     severity=self.config.severity,
                 )
 
-                self.event_callback(event)
+                try:
+                    self.event_callback(event)
+                except Exception:
+                    pass
             finally:
                 connection.close()

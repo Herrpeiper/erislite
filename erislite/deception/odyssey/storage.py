@@ -21,6 +21,8 @@ DEFAULT_EVENT_LOG = DEFAULT_LOG_DIR / "odyssey_events.jsonl"
 
 _DIRECTORY_MODE = 0o700
 _FILE_MODE = 0o600
+MAX_LOG_BYTES = 5 * 1024 * 1024
+MAX_LOG_BACKUPS = 3
 
 
 def _prepare_log_directory(path: Path) -> None:
@@ -78,13 +80,66 @@ def _open_event_log(path: Path):
         raise
 
 
+def _rotate_event_log(
+    path: Path,
+    max_bytes: int,
+) -> None:
+    """Rotate the Odyssey event log when it reaches its size limit."""
+
+    if not path.exists():
+        return
+
+    if path.is_symlink():
+        raise OSError(
+            f"Refusing to rotate symlinked Odyssey event log: {path}"
+        )
+
+    if path.stat().st_size < max_bytes:
+        return
+
+    oldest = path.with_name(
+        f"{path.name}.{MAX_LOG_BACKUPS}"
+    )
+
+    if oldest.exists():
+        if oldest.is_symlink():
+            raise OSError(
+                f"Refusing to replace symlinked Odyssey backup: {oldest}"
+            )
+        oldest.unlink()
+
+    for index in range(MAX_LOG_BACKUPS - 1, 0, -1):
+        source = path.with_name(f"{path.name}.{index}")
+
+        if not source.exists():
+            continue
+
+        if source.is_symlink():
+            raise OSError(
+                f"Refusing to rotate symlinked Odyssey backup: {source}"
+            )
+
+        destination = path.with_name(
+            f"{path.name}.{index + 1}"
+        )
+
+        source.replace(destination)
+        destination.chmod(_FILE_MODE)
+
+    first_backup = path.with_name(f"{path.name}.1")
+    path.replace(first_backup)
+    first_backup.chmod(_FILE_MODE)
+    
+
 def append_event(
     event: OdysseyEvent,
     path: Path = DEFAULT_EVENT_LOG,
+    max_bytes: int = MAX_LOG_BYTES,
 ) -> None:
     """Append an Odyssey event to the persistent JSONL event log."""
 
     _prepare_log_directory(path.parent)
+    _rotate_event_log(path, max_bytes)
 
     with _open_event_log(path) as file:
         json.dump(

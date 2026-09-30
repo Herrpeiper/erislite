@@ -104,3 +104,46 @@ def test_listener_start_is_idempotent():
         assert listener._thread is first_thread
     finally:
         listener.stop()
+
+def test_listener_survives_callback_failure():
+    port = _get_free_port()
+    calls = []
+
+    def failing_callback(event):
+        calls.append(event)
+
+        if len(calls) == 1:
+            raise RuntimeError("simulated callback failure")
+
+    listener = CanaryListener(
+        config=ListenerConfig(
+            port=port,
+            service="test-canary",
+        ),
+        event_callback=failing_callback,
+        host="127.0.0.1",
+    )
+
+    listener.start()
+
+    try:
+        with socket.create_connection(
+            ("127.0.0.1", port),
+            timeout=1.0,
+        ):
+            pass
+
+        time.sleep(0.1)
+
+        with socket.create_connection(
+            ("127.0.0.1", port),
+            timeout=1.0,
+        ):
+            pass
+
+        time.sleep(0.1)
+
+        assert listener.running
+        assert len(calls) == 2
+    finally:
+        listener.stop()

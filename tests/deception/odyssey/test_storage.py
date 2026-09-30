@@ -1,11 +1,13 @@
 import json
-import os
 from datetime import datetime, timezone
 
 import pytest
 
 from erislite.deception.odyssey.events import OdysseyEvent
-from erislite.deception.odyssey.storage import append_event
+from erislite.deception.odyssey.storage import (
+    MAX_LOG_BACKUPS,
+    append_event,
+)
 
 
 def _make_event(
@@ -152,3 +154,102 @@ def test_append_event_rejects_non_directory_parent(tmp_path):
 
     with pytest.raises(OSError):
         append_event(_make_event(), path)
+
+def test_append_event_rotates_full_log(tmp_path):
+    path = tmp_path / "odyssey" / "events.jsonl"
+    path.parent.mkdir()
+
+    original = '{"existing": "event"}\n'
+    path.write_text(original, encoding="utf-8")
+    path.chmod(0o600)
+
+    append_event(
+        _make_event(),
+        path,
+        max_bytes=len(original.encode("utf-8")),
+    )
+
+    rotated = path.with_name(f"{path.name}.1")
+
+    assert rotated.exists()
+    assert rotated.read_text(encoding="utf-8") == original
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    assert len(lines) == 1
+    assert json.loads(lines[0]) == _make_event().to_dict()
+
+
+def test_rotation_preserves_private_permissions(tmp_path):
+    path = tmp_path / "odyssey" / "events.jsonl"
+    path.parent.mkdir()
+
+    original = '{"existing": "event"}\n'
+    path.write_text(original, encoding="utf-8")
+    path.chmod(0o600)
+
+    append_event(
+        _make_event(),
+        path,
+        max_bytes=len(original.encode("utf-8")),
+    )
+
+    rotated = path.with_name(f"{path.name}.1")
+
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert rotated.stat().st_mode & 0o777 == 0o600
+
+
+def test_rotation_shifts_existing_backups(tmp_path):
+    path = tmp_path / "odyssey" / "events.jsonl"
+    path.parent.mkdir()
+
+    path.write_text("current\n", encoding="utf-8")
+    path.chmod(0o600)
+
+    for index in range(1, MAX_LOG_BACKUPS + 1):
+        backup = path.with_name(f"{path.name}.{index}")
+        backup.write_text(f"backup-{index}\n", encoding="utf-8")
+        backup.chmod(0o600)
+
+    append_event(
+        _make_event(),
+        path,
+        max_bytes=1,
+    )
+
+    assert path.with_name(f"{path.name}.1").read_text(
+        encoding="utf-8"
+    ) == "current\n"
+
+    for index in range(2, MAX_LOG_BACKUPS + 1):
+        assert path.with_name(f"{path.name}.{index}").read_text(
+            encoding="utf-8"
+        ) == f"backup-{index - 1}\n"
+
+    assert not path.with_name(
+        f"{path.name}.{MAX_LOG_BACKUPS + 1}"
+    ).exists()
+
+
+def test_rotation_rejects_symlinked_backup(tmp_path):
+    path = tmp_path / "odyssey" / "events.jsonl"
+    path.parent.mkdir()
+
+    path.write_text("current\n", encoding="utf-8")
+    path.chmod(0o600)
+
+    target = tmp_path / "target.txt"
+    target.write_text("do not modify\n", encoding="utf-8")
+
+    backup = path.with_name(f"{path.name}.1")
+    backup.symlink_to(target)
+
+    with pytest.raises(OSError):
+        append_event(
+            _make_event(),
+            path,
+            max_bytes=1,
+        )
+
+    assert target.read_text(encoding="utf-8") == "do not modify\n"
