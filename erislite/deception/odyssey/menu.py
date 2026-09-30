@@ -4,12 +4,13 @@
 # Version: 1.4.0
 # License: MIT
 # Created: 2026-09-26
-# Last Updated: 2026-09-28
+# Last Updated: 2026-09-30
 # Description: Interactive control and status interface for Odyssey Lite.
 
 from __future__ import annotations
 
 from rich import box
+from rich.markup import escape
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
@@ -47,11 +48,33 @@ def _status_panel(manager: OdysseyManager) -> None:
     else:
         status = "[dim]INACTIVE[/]"
 
-    body = Text.from_markup(
-        f"[dim]Status:[/] {status}\n"
-        f"[dim]Listeners:[/] [white]{len(manager.listeners)}[/]\n"
-        f"[dim]Events:[/] [white]{len(manager.events)}[/]"
-    )
+    lines = [
+        f"[dim]Status:[/] {status}",
+        f"[dim]Listeners:[/] [white]{len(manager.listeners)}[/]",
+        f"[dim]Events:[/] [white]{len(manager.events)}[/]",
+    ]
+
+    if manager.suppressed_events:
+        lines.append(
+            f"[dim]Suppressed repeats:[/] [white]{manager.suppressed_events}[/]"
+        )
+
+    if manager.failed_ports:
+        ports = ", ".join(str(port) for port in manager.failed_ports)
+        lines.append(f"[dim]Failed ports:[/] [yellow]{ports}[/]")
+
+    if manager.persistence_error:
+        lines.append(
+            "[dim]Event log:[/] [bold red]FAILING[/] "
+            f"[dim]{escape(manager.persistence_error)}[/]"
+        )
+
+    if manager.callback_errors:
+        lines.append(
+            f"[dim]Event handling errors:[/] [bold red]{manager.callback_errors}[/]"
+        )
+
+    body = Text.from_markup("\n".join(lines))
 
     console.print(
         Panel.fit(
@@ -167,6 +190,8 @@ def _show_listener_status(manager: OdysseyManager) -> None:
 
         if config.port in active_ports:
             state = "[bold green]LISTENING[/]"
+        elif config.port in manager.failed_ports:
+            state = "[bold red]FAILED[/]"
         elif not config.enabled:
             state = "[dim]DISABLED[/]"
         else:
@@ -184,6 +209,7 @@ def _show_listener_status(manager: OdysseyManager) -> None:
     console.print()
 
     pause_return()
+
 
 def _show_recent_events(manager: OdysseyManager) -> None:
     """Display recently observed Odyssey events."""
@@ -247,6 +273,34 @@ def _show_recent_events(manager: OdysseyManager) -> None:
 
     pause_return()
 
+def _report_start_result(manager: OdysseyManager) -> None:
+    """Tell the analyst which canaries failed to bind after a start attempt."""
+
+    if not manager.failed_ports:
+        return
+
+    ports = ", ".join(str(port) for port in manager.failed_ports)
+    enabled = sum(1 for config in manager.configs if config.enabled)
+
+    console.print()
+
+    if not manager.running:
+        console.print(
+            "[bold red]Odyssey failed to start:[/] no canaries could bind.\n"
+            f"[dim]Ports unavailable:[/] [yellow]{ports}[/]\n"
+            "[dim]Check whether another service is using these ports.[/]"
+        )
+    else:
+        started = len(manager.listeners)
+        console.print(
+            f"[yellow]Odyssey started {started} of {enabled} canaries.[/]\n"
+            f"[dim]Ports unavailable:[/] [yellow]{ports}[/]\n"
+            "[dim]Check whether a scored service is using these ports.[/]"
+        )
+
+    pause_return()
+
+
 def run_odyssey_menu(manager: OdysseyManager | None = None) -> None:
     """Run the interactive Odyssey Lite control menu."""
 
@@ -278,10 +332,11 @@ def run_odyssey_menu(manager: OdysseyManager | None = None) -> None:
                 manager.start()
             except OSError as exc:
                 console.print()
-                console.print(
-                    f"[bold red]Odyssey failed to start:[/] {exc}"
-                )
+                console.print(f"[bold red]Odyssey failed to start:[/] {escape(str(exc))}")
                 pause_return()
+                continue
+
+            _report_start_result(manager)
 
         elif choice == "2":
             if not manager.running:
