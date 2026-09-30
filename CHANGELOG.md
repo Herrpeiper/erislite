@@ -15,11 +15,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 - Persistent JSONL logging of canary connection events
 - Regression tests for Odyssey Lite lifecycle, Python 3.9 compatibility and canary self-detection
 - Tests that lock Security Tools menu numbering and dispatch targets
+- Odyssey Lite duplicate suppression: repeat connections from the same source to the same canary within 5 seconds are counted, not logged again
+- Odyssey Lite status panel shows failed ports, suppressed repeats, event handling errors and event log failures
 
 ### Changed
 
 - Listener Check labels ports held by ErisLITE's own running canaries as `ErisLITE Canary` and excludes them from the suspicious listener count, so Threat Sweep does not raise risk for its own decoys
 - Command resolver tests no longer depend on an `ip` binary being installed on the test host
+- Odyssey Lite starts every canary it can bind and reports unavailable ports instead of stopping all listeners when one port is taken
+- Odyssey Lite keeps at most 1,000 events in memory
+- A failing event callback no longer stops its canary listener. Failures are counted and shown in the status panel
+- Odyssey event logs are created with private permissions (`0700` directory, `0600` files) and rotate at 5 MB with three backups
+
+### Security
+
+- Odyssey event logging refuses symlinked log files and directories
+- Odyssey event logging verifies the log directory is owned by the running user and performs every write, rename and delete through a verified directory descriptor, so swapping the path mid-write has no effect
+- Odyssey event logging refuses hard-linked, non-regular or foreign-owned log files
+- Log rotation only renames and deletes files and never changes permissions, so a log swapped for a symlink mid-rotation cannot redirect a `chmod` performed as root
 
 ---
 
