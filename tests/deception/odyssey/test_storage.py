@@ -296,8 +296,7 @@ def test_rotation_swap_does_not_chmod_symlink_target(monkeypatch, tmp_path):
         return real_replace(src, dst, *args, **kwargs)
 
     monkeypatch.setattr(storage.os, "replace", attacker_replace)
-    monkeypatch.setattr("pathlib.os.replace", attacker_replace, raising=False)
-
+    
     try:
         append_event(_make_event(), path, max_bytes=1)
     except OSError:
