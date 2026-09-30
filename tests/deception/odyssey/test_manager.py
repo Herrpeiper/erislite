@@ -4,7 +4,6 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from erislite.deception.odyssey import manager as manager_module
-from erislite.deception.odyssey import manager
 from erislite.deception.odyssey.config import ListenerConfig
 from erislite.deception.odyssey.events import OdysseyEvent
 from erislite.deception.odyssey.manager import OdysseyManager
