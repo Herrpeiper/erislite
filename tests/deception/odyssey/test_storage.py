@@ -253,3 +253,119 @@ def test_rotation_rejects_symlinked_backup(tmp_path):
         )
 
     assert target.read_text(encoding="utf-8") == "do not modify\n"
+
+
+# ---------------------------------------------------------------------------
+# Attacker-controlled log directory
+#
+# Threat model: ErisLITE runs under sudo from a checkout owned by an
+# unprivileged account the red team controls. That account can rename and
+# replace entries under erislite/data/logs/ while root writes events.
+# ---------------------------------------------------------------------------
+
+
+def test_rotation_swap_does_not_chmod_symlink_target(monkeypatch, tmp_path):
+    """Swapping the log for a symlink mid-rotation must not touch the target.
+
+    The swap happens immediately before the log is renamed, after every check
+    has passed. A chmod on the renamed file would follow the symlink as root.
+    """
+
+    import os
+    import stat
+
+    from erislite.deception.odyssey import storage
+
+    path = tmp_path / "odyssey" / "events.jsonl"
+    path.parent.mkdir()
+    path.write_text("x" * 64, encoding="utf-8")
+    path.chmod(0o600)
+
+    victim = tmp_path / "setuid_binary"
+    victim.write_text("#!/bin/sh\n", encoding="utf-8")
+    victim.chmod(0o4755)
+
+    real_replace = os.replace
+    swapped = []
+
+    def attacker_replace(src, dst, *args, **kwargs):
+        if os.path.basename(os.fspath(src)) == path.name and not swapped:
+            swapped.append(True)
+            path.unlink()
+            path.symlink_to(victim)
+        return real_replace(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(storage.os, "replace", attacker_replace)
+    monkeypatch.setattr("pathlib.os.replace", attacker_replace, raising=False)
+
+    try:
+        append_event(_make_event(), path, max_bytes=1)
+    except OSError:
+        pass
+
+    assert swapped
+    assert stat.S_IMODE(victim.stat().st_mode) == 0o4755
+    assert victim.read_text(encoding="utf-8") == "#!/bin/sh\n"
+
+
+def test_append_event_rejects_directory_owned_by_another_user(monkeypatch, tmp_path):
+    import os
+
+    from erislite.deception.odyssey import storage
+
+    path = tmp_path / "odyssey" / "events.jsonl"
+    path.parent.mkdir()
+
+    real_uid = os.geteuid()
+    monkeypatch.setattr(storage.os, "geteuid", lambda: real_uid + 1)
+
+    with pytest.raises(OSError, match="owned by uid"):
+        append_event(_make_event(), path)
+
+    assert not path.exists()
+
+
+def test_append_event_rejects_hard_linked_log(tmp_path):
+    import os
+
+    path = tmp_path / "odyssey" / "events.jsonl"
+    path.parent.mkdir()
+
+    other = tmp_path / "other_file"
+    other.write_text("do not modify\n", encoding="utf-8")
+    other.chmod(0o644)
+    os.link(other, path)
+
+    with pytest.raises(OSError, match="hard-linked"):
+        append_event(_make_event(), path)
+
+    assert other.read_text(encoding="utf-8") == "do not modify\n"
+    assert other.stat().st_mode & 0o777 == 0o644
+
+
+def test_directory_swap_after_verification_is_ignored(monkeypatch, tmp_path):
+    """Writes follow the verified directory, not whatever the path now names."""
+
+    from erislite.deception.odyssey import storage
+
+    path = tmp_path / "odyssey" / "events.jsonl"
+    path.parent.mkdir()
+
+    moved = tmp_path / "moved"
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    real_open_dir = storage._open_log_directory
+
+    def open_then_swap(directory):
+        dir_fd = real_open_dir(directory)
+        directory.rename(moved)
+        directory.symlink_to(elsewhere, target_is_directory=True)
+        return dir_fd
+
+    monkeypatch.setattr(storage, "_open_log_directory", open_then_swap)
+
+    append_event(_make_event(), path)
+
+    assert not (elsewhere / path.name).exists()
+    assert (moved / path.name).exists()
