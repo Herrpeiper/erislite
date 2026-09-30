@@ -4,7 +4,7 @@
 # Version: 1.4.0
 # License: MIT
 # Created: 2026-09-26
-# Last Updated: 2026-09-28
+# Last Updated: 2026-09-30
 # Description: Lifecycle and event management for Odyssey Lite.
 
 from __future__ import annotations
@@ -51,6 +51,7 @@ class OdysseyManager:
         self._event_lock = threading.Lock()
         self._listeners: list[CanaryListener] = []
         self._failed_ports: list[int] = []
+        self._persistence_error: str | None = None
 
     @property
     def running(self) -> bool:
@@ -81,7 +82,19 @@ class OdysseyManager:
         """Return ports that failed to start during the latest start attempt."""
 
         return tuple(self._failed_ports)
-    
+
+    @property
+    def persistence_error(self) -> str | None:
+        """Return the latest event log write error, or None when writes succeed."""
+
+        return self._persistence_error
+
+    @property
+    def callback_errors(self) -> int:
+        """Return event handling failures across the current listeners."""
+
+        return sum(listener.callback_errors for listener in self._listeners)
+
     def start(self) -> None:
         """Create and start enabled Odyssey listeners."""
 
@@ -150,8 +163,12 @@ class OdysseyManager:
 
             try:
                 append_event(event)
-            except OSError:
-                pass
+            except OSError as exc:
+                # The event stays in memory. Surface the failure in the menu so
+                # a refused or unwritable log is never silent.
+                self._persistence_error = str(exc)
+            else:
+                self._persistence_error = None
 
 
 _shared_manager: OdysseyManager | None = None
