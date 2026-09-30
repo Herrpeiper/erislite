@@ -4,7 +4,7 @@
 # Version: 1.4.0
 # License: MIT
 # Created: 2026-09-26
-# Last Updated: 2026-09-28
+# Last Updated: 2026-09-30
 # Description: TCP canary listeners for Odyssey Lite.
 
 from __future__ import annotations
@@ -31,6 +31,9 @@ class CanaryListener:
         self.config = config
         self.event_callback = event_callback
         self.host = host
+
+        self.callback_errors = 0
+        self.last_callback_error: str | None = None
 
         self._socket: socket.socket | None = None
         self._thread: threading.Thread | None = None
@@ -107,7 +110,9 @@ class CanaryListener:
 
                 try:
                     self.event_callback(event)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Keep the canary alive, but never hide the failure.
+                    self.callback_errors += 1
+                    self.last_callback_error = f"{type(exc).__name__}: {exc}"
             finally:
                 connection.close()
