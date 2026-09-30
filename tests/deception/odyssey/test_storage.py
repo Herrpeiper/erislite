@@ -368,3 +368,30 @@ def test_directory_swap_after_verification_is_ignored(monkeypatch, tmp_path):
 
     assert not (elsewhere / path.name).exists()
     assert (moved / path.name).exists()
+
+
+# ---------------------------------------------------------------------------
+# Generic records and default path
+# ---------------------------------------------------------------------------
+
+
+def test_append_record_writes_arbitrary_record(tmp_path):
+    from erislite.deception.odyssey.storage import append_record
+
+    path = tmp_path / "odyssey" / "events.jsonl"
+    record = {"record": "repeat_summary", "repeat_count": 3}
+
+    append_record(record, path)
+
+    assert json.loads(path.read_text(encoding="utf-8")) == record
+
+
+def test_default_log_path_is_resolved_at_call_time(monkeypatch, tmp_path):
+    from erislite.deception.odyssey import storage
+
+    redirected = tmp_path / "redirected" / "events.jsonl"
+    monkeypatch.setattr(storage, "DEFAULT_EVENT_LOG", redirected)
+
+    append_event(_make_event())
+
+    assert redirected.exists()
