@@ -57,6 +57,7 @@ def clear_screen() -> None:
         # Best-effort fallback if clear is unavailable.
         print("\033[2J\033[H]", end="")
 
+
 def show_header(
     title: str = "ERISLITE",
     description: Optional[str] = None,
@@ -134,3 +135,21 @@ def export_json_log(
         )
 
     return filepath
+
+
+def format_analyst_id(profile: dict) -> str:
+    analyst_id = str(profile.get("analyst_id", "")).strip()
+
+    if not analyst_id:
+        return ""
+
+    return f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+
+
+def get_analyst_id(profile: dict) -> str | None:
+    analyst_id = str(profile.get("analyst_id", "")).strip()
+
+    if not analyst_id:
+        return None
+
+    return analyst_id

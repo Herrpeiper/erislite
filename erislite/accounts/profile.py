@@ -29,7 +29,7 @@ PROFILE_DEFAULTS = {
     "hostname": None,  # set to socket.gethostname() at creation time
     "segment": "default",
     "role": "workstation",
-    "analyst_id": 0,
+    "analyst_id": None,
     "edge_firewall": "unknown",
     "known_users": [],  # v0.6.0 — suppresses UNRECOGNIZED alerts in snapshots
 }
@@ -50,12 +50,19 @@ def _lock(path: Path) -> None:
 
 
 def _migrate(profile: dict) -> tuple:
-    """Backfill any keys missing from older profiles. Returns (profile, changed)."""
+    """Backfill missing keys and normalize legacy profile values."""
     changed = False
+
     for key, default in PROFILE_DEFAULTS.items():
         if key not in profile:
             profile[key] = default
             changed = True
+
+    # Legacy analyst_id used 0 to mean "unset".
+    if profile.get("analyst_id") == 0:
+        profile["analyst_id"] = None
+        changed = True
+
     return profile, changed
 
 

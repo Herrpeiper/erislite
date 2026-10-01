@@ -26,7 +26,7 @@ from erislite.ui.menus import (
     security_menu,
     system_menu,
 )
-from erislite.ui.utils import clear_screen
+from erislite.ui.utils import clear_screen, get_analyst_id
 
 
 def get_privilege_label() -> str:
@@ -64,16 +64,27 @@ def build_menu() -> Table:
 def launch_cli(profile: dict) -> None:
     hostname = profile.get("hostname", "unknown-host")
     role = profile.get("role", "unknown-role")
-    analyst_id = profile.get("analyst_id", "N/A")
+    analyst_id = get_analyst_id(profile)
 
     while True:
         clear_screen()
 
-        metadata = Text.from_markup(
-            f"[dim]Host:[/] [white]{hostname}[/]   "
-            f"[dim]Role:[/] [white]{role}[/]   "
-            f"[dim]Analyst:[/] [white]{analyst_id}[/]   "
+        metadata_parts = [
+            f"[dim]Host:[/] [white]{hostname}[/]",
+            f"[dim]Role:[/] [white]{role}[/]",
+        ]
+
+        if analyst_id:
+            metadata_parts.append(
+                f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+            )
+
+        metadata_parts.append(
             f"[dim]Session:[/] {get_privilege_label()}"
+        )
+
+        metadata = Text.from_markup(
+            "   ".join(metadata_parts)
         )
 
         header = Panel(
@@ -112,7 +123,9 @@ def launch_cli(profile: dict) -> None:
         elif choice == "8":
             help_menu.show_help()
         elif choice == "9":
-            console.print(f"\n[bold yellow]Exiting {APP_NAME}. Stay frosty.[/]\n")
+            console.print(
+                f"\n[bold yellow]Exiting {APP_NAME}. Stay frosty.[/]\n"
+            )
             break
         else:
             console.print("[red]Invalid option.[/]")

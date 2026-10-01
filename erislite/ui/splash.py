@@ -20,7 +20,7 @@ from rich.text import Text
 from erislite.config.settings import APP_CODE, APP_NAME, APP_VERSION
 from erislite.network.firewall import detect_firewall_backend
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen
+from erislite.ui.utils import clear_screen, get_analyst_id
 from erislite.version import BUILD_DATE
 
 LOGO = [
@@ -79,7 +79,7 @@ def show_splash(profile: dict) -> None:
     hostname = profile.get("hostname", "unknown-host")
     role = profile.get("role", "unknown-role")
     segment = profile.get("segment", "unknown-segment")
-    analyst_id = profile.get("analyst_id", "N/A")
+    analyst_id = get_analyst_id(profile)
     firewall_display = get_firewall_display()
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -106,14 +106,31 @@ def show_splash(profile: dict) -> None:
         f"[dim]Build[/] [white]{BUILD_DATE}[/]"
     )
 
+    profile_lines = [
+        f"[bold white]Hostname:[/] {hostname}",
+        (
+            f"[bold white]Role:[/] {role}  [dim]|[/]  "
+            f"[bold white]Segment:[/] {segment}"
+        ),
+    ]
+
+    if analyst_id:
+        profile_lines.append(
+            f"[bold white]Analyst ID:[/] {analyst_id}"
+        )
+
+    profile_lines.extend(
+        [
+            f"[bold white]Firewall:[/] {firewall_display}",
+            (
+                f"[bold white]Kernel:[/] {kernel}  [dim]|[/]  "
+                f"[bold white]Uptime:[/] {uptime}"
+            ),
+        ]
+    )
+
     info_panel = Panel.fit(
-        f"[bold white]Hostname:[/] {hostname}\n"
-        f"[bold white]Role:[/] {role}  [dim]|[/]  "
-        f"[bold white]Segment:[/] {segment}\n"
-        f"[bold white]Analyst ID:[/] {analyst_id}  [dim]|[/]  "
-        f"[bold white]Firewall:[/] {firewall_display}\n"
-        f"[bold white]Kernel:[/] {kernel}  [dim]|[/]  "
-        f"[bold white]Uptime:[/] {uptime}",
+        "\n".join(profile_lines),
         title="[green]System Profile[/]",
         border_style="cyan",
         box=box.ROUNDED,
@@ -133,10 +150,22 @@ def show_splash(profile: dict) -> None:
         justify="center",
     )
 
-    console.print(Align.center("[cyan]────────────────────────────────────────────[/]"))
+    console.print(
+        Align.center(
+            "[cyan]────────────────────────────────────────────[/]"
+        )
+    )
 
-    console.print(Align.center(f"[italic white]{quote}[/]"))
+    console.print(
+        Align.center(
+            f"[italic white]{quote}[/]"
+        )
+    )
 
-    console.print(Align.center("[cyan]────────────────────────────────────────────[/]"))
+    console.print(
+        Align.center(
+            "[cyan]────────────────────────────────────────────[/]"
+        )
+    )
 
     time.sleep(1.5)

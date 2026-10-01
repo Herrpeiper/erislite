@@ -15,7 +15,7 @@ from rich.text import Text
 from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.system import info
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen, pause_return
+from erislite.ui.utils import clear_screen, get_analyst_id, pause_return
 
 
 def run(profile: dict) -> None:
@@ -23,13 +23,21 @@ def run(profile: dict) -> None:
 
     hostname = profile.get("hostname", "unknown-host")
     role = profile.get("role", "unknown-role")
-    analyst_id = profile.get("analyst_id", "N/A")
+    analyst_id = get_analyst_id(profile)
+
+    metadata_parts = [
+        f"[dim]Host:[/] [white]{hostname}[/]",
+        f"[dim]Role:[/] [white]{role}[/]",
+    ]
+
+    if analyst_id:
+        metadata_parts.append(
+            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+        )
 
     header = Panel(
         Text.from_markup(
-            f"[dim]Host:[/] [white]{hostname}[/]   "
-            f"[dim]Role:[/] [white]{role}[/]   "
-            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+            "   ".join(metadata_parts)
         ),
         title="[bold cyan]SYSTEM INFO[/]",
         subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",

@@ -20,7 +20,7 @@ from erislite.persistence.world_writable import run_world_writable_check
 from erislite.response.security_log import write_audit_log
 from erislite.system.processes import run_process_scan
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen, pause_return
+from erislite.ui.utils import clear_screen, get_analyst_id, pause_return
 
 
 def _format_result(result: dict, ok_text: str) -> str:
@@ -50,13 +50,21 @@ def run(profile: dict) -> None:
 
     hostname = profile.get("hostname", "unknown-host")
     role = profile.get("role", "unknown-role")
-    analyst_id = profile.get("analyst_id", "N/A")
+    analyst_id = get_analyst_id(profile)
+
+    metadata_parts = [
+        f"[dim]Host:[/] [white]{hostname}[/]",
+        f"[dim]Role:[/] [white]{role}[/]",
+    ]
+
+    if analyst_id:
+        metadata_parts.append(
+            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+        )
 
     header = Panel(
         Text.from_markup(
-            f"[dim]Host:[/] [white]{hostname}[/]   "
-            f"[dim]Role:[/] [white]{role}[/]   "
-            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+            "   ".join(metadata_parts)
         ),
         title="[bold cyan]POSTURE SNAPSHOT[/]",
         subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",

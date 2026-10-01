@@ -16,7 +16,7 @@ from rich.text import Text
 from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.network import tools
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen
+from erislite.ui.utils import clear_screen, get_analyst_id
 
 
 def build_menu() -> Table:
@@ -49,15 +49,23 @@ def build_menu() -> Table:
 def run(profile: dict) -> None:
     hostname = profile.get("hostname", "unknown-host")
     role = profile.get("role", "unknown-role")
-    analyst_id = profile.get("analyst_id", "N/A")
+    analyst_id = get_analyst_id(profile)
 
     while True:
         clear_screen()
 
+        metadata_parts = [
+            f"[dim]Host:[/] [white]{hostname}[/]",
+            f"[dim]Role:[/] [white]{role}[/]",
+        ]
+
+        if analyst_id:
+            metadata_parts.append(
+                f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+            )
+
         metadata = Text.from_markup(
-            f"[dim]Host:[/] [white]{hostname}[/]   "
-            f"[dim]Role:[/] [white]{role}[/]   "
-            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+            "   ".join(metadata_parts)
         )
 
         header = Panel(

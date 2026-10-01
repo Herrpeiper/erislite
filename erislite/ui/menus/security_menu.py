@@ -25,7 +25,7 @@ from erislite.response import rapid_response
 from erislite.sweep import soc_mode, threat_sweep, viewer
 from erislite.system import integrity, kernel_modules, processes, security_audit
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen, pause_return
+from erislite.ui.utils import clear_screen, get_analyst_id, pause_return
 from erislite.vulnerability import cve_checker
 
 
@@ -66,12 +66,20 @@ def _format_risk(summary: dict) -> tuple[str, int]:
 def _render_header(profile: dict) -> None:
     hostname = profile.get("hostname", "unknown-host")
     role = profile.get("role", "unknown-role")
-    analyst_id = profile.get("analyst_id", "N/A")
+    analyst_id = get_analyst_id(profile)
+
+    metadata_parts = [
+        f"[dim]Host:[/] [white]{hostname}[/]",
+        f"[dim]Role:[/] [white]{role}[/]",
+    ]
+
+    if analyst_id:
+        metadata_parts.append(
+            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+        )
 
     metadata = Text.from_markup(
-        f"[dim]Host:[/] [white]{hostname}[/]   "
-        f"[dim]Role:[/] [white]{role}[/]   "
-        f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+        "   ".join(metadata_parts)
     )
 
     console.print(
