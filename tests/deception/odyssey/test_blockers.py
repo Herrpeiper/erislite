@@ -9,7 +9,6 @@
 
 import os
 import socket
-from pathlib import Path
 from types import SimpleNamespace
  
 import pytest
@@ -23,9 +22,7 @@ from erislite.deception.odyssey.manager import (
     get_manager,
 )
 from erislite.network import listeners
- 
-ODYSSEY_DIR = Path(manager_module.__file__).parent
- 
+
  
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -50,33 +47,9 @@ def shared_manager(monkeypatch):
     manager.stop()
  
  
+
 # ---------------------------------------------------------------------------
-# Blocker 1: Python 3.9 compatibility
-# ---------------------------------------------------------------------------
- 
- 
-@pytest.mark.parametrize(
-    "path",
-    sorted(ODYSSEY_DIR.glob("*.py")) + [Path(listeners.__file__)],
-    ids=lambda path: path.name,
-)
-def test_modules_postpone_annotation_evaluation(path):
-    """PEP 604 unions in signatures crash at import on Python 3.9.
- 
-    The 3.9 CI job is the real check. This guard catches it on newer
-    interpreters too, before the push.
-    """
- 
-    source = path.read_text(encoding="utf-8")
- 
-    if "|" not in source or path.name == "__init__.py":
-        pytest.skip("no union syntax in module")
- 
-    assert "from __future__ import annotations" in source
- 
- 
-# ---------------------------------------------------------------------------
-# Blocker 2: listener lifecycle across menu visits
+# Blocker 1: listener lifecycle across menu visits
 # ---------------------------------------------------------------------------
  
  
@@ -128,7 +101,7 @@ def test_menu_reentry_keeps_running_listeners(monkeypatch, shared_manager):
  
  
 # ---------------------------------------------------------------------------
-# Blocker 3: listener scan must not flag ErisLITE's own canaries
+# Blocker 2: listener scan must not flag ErisLITE's own canaries
 # ---------------------------------------------------------------------------
  
  

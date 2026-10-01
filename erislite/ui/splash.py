@@ -1,7 +1,7 @@
 # Project: ErisLITE
 # Module: splash.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.1
+# Version: 1.4.2
 # License: MIT
 # Created: 2025-06-01
 # Last Updated: 2026-10-01
@@ -18,7 +18,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from erislite.config.settings import APP_CODE, APP_NAME, APP_VERSION
-from erislite.network.firewall import detect_firewall_backend
+from erislite.network.firewall import run_firewall_check
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_analyst_id
 from erislite.version import BUILD_DATE
@@ -42,19 +42,30 @@ QUOTES = [
 
 
 def get_firewall_display() -> str:
-    backend = detect_firewall_backend()
+    result = run_firewall_check(silent=True)
 
-    labels = {
-        "ufw": "UFW",
-        "firewalld": "firewalld",
-        "nftables": "nftables",
-        "iptables": "iptables",
-    }
+    status = result.get("status")
+    details = result.get("details", [])
 
-    if backend is None:
-        return "None detected"
+    if status == "ok":
+        detail = details[0] if details else ""
 
-    return labels.get(backend, backend)
+        labels = {
+            "UFW is active": "UFW",
+            "firewalld is active": "firewalld",
+            "nftables ruleset detected": "nftables",
+            "iptables ruleset detected": "iptables",
+        }
+
+        return labels.get(detail, "Active")
+
+    if "firewall_permission_denied" in result.get("tags", []):
+        return "Unknown (permission denied)"
+
+    if status == "error":
+        return "Unknown (inspection failed)"
+
+    return "None detected"
 
 
 def get_kernel_version() -> str:

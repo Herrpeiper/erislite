@@ -1,7 +1,7 @@
 # Project: ErisLITE
 # Module: soc_mode.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.1
+# Version: 1.4.2
 # License: MIT
 # Created: 2025-06-01
 # Last Updated: 2026-10-01
@@ -81,35 +81,92 @@ def _run_cmd(cmd):
 
 def discount_current_sudo_session(parsed: dict, privilege: dict) -> dict:
     """
-    Remove the current ErisLITE sudo invocation from SOC activity counts.
+    Remove the current ErisLITE sudo invocation from SOC activity.
 
-    When ErisLITE is launched through sudo, the invocation itself can appear
-    in the authentication journal as a sudo command and a root session.
-    Those events describe the current analyst session rather than separate
-    privilege-escalation activity.
+    A discount is only applied when the current SUDO_COMMAND can actually
+    be matched to a collected sudo command log entry. This prevents SOC
+    Mode from hiding unrelated sudo activity when the invoking event falls
+    outside the observation window.
 
-    Only one event of each applicable sudo signal is discounted so unrelated
-    sudo activity within the observation window remains visible.
+    Detail lists are updated alongside their counters.
     """
     normalized = dict(parsed)
 
+    detail_keys = (
+        "sudo_details",
+        "sudo_to_root_details",
+        "sudo_root_session_details",
+    )
+
+    for key in detail_keys:
+        normalized[key] = list(parsed.get(key, []))
+
     if not privilege.get("elevated_via_sudo"):
         return normalized
+
+    sudo_command = privilege.get("sudo_command")
+    sudo_user = privilege.get("sudo_user")
+
+    if not sudo_command:
+        return normalized
+
+    sudo_command = sudo_command.strip()
+
+    # Find the current invocation in the retained sudo command details.
+    matching_index = None
+
+    for index in range(len(normalized["sudo_details"]) - 1, -1, -1):
+        line = normalized["sudo_details"][index]
+
+        if "COMMAND=" not in line:
+            continue
+
+        logged_command = line.split("COMMAND=", 1)[1].strip()
+
+        if logged_command == sudo_command:
+            matching_index = index
+            break
+
+    # If the current invocation is not present in the observation window,
+    # do not discount anything.
+    if matching_index is None:
+        return normalized
+
+    self_event = normalized["sudo_details"].pop(matching_index)
 
     normalized["sudo_events"] = max(
         0,
         normalized.get("sudo_events", 0) - 1,
     )
 
-    normalized["sudo_to_root"] = max(
-        0,
-        normalized.get("sudo_to_root", 0) - 1,
-    )
+    # The same sudo command may also have been classified as targeting root.
+    if self_event in normalized["sudo_to_root_details"]:
+        normalized["sudo_to_root_details"].remove(self_event)
+        normalized["sudo_to_root"] = max(
+            0,
+            normalized.get("sudo_to_root", 0) - 1,
+        )
 
-    normalized["sudo_root_sessions"] = max(
-        0,
-        normalized.get("sudo_root_sessions", 0) - 1,
-    )
+    # A sudo PAM root-session entry does not contain COMMAND=, so match the
+    # invoking sudo user when possible and remove only one corresponding
+    # session.
+    if sudo_user:
+        user_marker = f" by {sudo_user}(".lower()
+
+        for index in range(
+            len(normalized["sudo_root_session_details"]) - 1,
+            -1,
+            -1,
+        ):
+            line = normalized["sudo_root_session_details"][index]
+
+            if user_marker in line.lower():
+                normalized["sudo_root_session_details"].pop(index)
+                normalized["sudo_root_sessions"] = max(
+                    0,
+                    normalized.get("sudo_root_sessions", 0) - 1,
+                )
+                break
 
     return normalized
 
@@ -170,11 +227,13 @@ def collect_warning_logs():
 def get_current_privilege_state():
     euid = os.geteuid()
     sudo_user = os.environ.get("SUDO_USER")
+    sudo_command = os.environ.get("SUDO_COMMAND")
 
     return {
         "euid": euid,
         "is_root": euid == 0,
         "sudo_user": sudo_user,
+        "sudo_command": sudo_command,
         "elevated_via_sudo": euid == 0 and bool(sudo_user),
     }
 

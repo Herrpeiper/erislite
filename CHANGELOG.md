@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [1.4.2] - 2026-10-01
+
+### Fixed
+
+- Python 3.9 compatibility regression guard expanded to cover the full ErisLITE package
+- Splash firewall status now distinguishes unavailable inspection from an inactive firewall state
+- SOC Mode sudo-session discounting now only removes the current ErisLITE invocation when it is present in the collected audit window
+- SOC Mode detail lists now remain synchronized with discounted activity counts
+
+### Added
+
+- Regression coverage for Python 3.9 annotation compatibility
+- Regression coverage for firewall inspection edge cases
+- Regression coverage for SOC Mode sudo discount matching and unrelated sudo activity preservation
+
+---
+
 ## [1.4.1] - 2026-10-01
 
 ### Fixed
