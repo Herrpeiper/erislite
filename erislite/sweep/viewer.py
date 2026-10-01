@@ -454,6 +454,10 @@ def view_full_report():
 
         if status == "ok":
             status_text = "[green]OK[/]"
+        elif status == "review":
+            status_text = "[cyan]REVIEW[/]"
+        elif status == "info":
+            status_text = "[cyan]INFO[/]"
         elif status in ("warning", "issue"):
             status_text = "[yellow]WARNING[/]"
         elif status == "error":

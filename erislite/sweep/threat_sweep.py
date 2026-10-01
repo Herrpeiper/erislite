@@ -375,6 +375,10 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
 
         if status == "ok":
             return "[green]OK[/]"
+        if status == "review":
+            return "[cyan]REVIEW[/]"
+        if status == "info":
+            return "[cyan]INFO[/]"
         if status in ("warning", "issue"):
             return "[yellow]WARNING[/]"
         if status == "error":
@@ -412,7 +416,8 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
     percent = round((score / max_possible) * 100) if max_possible else 0
 
     info_present = any(
-        r.get("status", "").lower() == "ok" and r.get("details")
+        r.get("status", "").lower() in {"ok", "info", "review"}
+        and r.get("details")
         for r in results.values()
     )
 
