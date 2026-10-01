@@ -4,9 +4,12 @@
 # Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-09-28
 # Description: Heuristic network listener inspection and suspicious bind detection.
 
+from __future__ import annotations
+
+import os
 import re
 import subprocess
 
@@ -16,6 +19,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
+from erislite.deception.odyssey.manager import active_canary_ports
 from erislite.security.command_resolver import resolve_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
@@ -52,6 +56,21 @@ def _header() -> None:
 def extract_process_name(pid_info: str) -> str:
     match = re.search(r'users:\(\("([^"]+)"', pid_info)
     return match.group(1) if match else "unknown"
+
+
+def extract_pid(pid_info: str) -> int | None:
+    match = re.search(r"pid=(\d+)", pid_info)
+    return int(match.group(1)) if match else None
+
+
+def _is_own_canary(port: int, pid_info: str, canary_ports: frozenset) -> bool:
+    """Return True only for an Odyssey port held by this ErisLITE process.
+
+    Matching on PID as well as port means another process on the same port
+    number (for example an IPv6 bind) is still inspected normally.
+    """
+
+    return port in canary_ports and extract_pid(pid_info) == os.getpid()
 
 
 def _parse_port(local_address: str) -> int:
@@ -94,6 +113,7 @@ def parse_listeners():
     )
 
         flagged = []
+        canary_ports = active_canary_ports()
 
         for line in result.stdout.splitlines()[1:]:
             parts = line.split()
@@ -109,6 +129,10 @@ def parse_listeners():
             port = _parse_port(local_address)
             is_whitelisted = proc_name in WHITELISTED_PROCS
             flags = []
+            
+            if _is_own_canary(port, pid_info, canary_ports):
+                is_whitelisted = True
+                flags.append("ErisLITE Canary")
 
             if _is_external_bind(local_address):
                 flags.append("External Bind")

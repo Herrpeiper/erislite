@@ -4,7 +4,7 @@
 # Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-09-28
 # Description: Help and About interface.
 
 from rich import box
@@ -106,6 +106,10 @@ def show_help() -> None:
     modules.add_row(
         "SOC Mode",
         "Short-window authentication and activity triage.",
+    )
+    modules.add_row(
+        "Odyssey Lite",
+        "TCP canary listeners that record scans and probes as early warnings.",
     )
 
     console.print(modules)

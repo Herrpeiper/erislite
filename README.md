@@ -7,7 +7,7 @@
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-stable-green)
-![Version](https://img.shields.io/badge/version-1.3.0-blue)
+![Version](https://img.shields.io/badge/version-1.4.0-blue)
 
 *A modular Linux security monitoring and triage toolkit for analysts, students, and system administrators.*
 
@@ -70,6 +70,33 @@ Score: 30/95
 Rating: 32%
 Risk Level: Moderate
 ```
+
+### Odyssey Lite (Deception)
+
+Odyssey Lite runs lightweight TCP canary listeners on ports that nothing legitimate should use. Any connection to a canary is recorded as an early-warning event: someone is scanning or probing the host.
+
+Canaries accept a connection, record it and close it immediately. They never send data or emulate a service.
+
+| Port | Decoy | Severity |
+|------|-------|----------|
+| 2121 | FTP (alternate) | Medium |
+| 2222 | SSH (alternate) | High |
+| 2323 | Telnet (alternate) | High |
+| 3389 | RDP | High |
+| 8080 | HTTP (alternate) | Medium |
+
+Odyssey Lite provides:
+
+- start and stop control from **Security Tools → Odyssey Lite**
+- per-canary listener status
+- a recent events view with source address, port, service and severity
+- persistent JSONL event logging
+- automatic labeling of its own canaries as `ErisLITE Canary` in Listener Check, so Threat Sweep does not count them as suspicious
+- partial startup when one or more configured ports are unavailable
+- duplicate suppression with repeat-summary persistence
+- bounded in-memory event history
+- callback failure isolation and listener resilience
+- protected event-log storage with permission, ownership, symlink, and hard-link checks
 
 ### Additional Tools
 
@@ -158,6 +185,15 @@ ErisLITE/
 │   ├── containers/
 │   │   └── docker.py
 │   │
+│   ├── deception/
+│   │   └── odyssey/
+│   │       ├── config.py
+│   │       ├── events.py
+│   │       ├── listeners.py
+│   │       ├── manager.py
+│   │       ├── menu.py
+│   │       └── storage.py
+│   │
 │   ├── network/
 │   │   ├── scan.py
 │   │   ├── tools.py
@@ -225,7 +261,8 @@ ErisLITE/
 │   └── logs/
 │       ├── threat_sweeps/
 │       ├── soc_mode/
-│       └── network_connections/
+│       ├── network_connections/
+│       └── odyssey/
 │
 ├── infra/
 │   └── systemd/
@@ -245,7 +282,7 @@ ErisLITE/
 
 **Integrity baseline** — File Integrity requires a baseline before it can detect changes. On first run, go to **Security Tools → File Integrity → Create Integrity Baseline** and choose the appropriate `critical`, `system`, or `user` profile. Runtime integrity data is stored under `data/integrity/` and is gitignored by design.
 
-ErisLITE v1.3 keeps separate baselines per profile, records files that were expected to be absent when the baseline was created, distinguishes changed files from incomplete inspection, and reports collection/read failures instead of treating them as clean results. Protected files may require root privileges for complete coverage.
+ErisLITE v1.4 keeps separate baselines per profile, records files that were expected to be absent when the baseline was created, distinguishes changed files from incomplete inspection, and reports collection/read failures instead of treating them as clean results. Protected files may require root privileges for complete coverage.
 
 **User profile** — ErisLITE maintains user and host profile information used by portions of the CLI and snapshot tooling. Runtime user data is stored under `~/.erislite/`.
 
@@ -254,6 +291,8 @@ ErisLITE v1.3 keeps separate baselines per profile, records files that were expe
 **CVE version checker** — performs offline version matching against the local CVE cache. A version match does not confirm a vulnerability. Vendors frequently backport fixes without changing the upstream version string. Always verify findings against vendor advisories.
 
 **Threat Sweep history** — historical sweeps are stored under `data/logs/threat_sweeps/`. The latest sweep summary is also stored at `~/.erislite/last_sweep.json`.
+
+**Odyssey Lite canaries** — canaries bind on all interfaces. Before starting Odyssey in a competition environment, confirm none of the default ports (2121, 2222, 2323, 3389, 8080) belong to a scored service. Ports 8080 and 3389 are the most likely conflicts. If a port is already in use, Odyssey starts the canaries it can and lists the unavailable ports. The status panel keeps showing them, and **Listener Status** marks them `FAILED`. Canaries run until you stop them or exit ErisLITE. Repeat connections from the same source to the same canary within 5 seconds are not logged as separate events. Instead, ErisLITE writes a `repeat_summary` record with the count and the first and last times seen when the window closes, when you stop Odyssey or when you clear events, so the log accounts for every connection. Events are written to `erislite/data/logs/odyssey/odyssey_events.jsonl`, which rotates at 5 MB and keeps three backups. ErisLITE refuses to write the log if the directory or file is a symlink, a hard link or owned by another user, and the status panel shows `Event log: FAILING` with the reason. **Clear Events** only clears the in-session view, not the log file.
 
 **Rapid Response live mode** — Rapid Response includes dry-run and live containment actions. Live mode can modify system state, terminate processes, change firewall behavior, and perform other containment actions. Review dry-run output before executing live actions.
 

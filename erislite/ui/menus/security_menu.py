@@ -4,7 +4,7 @@
 # Version: 1.3.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-09-28
 # Description: Security tools menu with threat sweep and posture workflows.
 
 import json
@@ -18,6 +18,7 @@ from rich.text import Text
 from erislite.accounts import login_audit, ssh_config, ssh_keys, users
 from erislite.config.settings import APP_NAME, APP_VERSION, LAST_SWEEP_FILE
 from erislite.containers import docker
+from erislite.deception.odyssey import menu as odyssey_menu
 from erislite.network import hosts, listeners
 from erislite.persistence import backdoors, cron, suid, world_writable
 from erislite.response import rapid_response
@@ -154,6 +155,10 @@ def _build_menu() -> Table:
     menu.add_row("[cyan][20][/]", "SOC Mode")
 
     menu.add_row("", "")
+    menu.add_row("[bold cyan]DECEPTION[/]", "")
+    menu.add_row("[cyan][21][/]", "Odyssey Lite")
+
+    menu.add_row("", "")
     menu.add_row("[cyan][0][/]", "Back")
 
     return menu
@@ -285,6 +290,8 @@ def run(profile: dict) -> None:
             rapid_response.run_rapid_response_menu()
         elif choice == "20":
             soc_mode.interactive_soc_mode()
+        elif choice == "21":
+            odyssey_menu.run_odyssey_menu()
         else:
             console.print("[red]Invalid option.[/]")
             pause_return()
