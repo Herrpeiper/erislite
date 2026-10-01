@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: security_menu.py
 # Author: Liam Piper-Brandon
-# Version: 1.3.0
+# Version: 1.4.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-28
+# Last Updated: 2026-10-01
 # Description: Security tools menu with threat sweep and posture workflows.
 
 import json
@@ -12,7 +12,6 @@ from datetime import datetime
 
 from rich import box
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
@@ -26,7 +25,7 @@ from erislite.response import rapid_response
 from erislite.sweep import soc_mode, threat_sweep, viewer
 from erislite.system import integrity, kernel_modules, processes, security_audit
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen, get_analyst_id, pause_return
+from erislite.ui.utils import clear_screen, get_analyst_id, pause_return, prompt_option
 from erislite.vulnerability import cve_checker
 
 
@@ -247,11 +246,7 @@ def _run_sweep_menu(profile: dict) -> None:
 
     console.print(table)
 
-    choice = Prompt.ask(
-        "\n[cyan]Select a profile[/]",
-        choices=["0", "1", "2", "3"],
-        default="2",
-    )
+    choice = prompt_option()
 
     if choice == "1":
         threat_sweep.run_sweep(profile, sweep_profile="quick")
@@ -277,15 +272,7 @@ def run(profile: dict) -> None:
             "[cyan]r[/] Rerun Last"
         )
 
-        choice = (
-            Prompt.ask(
-                "\n[cyan]Select an option[/]",
-                default="0",
-                show_default=False,
-            )
-            .strip()
-            .lower()
-        )
+        choice = prompt_option()
 
         if choice in ("0", "b"):
             break

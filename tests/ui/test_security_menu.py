@@ -13,8 +13,8 @@ New tools are appended. Existing numbers never move. These tests fail if a
 change renumbers an option that shipped in an earlier release.
 """
 
-from types import SimpleNamespace
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from rich.console import Console
@@ -74,7 +74,7 @@ def test_menu_option_dispatches_to_expected_tool(monkeypatch, option, expected):
     monkeypatch.setattr(target_module, func_name, lambda *a, **k: called.append(option))
 
     answers = iter([option, "0"])
-    monkeypatch.setattr(security_menu.Prompt, "ask", lambda *a, **k: next(answers))
+    monkeypatch.setattr(security_menu, "prompt_option", lambda *a, **k: next(answers))
 
     security_menu.run({})
 
@@ -99,6 +99,7 @@ def test_score_color_uses_percentage_not_raw_points():
     assert security_menu._score_color(16) == "green"
     assert security_menu._score_color(50) == "yellow"
     assert security_menu._score_color(80) == "red"
+    
 
 def test_format_sweep_age_minutes(monkeypatch):
     now = datetime.now()

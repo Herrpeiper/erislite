@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: kernel_modules.py
 # Author: Liam Piper-Brandon
-# Version: 1.3.0
+# Version: 1.4.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-10-01
 # Description: Kernel module inspection for known-bad names, untracked modules, and unusual paths.
 
 import json

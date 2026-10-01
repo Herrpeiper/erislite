@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: command_resolver.py
 # Author: Liam Piper-Brandon
-# Version: 1.3.0
+# Version: 1.4.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-10-01
 # Description: Trusted command resolution and executable path validation.
 
 """Trusted system-command resolution for ErisLITE."""

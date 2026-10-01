@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [1.4.1] - 2026-10-01
+
+### Fixed
+
+- Threat Sweep risk summaries now use the active profile's actual maximum score and percentage instead of a hardcoded total
+- SOC Mode no longer counts the invoking `sudo` session as suspicious privilege activity
+- CVE version matches are reported as `REVIEW` instead of `OK` while remaining non-scoring informational findings
+- Startup firewall status now reflects live firewall detection instead of stale profile metadata
+- Unset Analyst IDs are hidden across the UI, and legacy `analyst_id: 0` profiles migrate cleanly to `null`
+- Last Sweep status now shows the age of the most recent Threat Sweep
+- Analyst ID regression coverage now includes empty, legacy and placeholder values
+
+### Changed
+
+- Standard menu prompts now use a shared cyan `prompt_option()` helper for consistent UI behavior
+- Menu tests were updated to patch the shared prompt helper instead of Rich's `Prompt.ask()` directly
+- Application version metadata and source headers updated for v1.4.1
+
+---
+
 ## [1.4.0] - 2026-10-01
 
 ### Added

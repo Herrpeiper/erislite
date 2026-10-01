@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: soc_mode.py
 # Author: Liam Piper-Brandon
-# Version: 1.3.0
+# Version: 1.4.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-10-01
 # Description: SOC Mode rolling snapshot and posture assessment.
 
 import json
@@ -16,7 +16,6 @@ from datetime import datetime
 
 from rich import box
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
@@ -32,7 +31,7 @@ from erislite.security.command_resolver import (
     resolve_command,
 )
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen, pause_return
+from erislite.ui.utils import clear_screen, pause_return, prompt_option
 
 WINDOW_MINUTES = 15
 EXPORT_DIR = SOC_LOG_DIR
@@ -673,11 +672,7 @@ def interactive_soc_mode():
 
     console.print(menu)
 
-    choice = Prompt.ask(
-        "\n[cyan]Select an option[/]",
-        default="0",
-        show_default=False,
-    ).strip()
+    choice = prompt_option()
 
     if choice == "1":
         console.print()

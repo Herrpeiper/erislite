@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: integrity.py
 # Author: Liam Piper-Brandon
-# Version: 1.3.0
+# Version: 1.4.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-10-01
 # Description: SHA-256 file integrity baseline creation and change detection.
 
 import glob
@@ -26,7 +26,7 @@ from erislite.config.settings import (
     INTEGRITY_BASELINE_FILE,
 )
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen, get_os, pause_return
+from erislite.ui.utils import clear_screen, get_os, pause_return, prompt_option
 
 
 def get_baseline_path(profile: str) -> str:
@@ -780,11 +780,7 @@ def integrity_menu() -> None:
 
         console.print(menu)
 
-        choice = Prompt.ask(
-            "\n[cyan]Select an option[/]",
-            choices=["0", "1", "2"],
-            default="0",
-        )
+        choice = prompt_option()
 
         if choice == "1":
             clear_screen()
