@@ -8,6 +8,7 @@
 # Description: Security tools menu with threat sweep and posture workflows.
 
 import json
+from datetime import datetime
 
 from rich import box
 from rich.panel import Panel
@@ -47,6 +48,40 @@ def _score_color(percent: int) -> str:
     if percent <= 70:
         return "yellow"
     return "red"
+
+
+def _format_sweep_age(timestamp: str) -> str:
+    try:
+        sweep_time = datetime.fromisoformat(timestamp)
+    except (TypeError, ValueError):
+        return "Unknown"
+
+    age_seconds = int((datetime.now() - sweep_time).total_seconds())
+
+    if age_seconds < 0:
+        return "Just now"
+
+    if age_seconds < 60:
+        return "Just now"
+
+    minutes = age_seconds // 60
+
+    if minutes < 60:
+        return f"{minutes}m ago"
+
+    hours, minutes = divmod(minutes, 60)
+
+    if hours < 24:
+        if minutes:
+            return f"{hours}h {minutes}m ago"
+        return f"{hours}h ago"
+
+    days, hours = divmod(hours, 24)
+
+    if hours:
+        return f"{days}d {hours}h ago"
+
+    return f"{days}d ago"
 
 
 def _format_risk(summary: dict) -> tuple[str, int]:
@@ -111,6 +146,7 @@ def _render_last_sweep(summary) -> None:
     risk_text, risk_percent = _format_risk(summary)
     profile_name = str(summary.get("profile", "unknown")).capitalize()
     timestamp = summary.get("timestamp", "Unknown")
+    sweep_age = _format_sweep_age(timestamp)
     tags = summary.get("tags", [])
     color = _score_color(risk_percent)
 
@@ -121,7 +157,8 @@ def _render_last_sweep(summary) -> None:
     body = (
         f"[dim]Profile:[/] [white]{profile_name}[/]   "
         f"[dim]Risk:[/] [bold {color}]{risk_text}[/]   "
-        f"[dim]Time:[/] [white]{timestamp}[/]\n"
+        f"[dim]Time:[/] [white]{timestamp}[/]   "
+        f"[dim]Age:[/] [cyan]{sweep_age}[/]\n"
         f"[dim]Tags:[/] [white]{len(tags)} indicators[/]   "
         f"[cyan]{preview}[/]"
     )

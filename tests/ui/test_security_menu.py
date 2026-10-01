@@ -14,6 +14,7 @@ change renumbers an option that shipped in an earlier release.
 """
 
 from types import SimpleNamespace
+from datetime import datetime, timedelta
 
 import pytest
 from rich.console import Console
@@ -98,3 +99,25 @@ def test_score_color_uses_percentage_not_raw_points():
     assert security_menu._score_color(16) == "green"
     assert security_menu._score_color(50) == "yellow"
     assert security_menu._score_color(80) == "red"
+
+def test_format_sweep_age_minutes(monkeypatch):
+    now = datetime.now()
+    timestamp = (now - timedelta(minutes=12)).isoformat(timespec="seconds")
+
+    age = security_menu._format_sweep_age(timestamp)
+
+    assert age in {"11m ago", "12m ago"}
+
+
+def test_format_sweep_age_hours():
+    timestamp = (
+        datetime.now() - timedelta(hours=2, minutes=15)
+    ).isoformat(timespec="seconds")
+
+    age = security_menu._format_sweep_age(timestamp)
+
+    assert age.startswith("2h")
+
+
+def test_format_sweep_age_invalid_timestamp():
+    assert security_menu._format_sweep_age("not-a-time") == "Unknown"
