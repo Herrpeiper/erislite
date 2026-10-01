@@ -138,7 +138,7 @@ def export_json_log(
     return filepath
 
 
-def get_analyst_id(profile: dict) -> str | None:
+def get_analyst_id(profile: dict) -> Optional[str]:
     value = profile.get("analyst_id")
 
     if value is None or value == 0:
