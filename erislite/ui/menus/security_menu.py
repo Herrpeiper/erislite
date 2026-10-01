@@ -39,14 +39,28 @@ def get_last_sweep_summary():
         return None
 
 
-def _score_color(score: int) -> str:
-    if score == 0:
+def _score_color(percent: int) -> str:
+    if percent == 0:
         return "grey37"
-    if score <= 30:
+    if percent <= 30:
         return "green"
-    if score <= 70:
+    if percent <= 70:
         return "yellow"
     return "red"
+
+
+def _format_risk(summary: dict) -> tuple[str, int]:
+    score = summary.get("risk_score")
+    maximum = summary.get("risk_max")
+    percent = summary.get("risk_percent")
+
+    if score is None:
+        return "N/A", 0
+
+    if maximum is not None and percent is not None:
+        return f"{score}/{maximum} ({percent}%)", int(percent)
+
+    return str(score), 0
 
 
 def _render_header(profile: dict) -> None:
@@ -86,11 +100,11 @@ def _render_last_sweep(summary) -> None:
         console.print()
         return
 
-    score = int(summary.get("risk_score", 0))
+    risk_text, risk_percent = _format_risk(summary)
     profile_name = str(summary.get("profile", "unknown")).capitalize()
     timestamp = summary.get("timestamp", "Unknown")
     tags = summary.get("tags", [])
-    color = _score_color(score)
+    color = _score_color(risk_percent)
 
     preview = ", ".join(tags[:3]) if tags else "None"
     if len(tags) > 3:
@@ -98,7 +112,7 @@ def _render_last_sweep(summary) -> None:
 
     body = (
         f"[dim]Profile:[/] [white]{profile_name}[/]   "
-        f"[dim]Risk:[/] [bold {color}]{score}/100[/]   "
+        f"[dim]Risk:[/] [bold {color}]{risk_text}[/]   "
         f"[dim]Time:[/] [white]{timestamp}[/]\n"
         f"[dim]Tags:[/] [white]{len(tags)} indicators[/]   "
         f"[cyan]{preview}[/]"
