@@ -78,3 +78,23 @@ def test_menu_option_dispatches_to_expected_tool(monkeypatch, option, expected):
     security_menu.run({})
 
     assert called == [option]
+
+
+def test_format_risk_uses_profile_maximum_and_percent():
+    text, percent = security_menu._format_risk(
+        {
+            "risk_score": 15,
+            "risk_max": 95,
+            "risk_percent": 16,
+        }
+    )
+
+    assert text == "15/95 (16%)"
+    assert percent == 16
+
+
+def test_score_color_uses_percentage_not_raw_points():
+    assert security_menu._score_color(0) == "grey37"
+    assert security_menu._score_color(16) == "green"
+    assert security_menu._score_color(50) == "yellow"
+    assert security_menu._score_color(80) == "red"
