@@ -7,7 +7,7 @@
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-stable-green)
-![Version](https://img.shields.io/badge/version-1.3.0-blue)
+![Version](https://img.shields.io/badge/version-1.4.0-blue)
 
 *A modular Linux security monitoring and triage toolkit for analysts, students, and system administrators.*
 
@@ -92,6 +92,11 @@ Odyssey Lite provides:
 - a recent events view with source address, port, service and severity
 - persistent JSONL event logging
 - automatic labeling of its own canaries as `ErisLITE Canary` in Listener Check, so Threat Sweep does not count them as suspicious
+- partial startup when one or more configured ports are unavailable
+- duplicate suppression with repeat-summary persistence
+- bounded in-memory event history
+- callback failure isolation and listener resilience
+- protected event-log storage with permission, ownership, symlink, and hard-link checks
 
 ### Additional Tools
 
@@ -256,7 +261,8 @@ ErisLITE/
 │   └── logs/
 │       ├── threat_sweeps/
 │       ├── soc_mode/
-│       └── network_connections/
+│       ├── network_connections/
+│       └── odyssey/
 │
 ├── infra/
 │   └── systemd/
@@ -276,7 +282,7 @@ ErisLITE/
 
 **Integrity baseline** — File Integrity requires a baseline before it can detect changes. On first run, go to **Security Tools → File Integrity → Create Integrity Baseline** and choose the appropriate `critical`, `system`, or `user` profile. Runtime integrity data is stored under `data/integrity/` and is gitignored by design.
 
-ErisLITE v1.3 keeps separate baselines per profile, records files that were expected to be absent when the baseline was created, distinguishes changed files from incomplete inspection, and reports collection/read failures instead of treating them as clean results. Protected files may require root privileges for complete coverage.
+ErisLITE v1.4 keeps separate baselines per profile, records files that were expected to be absent when the baseline was created, distinguishes changed files from incomplete inspection, and reports collection/read failures instead of treating them as clean results. Protected files may require root privileges for complete coverage.
 
 **User profile** — ErisLITE maintains user and host profile information used by portions of the CLI and snapshot tooling. Runtime user data is stored under `~/.erislite/`.
 

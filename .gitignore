@@ -26,7 +26,7 @@ env/
 # Regenerated automatically on first run by core/user_profile.py.
 erislite/data/user_profile.json
 
-# ── FIX #2: Integrity baseline ───────────────────
+# ── Integrity baseline ───────────────────
 # Contains SHA-256 hashes of files on YOUR machine.
 # Committing this leaks system fingerprint data and
 # causes every other deployment to show false-positive
