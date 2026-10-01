@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: splash.py
 # Author: Liam Piper-Brandon
-# Version: 1.3.0
+# Version: 1.4.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-10-01
 # Description: Startup splash screen with host profile and version information.
 
 import platform
@@ -18,8 +18,9 @@ from rich.panel import Panel
 from rich.text import Text
 
 from erislite.config.settings import APP_CODE, APP_NAME, APP_VERSION
+from erislite.network.firewall import detect_firewall_backend
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen
+from erislite.ui.utils import clear_screen, get_analyst_id
 from erislite.version import BUILD_DATE
 
 LOGO = [
@@ -38,6 +39,22 @@ QUOTES = [
     "'There's no patch for human stupidity.' — Kevin Mitnick",
     "'In war, the first casualty is truth.' — Aeschylus",
 ]
+
+
+def get_firewall_display() -> str:
+    backend = detect_firewall_backend()
+
+    labels = {
+        "ufw": "UFW",
+        "firewalld": "firewalld",
+        "nftables": "nftables",
+        "iptables": "iptables",
+    }
+
+    if backend is None:
+        return "None detected"
+
+    return labels.get(backend, backend)
 
 
 def get_kernel_version() -> str:
@@ -62,8 +79,8 @@ def show_splash(profile: dict) -> None:
     hostname = profile.get("hostname", "unknown-host")
     role = profile.get("role", "unknown-role")
     segment = profile.get("segment", "unknown-segment")
-    analyst_id = profile.get("analyst_id", "N/A")
-    edge_fw = profile.get("edge_firewall", "N/A")
+    analyst_id = get_analyst_id(profile)
+    firewall_display = get_firewall_display()
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -89,14 +106,31 @@ def show_splash(profile: dict) -> None:
         f"[dim]Build[/] [white]{BUILD_DATE}[/]"
     )
 
+    profile_lines = [
+        f"[bold white]Hostname:[/] {hostname}",
+        (
+            f"[bold white]Role:[/] {role}  [dim]|[/]  "
+            f"[bold white]Segment:[/] {segment}"
+        ),
+    ]
+
+    if analyst_id:
+        profile_lines.append(
+            f"[bold white]Analyst ID:[/] {analyst_id}"
+        )
+
+    profile_lines.extend(
+        [
+            f"[bold white]Firewall:[/] {firewall_display}",
+            (
+                f"[bold white]Kernel:[/] {kernel}  [dim]|[/]  "
+                f"[bold white]Uptime:[/] {uptime}"
+            ),
+        ]
+    )
+
     info_panel = Panel.fit(
-        f"[bold white]Hostname:[/] {hostname}\n"
-        f"[bold white]Role:[/] {role}  [dim]|[/]  "
-        f"[bold white]Segment:[/] {segment}\n"
-        f"[bold white]Analyst ID:[/] {analyst_id}  [dim]|[/]  "
-        f"[bold white]Firewall:[/] {edge_fw}\n"
-        f"[bold white]Kernel:[/] {kernel}  [dim]|[/]  "
-        f"[bold white]Uptime:[/] {uptime}",
+        "\n".join(profile_lines),
         title="[green]System Profile[/]",
         border_style="cyan",
         box=box.ROUNDED,
@@ -116,10 +150,22 @@ def show_splash(profile: dict) -> None:
         justify="center",
     )
 
-    console.print(Align.center("[cyan]────────────────────────────────────────────[/]"))
+    console.print(
+        Align.center(
+            "[cyan]────────────────────────────────────────────[/]"
+        )
+    )
 
-    console.print(Align.center(f"[italic white]{quote}[/]"))
+    console.print(
+        Align.center(
+            f"[italic white]{quote}[/]"
+        )
+    )
 
-    console.print(Align.center("[cyan]────────────────────────────────────────────[/]"))
+    console.print(
+        Align.center(
+            "[cyan]────────────────────────────────────────────[/]"
+        )
+    )
 
     time.sleep(1.5)

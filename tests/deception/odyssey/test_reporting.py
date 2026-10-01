@@ -72,7 +72,7 @@ def _event() -> OdysseyEvent:
 def _run_start(monkeypatch, manager: OdysseyManager) -> str:
     console = _capture(monkeypatch)
     answers = iter(["1", "0"])
-    monkeypatch.setattr(menu.Prompt, "ask", lambda *a, **k: next(answers))
+    monkeypatch.setattr(menu, "prompt_option", lambda *a, **k: next(answers))
 
     try:
         menu.run_odyssey_menu(manager)

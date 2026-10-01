@@ -12,14 +12,14 @@ from __future__ import annotations
 from rich import box
 from rich.markup import escape
 from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
+from rich.prompt import Confirm
 from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.deception.odyssey.manager import OdysseyManager, get_manager
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen, pause_return
+from erislite.ui.utils import clear_screen, pause_return, prompt_option
 
 
 def _header() -> None:
@@ -315,11 +315,7 @@ def run_odyssey_menu(manager: OdysseyManager | None = None) -> None:
 
         console.print(_build_menu(manager))
 
-        choice = Prompt.ask(
-            "\n[cyan]Select an option[/]",
-            choices=["0", "1", "2", "3", "4", "5"],
-            default="0",
-        )
+        choice = prompt_option()
 
         if choice == "0":
             break

@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: snapshot.py
 # Author: Liam Piper-Brandon
-# Version: 1.3.0
+# Version: 1.4.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-10-01
 # Description: Captures a system snapshot to a timestamped ErisLITE log.
 
 import os
@@ -18,7 +18,7 @@ from rich.panel import Panel
 
 from erislite.config.settings import SNAPSHOT_LOG_DIR
 from erislite.network.firewall import run_firewall_check
-from erislite.ui.utils import clear_screen, pause_return, show_header
+from erislite.ui.utils import clear_screen, get_analyst_id, pause_return, show_header
 
 console = Console()
 
@@ -53,7 +53,10 @@ def capture(profile: dict):
             f.write(f"Hostname: {hostname}\n")
             f.write(f"Role: {profile.get('role')}\n")
             f.write(f"Segment: {profile.get('segment')}\n")
-            f.write(f"Analyst ID: {profile.get('analyst_id')}\n")
+            analyst_id = get_analyst_id(profile)
+
+            if analyst_id:
+                f.write(f"Analyst ID: {analyst_id}\n")
 
             firewall = run_firewall_check(silent=True)
             firewall_status = firewall.get("status", "error")

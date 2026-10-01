@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: threat_sweep.py
 # Author: Liam Piper-Brandon
-# Version: 1.3.0
+# Version: 1.4.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-10-01
 # Description: Threat sweep orchestrator: runs selected modules, scores risk, and saves results.
 
 import json
@@ -28,7 +28,7 @@ from erislite.network import firewall, hosts, listeners
 from erislite.persistence import backdoors, cron, suid, world_writable
 from erislite.system import integrity, kernel_modules, processes
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen, pause_return
+from erislite.ui.utils import clear_screen, get_analyst_id, pause_return
 from erislite.vulnerability import cve_checker
 
 RISK_WEIGHTS = {
@@ -375,6 +375,10 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
 
         if status == "ok":
             return "[green]OK[/]"
+        if status == "review":
+            return "[cyan]REVIEW[/]"
+        if status == "info":
+            return "[cyan]INFO[/]"
         if status in ("warning", "issue"):
             return "[yellow]WARNING[/]"
         if status == "error":
@@ -412,7 +416,8 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
     percent = round((score / max_possible) * 100) if max_possible else 0
 
     info_present = any(
-        r.get("status", "").lower() == "ok" and r.get("details")
+        r.get("status", "").lower() in {"ok", "info", "review"}
+        and r.get("details")
         for r in results.values()
     )
 
@@ -716,13 +721,24 @@ def _save_sweep(results, sweep_profile, user_profile, changes):
 def _render_header(profile: dict, sweep_profile: str) -> None:
     hostname = profile.get("hostname", "unknown-host")
     role = profile.get("role", "unknown-role")
-    analyst_id = profile.get("analyst_id", "N/A")
+    analyst_id = get_analyst_id(profile)
+
+    metadata_parts = [
+        f"[dim]Host:[/] [white]{hostname}[/]",
+        f"[dim]Role:[/] [white]{role}[/]",
+    ]
+
+    if analyst_id:
+        metadata_parts.append(
+            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+        )
+
+    metadata_parts.append(
+        f"[dim]Profile:[/] [white]{sweep_profile.capitalize()}[/]"
+    )
 
     metadata = Text.from_markup(
-        f"[dim]Host:[/] [white]{hostname}[/]   "
-        f"[dim]Role:[/] [white]{role}[/]   "
-        f"[dim]Analyst:[/] [white]{analyst_id}[/]   "
-        f"[dim]Profile:[/] [white]{sweep_profile.capitalize()}[/]"
+        "   ".join(metadata_parts)
     )
 
     console.print(

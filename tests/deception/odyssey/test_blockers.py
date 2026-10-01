@@ -107,7 +107,7 @@ def test_menu_reentry_keeps_running_listeners(monkeypatch, shared_manager):
     monkeypatch.setattr(menu, "console", SimpleNamespace(print=lambda *a, **k: None))
  
     answers = iter(["1", "0"])
-    monkeypatch.setattr(menu.Prompt, "ask", lambda *a, **k: next(answers))
+    monkeypatch.setattr(menu, "prompt_option", lambda *a, **k: next(answers))
  
     menu.run_odyssey_menu()
  

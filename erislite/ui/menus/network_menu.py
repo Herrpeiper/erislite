@@ -1,22 +1,21 @@
 # Project: ErisLITE
 # Module: network_menu.py
 # Author: Liam Piper-Brandon
-# Version: 1.3.0
+# Version: 1.4.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-10-01
 # Description: Network tools menu.
 
 from rich import box
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.network import tools
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen
+from erislite.ui.utils import clear_screen, get_analyst_id, prompt_option
 
 
 def build_menu() -> Table:
@@ -49,15 +48,23 @@ def build_menu() -> Table:
 def run(profile: dict) -> None:
     hostname = profile.get("hostname", "unknown-host")
     role = profile.get("role", "unknown-role")
-    analyst_id = profile.get("analyst_id", "N/A")
+    analyst_id = get_analyst_id(profile)
 
     while True:
         clear_screen()
 
+        metadata_parts = [
+            f"[dim]Host:[/] [white]{hostname}[/]",
+            f"[dim]Role:[/] [white]{role}[/]",
+        ]
+
+        if analyst_id:
+            metadata_parts.append(
+                f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+            )
+
         metadata = Text.from_markup(
-            f"[dim]Host:[/] [white]{hostname}[/]   "
-            f"[dim]Role:[/] [white]{role}[/]   "
-            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+            "   ".join(metadata_parts)
         )
 
         header = Panel(
@@ -73,11 +80,8 @@ def run(profile: dict) -> None:
         console.print()
         console.print(build_menu())
 
-        choice = Prompt.ask(
-            "\n[cyan]Select an option[/]",
-            default="",
-            show_default=False,
-        ).strip()
+        choice = prompt_option()
+
 
         if choice == "1":
             tools.show_ips()

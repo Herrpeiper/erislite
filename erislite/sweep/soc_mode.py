@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: soc_mode.py
 # Author: Liam Piper-Brandon
-# Version: 1.3.0
+# Version: 1.4.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-10-01
 # Description: SOC Mode rolling snapshot and posture assessment.
 
 import json
@@ -16,7 +16,6 @@ from datetime import datetime
 
 from rich import box
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
@@ -32,7 +31,7 @@ from erislite.security.command_resolver import (
     resolve_command,
 )
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen, pause_return
+from erislite.ui.utils import clear_screen, pause_return, prompt_option
 
 WINDOW_MINUTES = 15
 EXPORT_DIR = SOC_LOG_DIR
@@ -78,6 +77,41 @@ def _run_cmd(cmd):
 
     except OSError:
         return 1, ""
+
+
+def discount_current_sudo_session(parsed: dict, privilege: dict) -> dict:
+    """
+    Remove the current ErisLITE sudo invocation from SOC activity counts.
+
+    When ErisLITE is launched through sudo, the invocation itself can appear
+    in the authentication journal as a sudo command and a root session.
+    Those events describe the current analyst session rather than separate
+    privilege-escalation activity.
+
+    Only one event of each applicable sudo signal is discounted so unrelated
+    sudo activity within the observation window remains visible.
+    """
+    normalized = dict(parsed)
+
+    if not privilege.get("elevated_via_sudo"):
+        return normalized
+
+    normalized["sudo_events"] = max(
+        0,
+        normalized.get("sudo_events", 0) - 1,
+    )
+
+    normalized["sudo_to_root"] = max(
+        0,
+        normalized.get("sudo_to_root", 0) - 1,
+    )
+
+    normalized["sudo_root_sessions"] = max(
+        0,
+        normalized.get("sudo_root_sessions", 0) - 1,
+    )
+
+    return normalized
 
 
 def _have_cmd(name):
@@ -425,6 +459,14 @@ def interactive_soc_mode():
         parsed = parse_logs(auth_source["lines"])
     else:
         parsed = parse_logs([])
+
+    privilege = get_current_privilege_state()
+
+    parsed = discount_current_sudo_session(
+        parsed,
+        privilege,
+    )
+
     status = compute_status(parsed, warning_count)
     score = compute_score(parsed, warning_count)
     attention = build_attention(parsed, warning_count)
@@ -432,7 +474,6 @@ def interactive_soc_mode():
     if not event_source_available or not warning_source_available:
         if status == "STABLE":
             status = "WATCH"
-    privilege = get_current_privilege_state()
     sweep_summary = load_latest_sweep_summary()
 
     if not event_source_available:
@@ -631,11 +672,7 @@ def interactive_soc_mode():
 
     console.print(menu)
 
-    choice = Prompt.ask(
-        "\n[cyan]Select an option[/]",
-        default="0",
-        show_default=False,
-    ).strip()
+    choice = prompt_option()
 
     if choice == "1":
         console.print()

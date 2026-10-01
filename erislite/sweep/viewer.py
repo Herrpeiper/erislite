@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: viewer.py
 # Author: Liam Piper-Brandon
-# Version: 1.3.0
+# Version: 1.4.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-10-01
 # Description: Threat sweep log viewer for browsing and inspecting saved sweep results.
 
 import json
@@ -12,7 +12,6 @@ import json
 from rich import box
 from rich.console import Group
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
@@ -24,7 +23,7 @@ from erislite.config.settings import (
 from erislite.response.guidance import get_guidance, has_guidance
 from erislite.sweep.threat_sweep import prioritize_findings
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen, pause_return
+from erislite.ui.utils import clear_screen, pause_return, prompt_option
 
 
 def _format_risk(data: dict) -> str:
@@ -286,11 +285,7 @@ def view_full_report():
 
     console.print(table)
 
-    choice = Prompt.ask(
-        "\n[cyan]Select a log[/]",
-        choices=[str(i) for i in range(1, len(logs) + 1)] + ["0"],
-        default="0",
-    )
+    choice = prompt_option()
 
     if choice == "0":
         return
@@ -454,6 +449,10 @@ def view_full_report():
 
         if status == "ok":
             status_text = "[green]OK[/]"
+        elif status == "review":
+            status_text = "[cyan]REVIEW[/]"
+        elif status == "info":
+            status_text = "[cyan]INFO[/]"
         elif status in ("warning", "issue"):
             status_text = "[yellow]WARNING[/]"
         elif status == "error":
@@ -497,11 +496,7 @@ def sweep_viewer_menu():
 
         console.print(menu)
 
-        choice = Prompt.ask(
-            "\n[cyan]Select an option[/]",
-            default="0",
-            show_default=False,
-        ).strip()
+        choice = prompt_option()
 
         if choice == "1":
             clear_screen()

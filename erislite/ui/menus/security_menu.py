@@ -1,17 +1,17 @@
 # Project: ErisLITE
 # Module: security_menu.py
 # Author: Liam Piper-Brandon
-# Version: 1.3.0
+# Version: 1.4.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-28
+# Last Updated: 2026-10-01
 # Description: Security tools menu with threat sweep and posture workflows.
 
 import json
+from datetime import datetime
 
 from rich import box
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
@@ -25,7 +25,7 @@ from erislite.response import rapid_response
 from erislite.sweep import soc_mode, threat_sweep, viewer
 from erislite.system import integrity, kernel_modules, processes, security_audit
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen, pause_return
+from erislite.ui.utils import clear_screen, get_analyst_id, pause_return, prompt_option
 from erislite.vulnerability import cve_checker
 
 
@@ -39,25 +39,81 @@ def get_last_sweep_summary():
         return None
 
 
-def _score_color(score: int) -> str:
-    if score == 0:
+def _score_color(percent: int) -> str:
+    if percent == 0:
         return "grey37"
-    if score <= 30:
+    if percent <= 30:
         return "green"
-    if score <= 70:
+    if percent <= 70:
         return "yellow"
     return "red"
+
+
+def _format_sweep_age(timestamp: str) -> str:
+    try:
+        sweep_time = datetime.fromisoformat(timestamp)
+    except (TypeError, ValueError):
+        return "Unknown"
+
+    age_seconds = int((datetime.now() - sweep_time).total_seconds())
+
+    if age_seconds < 0:
+        return "Just now"
+
+    if age_seconds < 60:
+        return "Just now"
+
+    minutes = age_seconds // 60
+
+    if minutes < 60:
+        return f"{minutes}m ago"
+
+    hours, minutes = divmod(minutes, 60)
+
+    if hours < 24:
+        if minutes:
+            return f"{hours}h {minutes}m ago"
+        return f"{hours}h ago"
+
+    days, hours = divmod(hours, 24)
+
+    if hours:
+        return f"{days}d {hours}h ago"
+
+    return f"{days}d ago"
+
+
+def _format_risk(summary: dict) -> tuple[str, int]:
+    score = summary.get("risk_score")
+    maximum = summary.get("risk_max")
+    percent = summary.get("risk_percent")
+
+    if score is None:
+        return "N/A", 0
+
+    if maximum is not None and percent is not None:
+        return f"{score}/{maximum} ({percent}%)", int(percent)
+
+    return str(score), 0
 
 
 def _render_header(profile: dict) -> None:
     hostname = profile.get("hostname", "unknown-host")
     role = profile.get("role", "unknown-role")
-    analyst_id = profile.get("analyst_id", "N/A")
+    analyst_id = get_analyst_id(profile)
+
+    metadata_parts = [
+        f"[dim]Host:[/] [white]{hostname}[/]",
+        f"[dim]Role:[/] [white]{role}[/]",
+    ]
+
+    if analyst_id:
+        metadata_parts.append(
+            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+        )
 
     metadata = Text.from_markup(
-        f"[dim]Host:[/] [white]{hostname}[/]   "
-        f"[dim]Role:[/] [white]{role}[/]   "
-        f"[dim]Analyst:[/] [white]{analyst_id}[/]"
+        "   ".join(metadata_parts)
     )
 
     console.print(
@@ -86,11 +142,12 @@ def _render_last_sweep(summary) -> None:
         console.print()
         return
 
-    score = int(summary.get("risk_score", 0))
+    risk_text, risk_percent = _format_risk(summary)
     profile_name = str(summary.get("profile", "unknown")).capitalize()
     timestamp = summary.get("timestamp", "Unknown")
+    sweep_age = _format_sweep_age(timestamp)
     tags = summary.get("tags", [])
-    color = _score_color(score)
+    color = _score_color(risk_percent)
 
     preview = ", ".join(tags[:3]) if tags else "None"
     if len(tags) > 3:
@@ -98,8 +155,9 @@ def _render_last_sweep(summary) -> None:
 
     body = (
         f"[dim]Profile:[/] [white]{profile_name}[/]   "
-        f"[dim]Risk:[/] [bold {color}]{score}/100[/]   "
-        f"[dim]Time:[/] [white]{timestamp}[/]\n"
+        f"[dim]Risk:[/] [bold {color}]{risk_text}[/]   "
+        f"[dim]Time:[/] [white]{timestamp}[/]   "
+        f"[dim]Age:[/] [cyan]{sweep_age}[/]\n"
         f"[dim]Tags:[/] [white]{len(tags)} indicators[/]   "
         f"[cyan]{preview}[/]"
     )
@@ -188,11 +246,7 @@ def _run_sweep_menu(profile: dict) -> None:
 
     console.print(table)
 
-    choice = Prompt.ask(
-        "\n[cyan]Select a profile[/]",
-        choices=["0", "1", "2", "3"],
-        default="2",
-    )
+    choice = prompt_option()
 
     if choice == "1":
         threat_sweep.run_sweep(profile, sweep_profile="quick")
@@ -218,15 +272,7 @@ def run(profile: dict) -> None:
             "[cyan]r[/] Rerun Last"
         )
 
-        choice = (
-            Prompt.ask(
-                "\n[cyan]Select an option[/]",
-                default="0",
-                show_default=False,
-            )
-            .strip()
-            .lower()
-        )
+        choice = prompt_option()
 
         if choice in ("0", "b"):
             break

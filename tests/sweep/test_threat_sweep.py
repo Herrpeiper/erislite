@@ -149,3 +149,23 @@ def test_unsupported_module_does_not_add_risk():
     assert score == 0
     assert breakdown["docker"] == 0
     assert max_score == 15
+
+
+def test_review_status_does_not_add_risk():
+    results = {
+        "cve": {
+            "status": "review",
+            "details": [
+                "1 version match detected"
+            ],
+            "tags": [
+                "cve_version_match"
+            ],
+        }
+    }
+
+    score, breakdown, max_score = calculate_risk_score(results)
+
+    assert score == 0
+    assert breakdown["cve"] == 0
+    assert max_score == 20

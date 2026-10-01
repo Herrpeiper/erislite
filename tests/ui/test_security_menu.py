@@ -13,6 +13,7 @@ New tools are appended. Existing numbers never move. These tests fail if a
 change renumbers an option that shipped in an earlier release.
 """
 
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -73,8 +74,51 @@ def test_menu_option_dispatches_to_expected_tool(monkeypatch, option, expected):
     monkeypatch.setattr(target_module, func_name, lambda *a, **k: called.append(option))
 
     answers = iter([option, "0"])
-    monkeypatch.setattr(security_menu.Prompt, "ask", lambda *a, **k: next(answers))
+    monkeypatch.setattr(security_menu, "prompt_option", lambda *a, **k: next(answers))
 
     security_menu.run({})
 
     assert called == [option]
+
+
+def test_format_risk_uses_profile_maximum_and_percent():
+    text, percent = security_menu._format_risk(
+        {
+            "risk_score": 15,
+            "risk_max": 95,
+            "risk_percent": 16,
+        }
+    )
+
+    assert text == "15/95 (16%)"
+    assert percent == 16
+
+
+def test_score_color_uses_percentage_not_raw_points():
+    assert security_menu._score_color(0) == "grey37"
+    assert security_menu._score_color(16) == "green"
+    assert security_menu._score_color(50) == "yellow"
+    assert security_menu._score_color(80) == "red"
+    
+
+def test_format_sweep_age_minutes(monkeypatch):
+    now = datetime.now()
+    timestamp = (now - timedelta(minutes=12)).isoformat(timespec="seconds")
+
+    age = security_menu._format_sweep_age(timestamp)
+
+    assert age in {"11m ago", "12m ago"}
+
+
+def test_format_sweep_age_hours():
+    timestamp = (
+        datetime.now() - timedelta(hours=2, minutes=15)
+    ).isoformat(timespec="seconds")
+
+    age = security_menu._format_sweep_age(timestamp)
+
+    assert age.startswith("2h")
+
+
+def test_format_sweep_age_invalid_timestamp():
+    assert security_menu._format_sweep_age("not-a-time") == "Unknown"

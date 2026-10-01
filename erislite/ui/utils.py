@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: utils.py
 # Author: Liam Piper-Brandon
-# Version: 1.3.0
+# Version: 1.4.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-10-01
 # Description: Shared UI utilities for screen control, headers, prompts, and platform detection.
 
 import json
@@ -16,6 +16,7 @@ from typing import Optional
 
 from rich import box
 from rich.panel import Panel
+from rich.prompt import Prompt
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
@@ -56,6 +57,7 @@ def clear_screen() -> None:
     except (CommandResolutionError, OSError):
         # Best-effort fallback if clear is unavailable.
         print("\033[2J\033[H]", end="")
+
 
 def show_header(
     title: str = "ERISLITE",
@@ -134,3 +136,25 @@ def export_json_log(
         )
 
     return filepath
+
+
+def get_analyst_id(profile: dict) -> Optional[str]:
+    value = profile.get("analyst_id")
+
+    if value is None or value == 0:
+        return None
+
+    analyst_id = str(value).strip()
+
+    if analyst_id.lower() in {"", "0", "none", "null", "n/a"}:
+        return None
+
+    return analyst_id
+
+def prompt_option(message: str = "Select an option") -> str:
+    """Display the standard ErisLITE cyan menu prompt."""
+    return Prompt.ask(
+        f"\n[cyan]{message}[/]",
+        default="",
+        show_default=False,
+    ).strip()

@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: menu.py
 # Author: Liam Piper-Brandon
-# Version: 1.3.0
+# Version: 1.4.1
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-09-26
+# Last Updated: 2026-10-01
 # Description: Rapid Response menu and workflow entry point.
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from typing import Dict, List
 
 from rich import box
 from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
+from rich.prompt import Confirm
 from rich.table import Table
 from rich.text import Text
 
@@ -30,7 +30,7 @@ from erislite.response.rapid_response.triage import (
 from erislite.response.rapid_response.undo import select_and_undo
 from erislite.response.rapid_response.utils import log_path, now
 from erislite.ui.console import console
-from erislite.ui.utils import clear_screen, get_os, pause_return
+from erislite.ui.utils import clear_screen, get_os, pause_return, prompt_option
 
 
 def _header(title: str, subtitle: str = "") -> None:
@@ -332,11 +332,7 @@ def run_rapid_response_menu() -> None:
 
         console.print(menu)
 
-        choice = Prompt.ask(
-            "\n[cyan]Select an option[/]",
-            choices=["0", "1", "2", "3"],
-            default="1",
-        )
+        choice = prompt_option()
 
         if choice == "1":
             run_rapid_response(dry_run=True)
