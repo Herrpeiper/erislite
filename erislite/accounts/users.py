@@ -16,6 +16,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -153,11 +154,7 @@ def run_user_scan(silent: bool = False):
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     flagged = []
     valid_shells = _load_valid_shells()
@@ -208,20 +205,16 @@ def run_user_scan(silent: bool = False):
 
     if silent:
         if not flagged:
-            return {
-                "status": "ok",
-                "details": [],
-                "tags": [],
-            }
+            return make_result("ok")
 
-        return {
-            "status": "warning",
-            "details": [
+        return make_result(
+            "warning",
+            details=[
                 f"{len(flagged)} account finding(s) across "
                 f"{len(unique_accounts)} account(s)"
             ],
-            "tags": sorted(tags),
-        }
+            tags=sorted(tags),
+        )
 
     clear_screen()
     _header()
@@ -239,11 +232,7 @@ def run_user_scan(silent: bool = False):
 
         pause_return()
 
-        return {
-            "status": "ok",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("ok")
 
     console.print(
         Panel.fit(
@@ -291,11 +280,11 @@ def run_user_scan(silent: bool = False):
 
     pause_return()
 
-    return {
-        "status": "warning",
-        "details": [
+    return make_result(
+        "warning",
+        details=[
             f"{len(flagged)} account finding(s) across "
             f"{len(unique_accounts)} account(s)"
         ],
-        "tags": sorted(tags),
-    }
+        tags=sorted(tags),
+    )
