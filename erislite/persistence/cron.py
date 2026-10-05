@@ -19,6 +19,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.security.command_resolver import (
     CommandResolutionError,
     resolve_command,
@@ -716,11 +717,7 @@ def run_cron_timer_scan(silent: bool = False):
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     errors = [
         entry
@@ -764,11 +761,11 @@ def run_cron_timer_scan(silent: bool = False):
     if errors:
         tags.append("cron_scan_incomplete")
 
-    result = {
-        "status": status,
-        "details": details,
-        "tags": tags,
-    }
+    result = make_result(
+        status,
+        details=details,
+        tags=tags,
+    )
 
     if silent:
         return result
