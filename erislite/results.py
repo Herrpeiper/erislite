@@ -15,6 +15,8 @@ from typing import Iterable, Optional
 
 VALID_STATUSES = {
     "ok",
+    "info",
+    "review",
     "warning",
     "issue",
     "error",
