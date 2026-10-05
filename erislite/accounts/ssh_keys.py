@@ -18,6 +18,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -200,11 +201,7 @@ def run_ssh_key_check(silent: bool = False):
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     entries, errors = find_authorized_keys()
 
@@ -252,14 +249,19 @@ def run_ssh_key_check(silent: bool = False):
     if errors:
         tags.add("ssh_keys_scan_incomplete")
 
-    result = {
-        "status": status,
-        "details": details,
-        "tags": sorted(tags),
-        "flagged": bool(findings),
-        "key_count": len(entries),
-        "user_count": len(users),
-    }
+    result = make_result(
+        status,
+        details=details,
+        tags=sorted(tags),
+    )
+
+    result.update(
+        {
+            "flagged": bool(findings),
+            "key_count": len(entries),
+            "user_count": len(users),
+        }
+    )
     if silent:
         return result
 
