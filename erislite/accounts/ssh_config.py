@@ -15,6 +15,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -102,23 +103,17 @@ def run_ssh_config_check(silent: bool = False):
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     config = parse_sshd_config()
 
     if config is None:
-        result = {
-            "status": "error",
-            "details": [
-                f"Unable to read {SSH_CONFIG_PATH}"
-            ],
-            "tags": ["ssh_config_unreadable"],
-            "findings": [],
-        }
+        result = make_result(
+            "error",
+            details=[f"Unable to read {SSH_CONFIG_PATH}"],
+            tags=["ssh_config_unreadable"],
+        )
+        result["findings"] = []
 
         if silent:
             return result
@@ -199,12 +194,12 @@ def run_ssh_config_check(silent: bool = False):
         if finding["status"] == "unset"
     )
 
-    result = {
-        "status": "warning" if issues else "ok",
-        "details": issues,
-        "tags": ["weak_ssh_config"] if issues else [],
-        "findings": findings,
-    }
+    result = make_result(
+        "warning" if issues else "ok",
+        details=issues,
+        tags=["weak_ssh_config"] if issues else [],
+    )
+    result["findings"] = findings
 
     if silent:
         return result
