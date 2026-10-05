@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.table import Table
 
 from erislite.config.settings import DEFAULT_COMMAND_TIMEOUT
+from erislite.results import make_result
 from erislite.security.command_resolver import (
     CommandResolutionError,
     resolve_command,
@@ -222,11 +223,11 @@ def _return_result(
     tags,
     silent,
 ):
-    result = {
-        "status": status,
-        "details": [detail],
-        "tags": tags,
-    }
+    result = make_result(
+        status,
+        details=[detail],
+        tags=tags,
+    )
 
     if silent:
         return result
