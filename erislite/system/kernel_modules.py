@@ -18,6 +18,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.security.command_resolver import (
     CommandResolutionError,
     resolve_command,
@@ -172,11 +173,7 @@ def run_kernel_module_check(
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     krel = _kernel_release()
     expected_prefix = (
@@ -188,11 +185,10 @@ def run_kernel_module_check(
     modules, collection_error = get_loaded_modules()
 
     if collection_error:
-        result = {
-            "status": "unsupported",
-            "details": [collection_error],
-            "tags": [],
-        }
+        result = make_result(
+            "unsupported",
+            details=[collection_error],
+        )
 
         if silent:
             return result
@@ -324,11 +320,11 @@ def run_kernel_module_check(
             )
 
     if silent:
-        return {
-            "status": "warning" if warn_state else "ok",
-            "details": issues,
-            "tags": sorted(tags),
-        }
+        return make_result(
+            "warning" if warn_state else "ok",
+            details=issues,
+            tags=sorted(tags),
+        )
 
     clear_screen()
     _header()
@@ -422,8 +418,8 @@ def run_kernel_module_check(
 
     pause_return()
 
-    return {
-        "status": "warning" if warn_state else "ok",
-        "details": issues,
-        "tags": sorted(tags),
-    }
+    return make_result(
+        "warning" if warn_state else "ok",
+        details=issues,
+        tags=sorted(tags),
+    )
