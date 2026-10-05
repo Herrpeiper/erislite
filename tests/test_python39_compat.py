@@ -1,5 +1,6 @@
 import ast
 from pathlib import Path
+from typing import Optional
 
 import pytest
 
@@ -11,7 +12,7 @@ PACKAGE_ROOT = Path(erislite.__file__).resolve().parent
 def _uses_pep604_annotation(tree: ast.AST) -> bool:
     """Return True when an annotation contains a PEP 604 ``|`` union."""
 
-    def contains_union(annotation: ast.AST | None) -> bool:
+    def contains_union(annotation: Optional[ast.AST]) -> bool:
         if annotation is None:
             return False
 
