@@ -20,6 +20,7 @@ from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
 from erislite.deception.odyssey.manager import active_canary_ports
+from erislite.results import make_result
 from erislite.security.command_resolver import resolve_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
@@ -106,11 +107,11 @@ def parse_listeners():
     """
     try:
         result = subprocess.run(
-        [resolve_command("ss"), "-tulnp"],
-        capture_output=True,
-        text=True,
-        timeout=DEFAULT_COMMAND_TIMEOUT,
-    )
+            [resolve_command("ss"), "-tulnp"],
+            capture_output=True,
+            text=True,
+            timeout=DEFAULT_COMMAND_TIMEOUT,
+        )
 
         flagged = []
         canary_ports = active_canary_ports()
@@ -207,11 +208,7 @@ def run_listener_scan(silent: bool = False):
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     flagged = parse_listeners()
 
@@ -223,27 +220,23 @@ def run_listener_scan(silent: bool = False):
 
     if silent:
         if not flagged:
-            return {
-                "status": "ok",
-                "details": [],
-                "tags": [],
-            }
+            return make_result("ok")
 
         if suspicious == 0:
-            return {
-                "status": "ok",
-                "details": [f"{len(flagged)} listener(s) detected (expected/exposure)"],
-                "tags": ["listener_exposure"],
-            }
+            return make_result(
+                "ok",
+                details=[f"{len(flagged)} listener(s) detected (expected/exposure)"],
+                tags=["listener_exposure"],
+            )
 
-        return {
-            "status": "warning",
-            "details": [
+        return make_result(
+            "warning",
+            details=[
                 f"{suspicious} suspicious listener(s) detected "
                 f"({len(flagged)} total notable)"
             ],
-            "tags": ["suspicious_listener"],
-        }
+            tags=["suspicious_listener"],
+        )
 
     clear_screen()
     _header()

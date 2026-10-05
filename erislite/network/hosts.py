@@ -16,6 +16,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -331,20 +332,16 @@ def run_hosts_check(silent: bool = False) -> dict:
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     flagged, errors, error_tags = scan_hosts()
 
     if errors:
-        result = {
-            "status": "error",
-            "details": errors,
-            "tags": error_tags,
-        }
+        result = make_result(
+            "error",
+            details=errors,
+            tags=error_tags,
+        )
 
         if silent:
             return result
@@ -381,11 +378,11 @@ def run_hosts_check(silent: bool = False) -> dict:
                 f"{finding['hostname']} — {reason}"
             )
 
-    result = {
-        "status": "warning" if flagged else "ok",
-        "details": details[:10] if silent else details,
-        "tags": sorted(all_tags),
-    }
+    result = make_result(
+        "warning" if flagged else "ok",
+        details=details[:10] if silent else details,
+        tags=sorted(all_tags),
+    )
 
     if silent:
         return result
