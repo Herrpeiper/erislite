@@ -18,6 +18,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -358,11 +359,7 @@ def run_process_scan(silent: bool = False) -> dict:
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     flagged, scan_errors = scan_processes()
 
@@ -392,11 +389,11 @@ def run_process_scan(silent: bool = False) -> dict:
         status = "ok"
         
     if silent:
-        return {
-            "status": status,
-            "details": details[:10],
-            "tags": sorted(all_tags),
-        }
+        return make_result(
+            status,
+            details=details[:10],
+            tags=sorted(all_tags),
+        )
 
     clear_screen()
     _header()
@@ -415,11 +412,7 @@ def run_process_scan(silent: bool = False) -> dict:
 
         pause_return()
 
-        return {
-            "status": "ok",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("ok")
 
     if scan_errors and not flagged:
         console.print(
@@ -438,11 +431,11 @@ def run_process_scan(silent: bool = False) -> dict:
     
         pause_return()
     
-        return {
-            "status": "error",
-            "details": details,
-            "tags": sorted(all_tags),
-        }
+        return make_result(
+            "error",
+            details=details,
+            tags=sorted(all_tags),
+        )
 
     finding_count = sum(len(finding["reasons"]) for finding in flagged)
 
@@ -512,8 +505,8 @@ def run_process_scan(silent: bool = False) -> dict:
 
     pause_return()
 
-    return {
-        "status": "warning",
-        "details": details,
-        "tags": sorted(all_tags),
-    }
+    return make_result(
+        "warning",
+        details=details,
+        tags=sorted(all_tags),
+    )
