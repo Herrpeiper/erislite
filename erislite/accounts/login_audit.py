@@ -17,6 +17,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
+from erislite.results import make_result
 from erislite.security.command_resolver import (
     CommandResolutionError,
     resolve_command,
@@ -176,6 +177,7 @@ def get_uid0_shells() -> Tuple[list[str], Optional[str]]:
     except OSError as exc:
         return [], f"Process inspection failed: {exc}"
 
+
 def run_login_audit(silent: bool = False) -> dict:
     if get_os() != "Linux":
         if not silent:
@@ -192,11 +194,7 @@ def run_login_audit(silent: bool = False) -> dict:
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     failed_logins, failed_error = get_failed_logins()
     recent_logins, recent_error = get_recent_logins()
@@ -212,17 +210,18 @@ def run_login_audit(silent: bool = False) -> dict:
         if error
     ]
 
-    results = {
-        "failed_logins": failed_logins,
-        "recent_logins": recent_logins,
-        "uid0_shells": uid0_shells,
-        "collection_errors": collection_errors,
-        "flagged": False,
-        "issues": [],
-        "status": "ok",
-        "details": [],
-        "tags": [],
-    }
+    results = make_result("ok")
+
+    results.update(
+        {
+            "failed_logins": failed_logins,
+            "recent_logins": recent_logins,
+            "uid0_shells": uid0_shells,
+            "collection_errors": collection_errors,
+            "flagged": False,
+            "issues": [],
+        }
+    )
 
     if len(results["failed_logins"]) > FAILED_LOGIN_THRESHOLD:
         results["flagged"] = True
