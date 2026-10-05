@@ -17,6 +17,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -413,11 +414,7 @@ def run_backdoor_check(
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     collected = scan_backdoors()
 
@@ -456,11 +453,11 @@ def run_backdoor_check(
     else:
         status = "ok"
 
-    result = {
-        "status": status,
-        "details": details[:10] if silent else details,
-        "tags": sorted(all_tags),
-    }
+    result = make_result(
+        status,
+        details=details[:10] if silent else details,
+        tags=sorted(all_tags),
+    )
 
     if silent:
         return result
