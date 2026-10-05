@@ -17,6 +17,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -235,11 +236,7 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     # Decide scan scope
     if full_scan:
@@ -404,11 +401,11 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
     else:
         status = "ok"
 
-    result = {
-        "status": status,
-        "details": details,
-        "tags": tags,
-    }
+    result = make_result(
+        status,
+        details=details,
+        tags=tags,
+    )
 
     if suspicious:
         result["preview"] = sorted(suspicious)[:MAX_PREVIEW]
