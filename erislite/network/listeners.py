@@ -254,11 +254,7 @@ def run_listener_scan(silent: bool = False):
 
         pause_return()
 
-        return {
-            "status": "ok",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("ok")
 
     console.print(
         Panel.fit(
@@ -313,17 +309,17 @@ def run_listener_scan(silent: bool = False):
     pause_return()
 
     if suspicious == 0:
-        return {
-            "status": "ok",
-            "details": [f"{len(flagged)} listener(s) detected (expected/exposure)"],
-            "tags": ["listener_exposure"],
-        }
+        return make_result(
+            "ok",
+            details=[f"{len(flagged)} listener(s) detected (expected/exposure)"],
+            tags=["listener_exposure"],
+        )
 
-    return {
-        "status": "warning",
-        "details": [
+    return make_result(
+        "warning",
+        details=[
             f"{suspicious} suspicious listener(s) detected "
             f"({len(flagged)} total notable)"
         ],
-        "tags": ["suspicious_listener"],
-    }
+        tags=["suspicious_listener"],
+    )

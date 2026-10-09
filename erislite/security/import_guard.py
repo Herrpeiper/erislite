@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 from typing import List
 
+from erislite.results import make_result
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 SENSITIVE_MODULE_NAMES = {
@@ -102,8 +104,8 @@ def check_import_environment() -> dict:
     issues.extend(check_sys_path())
     issues.extend(check_shadow_files())
 
-    return {
-        "status": "warning" if issues else "ok",
-        "details": issues,
-        "tags": ["import_environment_suspicious"] if issues else [],
-    }
+    return make_result(
+        "warning" if issues else "ok",
+        details=issues,
+        tags=["import_environment_suspicious"] if issues else [],
+    )
