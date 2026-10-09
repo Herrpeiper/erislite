@@ -17,10 +17,8 @@ from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.results import make_result
-from erislite.security.command_resolver import (
-    CommandResolutionError,
-    resolve_command,
-)
+from erislite.security.command_resolver import CommandResolutionError
+from erislite.security.command_runner import run_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -49,26 +47,10 @@ def _header() -> None:
     console.print()
 
 
-def _docker_available() -> bool:
-    try:
-        resolve_command("docker")
-    except CommandResolutionError:
-        return False
-
-    return True
-
-
 def get_running_containers():
     try:
-        docker = resolve_command("docker")
-    except CommandResolutionError:
-        return [], "Docker CLI is not available"
-
-    try:
-        result = subprocess.run(
-            [docker, "ps", "-q"],
-            capture_output=True,
-            text=True,
+        result = run_command(
+            ["docker", "ps", "-q"],
             timeout=10,
         )
 
@@ -81,21 +63,20 @@ def get_running_containers():
 
         return result.stdout.strip().splitlines(), None
 
+    except CommandResolutionError:
+        return [], "Docker CLI is not available"
+
     except subprocess.TimeoutExpired:
         return [], "docker ps timed out"
 
-    except Exception as exc:
+    except OSError as exc:
         return [], str(exc)
 
 
 def inspect_container(container_id: str):
     try:
-        docker = resolve_command("docker")
-
-        result = subprocess.run(
-            [docker, "inspect", container_id],
-            capture_output=True,
-            text=True,
+        result = run_command(
+            ["docker", "inspect", container_id],
             timeout=10,
         )
 
@@ -109,7 +90,13 @@ def inspect_container(container_id: str):
 
         return payload[0]
 
-    except Exception:
+    except (
+        CommandResolutionError,
+        subprocess.TimeoutExpired,
+        OSError,
+        json.JSONDecodeError,
+        IndexError,
+    ):
         return None
 
 

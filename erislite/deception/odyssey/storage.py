@@ -59,6 +59,7 @@ def _open_log_directory(path: Path) -> int:
 
         os.fchmod(dir_fd, _DIRECTORY_MODE)
     except BaseException:
+        # Close the descriptor on any failure before ownership is transferred.
         os.close(dir_fd)
         raise
 
@@ -97,6 +98,7 @@ def _open_event_log(dir_fd: int, name: str):
         os.fchmod(fd, _FILE_MODE)
         return os.fdopen(fd, "a", encoding="utf-8")
     except BaseException:
+        # fdopen() takes ownership only after successful validation.
         os.close(fd)
         raise
 

@@ -20,10 +20,8 @@ from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.results import make_result
-from erislite.security.command_resolver import (
-    CommandResolutionError,
-    resolve_command,
-)
+from erislite.security.command_resolver import CommandResolutionError
+from erislite.security.command_runner import run_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -120,7 +118,7 @@ def _file_owner(path: str) -> str:
     try:
         uid = os.stat(path).st_uid
         return pwd.getpwuid(uid).pw_name
-    except Exception:
+    except (OSError, KeyError):
         return "unknown"
 
 def _parse_system_crontab(path: str) -> List[Dict]:
@@ -298,20 +296,9 @@ def check_user_crontabs() -> List[Dict]:
     flagged = []
 
     try:
-        crontab = resolve_command("crontab")
-
-    except CommandResolutionError:
-        return [
-            _collection_error(
-                "user crontabs",
-                "crontab command is unavailable",
-            )
-        ]
-
-    try:
         users = pwd.getpwall()
 
-    except Exception as exc:
+    except OSError as exc:
         return [
             _collection_error(
                 "/etc/passwd",
@@ -324,15 +311,13 @@ def check_user_crontabs() -> List[Dict]:
             continue
 
         try:
-            result = subprocess.run(
+            result = run_command(
                 [
-                    crontab,
+                    "crontab",
                     "-l",
                     "-u",
                     user.pw_name,
                 ],
-                capture_output=True,
-                text=True,
                 timeout=5,
             )
 
@@ -384,6 +369,14 @@ def check_user_crontabs() -> List[Dict]:
                         }
                     )
 
+        except CommandResolutionError:
+            return [
+                _collection_error(
+                    "user crontabs",
+                    "crontab command is unavailable",
+                )
+            ]
+
         except subprocess.TimeoutExpired:
             flagged.append(
                 _collection_error(
@@ -392,34 +385,27 @@ def check_user_crontabs() -> List[Dict]:
                 )
             )
 
-        except Exception:
-            continue
+        except OSError as exc:
+            flagged.append(
+                _collection_error(
+                    f"crontab -u {user.pw_name}",
+                    f"Could not inspect user crontab: {exc}",
+                )
+            )
 
     return flagged
 
 
 def check_systemd_timers() -> List[Dict]:
     try:
-        systemctl = resolve_command("systemctl")
-    except CommandResolutionError:
-        return [
-            _collection_error(
-                "systemd timers",
-                "systemctl is unavailable",
-            )
-        ]
-
-    try:
-        result = subprocess.run(
+        result = run_command(
             [
-                systemctl,
+                "systemctl",
                 "list-timers",
                 "--all",
                 "--no-pager",
                 "--no-legend",
             ],
-            capture_output=True,
-            text=True,
             timeout=10,
         )
 
@@ -431,6 +417,14 @@ def check_systemd_timers() -> List[Dict]:
                     or f"systemctl list-timers exited with code {result.returncode}",
                 )
             ]
+
+    except CommandResolutionError:
+        return [
+            _collection_error(
+                "systemd timers",
+                "systemctl is unavailable",
+            )
+        ]
 
     except subprocess.TimeoutExpired:
         return [
@@ -457,7 +451,7 @@ def check_systemd_timers() -> List[Dict]:
             continue
 
         timer_match = re.search(
-            r"(\S+\.timer)\s+\S*\.service",
+            r"(\S+\.timer)\s+\S+\.service",
             line,
         )
 
@@ -476,9 +470,9 @@ def check_systemd_timers() -> List[Dict]:
             timer = candidates[0]
 
         try:
-            show = subprocess.run(
+            show = run_command(
                 [
-                    systemctl,
+                    "systemctl",
                     "show",
                     timer,
                     "-p",
@@ -486,8 +480,6 @@ def check_systemd_timers() -> List[Dict]:
                     "-p",
                     "Triggers",
                 ],
-                capture_output=True,
-                text=True,
                 timeout=5,
             )
 
@@ -515,9 +507,9 @@ def check_systemd_timers() -> List[Dict]:
                 if not service.endswith(".service"):
                     continue
 
-                service_result = subprocess.run(
+                service_result = run_command(
                     [
-                        systemctl,
+                        "systemctl",
                         "show",
                         service,
                         "-p",
@@ -525,8 +517,6 @@ def check_systemd_timers() -> List[Dict]:
                         "-p",
                         "ExecStart",
                     ],
-                    capture_output=True,
-                    text=True,
                     timeout=5,
                 )
 
@@ -567,7 +557,7 @@ def check_systemd_timers() -> List[Dict]:
                         uid = os.stat(service_path).st_uid
                         owner = pwd.getpwuid(uid).pw_name
                         user_owned = uid >= 1000
-                    except Exception:
+                    except (OSError, KeyError):
                         pass
 
                 if nonstandard_path:
@@ -588,7 +578,11 @@ def check_systemd_timers() -> List[Dict]:
                         }
                     )
 
-        except Exception:
+        except (
+            CommandResolutionError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ):
             continue
 
     return flagged
@@ -597,26 +591,14 @@ def check_windows_scheduled_tasks() -> List[Dict]:
     flagged = []
 
     try:
-        schtasks = resolve_command("schtasks")
-    except CommandResolutionError:
-        return [
-            _collection_error(
-                "Windows scheduled tasks",
-                "schtasks is unavailable",
-            )
-        ]
-
-    try:
-        result = subprocess.run(
+        result = run_command(
             [
-                schtasks,
+                "schtasks",
                 "/query",
                 "/fo",
                 "LIST",
                 "/v",
             ],
-            capture_output=True,
-            text=True,
             timeout=15,
         )
 
@@ -668,6 +650,14 @@ def check_windows_scheduled_tasks() -> List[Dict]:
                         "tags": tags,
                     }
                 )
+
+    except CommandResolutionError:
+        flagged.append(
+            _collection_error(
+                "Windows scheduled tasks",
+                "schtasks is unavailable",
+            )
+        )
 
     except subprocess.TimeoutExpired:
         flagged.append(

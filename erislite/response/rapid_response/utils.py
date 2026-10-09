@@ -18,6 +18,7 @@ from erislite.security.command_resolver import (
     CommandResolutionError,
     resolve_command,
 )
+from erislite.security.command_runner import run_command
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 LOG_DIR = REPO_ROOT / "data" / "logs" / "rapid_response"
@@ -37,12 +38,8 @@ def run_cmd(args: List[str], timeout: int = 10) -> Tuple[int, str, str]:
         return 1, "", "No command provided"
 
     try:
-        resolved = [resolve_command(args[0]), *args[1:]]
-
-        result = subprocess.run(
-            resolved,
-            capture_output=True,
-            text=True,
+        result = run_command(
+            args,
             timeout=timeout,
         )
 

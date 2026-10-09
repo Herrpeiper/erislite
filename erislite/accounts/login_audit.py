@@ -16,16 +16,13 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
+from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.results import make_result
-from erislite.security.command_resolver import (
-    CommandResolutionError,
-    resolve_command,
-)
+from erislite.security.command_resolver import CommandResolutionError
+from erislite.security.command_runner import run_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
-timeout = DEFAULT_COMMAND_TIMEOUT
 FAILED_LOGIN_THRESHOLD = 3
 
 ROOT_SHELLS = {
@@ -59,11 +56,8 @@ def get_failed_logins() -> Tuple[list[str], Optional[str]]:
     output = ""
 
     try:
-        result = subprocess.run(
-            [resolve_command("journalctl"), "-u", "ssh", "-n", "100"],
-            capture_output=True,
-            text=True,
-            timeout=DEFAULT_COMMAND_TIMEOUT,
+        result = run_command(
+            ["journalctl", "-u", "ssh", "-n", "100"],
         )
 
         if result.returncode == 0:
@@ -99,11 +93,8 @@ def get_failed_logins() -> Tuple[list[str], Optional[str]]:
 
 def get_recent_logins() -> Tuple[list[str], Optional[str]]:
     try:
-        result = subprocess.run(
-            [resolve_command("last"), "-n", "10"],
-            capture_output=True,
-            text=True,
-            timeout=DEFAULT_COMMAND_TIMEOUT,
+        result = run_command(
+            ["last", "-n", "10"],
         )
 
         if result.returncode != 0:
@@ -129,15 +120,12 @@ def get_recent_logins() -> Tuple[list[str], Optional[str]]:
 
 def get_uid0_shells() -> Tuple[list[str], Optional[str]]:
     try:
-        result = subprocess.run(
+        result = run_command(
             [
-                resolve_command("ps"),
+                "ps",
                 "-eo",
                 "uid=,pid=,tty=,comm=,args=",
             ],
-            capture_output=True,
-            text=True,
-            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
 
         if result.returncode != 0:

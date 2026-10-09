@@ -139,10 +139,7 @@ def find_suid_sgid() -> List[Dict]:
                         }
                     )
 
-            except (FileNotFoundError, PermissionError):
-                continue
-
-            except Exception:
+            except OSError:
                 continue
 
     return flagged

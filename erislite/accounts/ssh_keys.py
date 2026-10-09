@@ -8,6 +8,7 @@
 # Description: SSH authorized_keys enumeration across user home directories.
 
 import base64
+import binascii
 import hashlib
 import os
 import pwd
@@ -55,7 +56,7 @@ def _fingerprint(key_data: str) -> str:
         digest = hashlib.sha256(raw).digest()
         encoded = base64.b64encode(digest).decode().rstrip("=")
         return f"SHA256:{encoded[:20]}..."
-    except Exception:
+    except (binascii.Error, ValueError):
         return "Unavailable"
 
 
@@ -92,7 +93,7 @@ def find_authorized_keys():
     try:
         users = pwd.getpwall()
 
-    except Exception as exc:
+    except OSError as exc:
         errors.append(
             {
                 "path": "/etc/passwd",

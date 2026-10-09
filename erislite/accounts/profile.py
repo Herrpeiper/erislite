@@ -38,14 +38,14 @@ PROFILE_DEFAULTS = {
 def _unlock(path: Path) -> None:
     try:
         os.chmod(path, 0o644)
-    except Exception:
+    except OSError:
         pass
 
 
 def _lock(path: Path) -> None:
     try:
         os.chmod(path, 0o444)
-    except Exception:
+    except OSError:
         pass
 
 

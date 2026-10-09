@@ -186,16 +186,23 @@ def load_sweep_logs(limit=5):
             ) as file:
                 data = json.load(file)
 
-            logs.append(
-                (
-                    data.get("timestamp", "Unknown"),
-                    data,
-                    path.name,
-                )
-            )
-
-        except Exception:
+        except (
+            OSError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+        ):
             continue
+
+        if not isinstance(data, dict):
+            continue
+
+        logs.append(
+            (
+                data.get("timestamp", "Unknown"),
+                data,
+                path.name,
+            )
+        )
 
     logs.sort(
         key=lambda item: item[0],

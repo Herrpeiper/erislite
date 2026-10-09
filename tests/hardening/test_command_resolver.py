@@ -1,5 +1,3 @@
-import functools
-import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -47,36 +45,28 @@ def test_resolver_rejects_unknown_command():
         resolve_command("erislite-command-that-does-not-exist")
 
 
-
-
-def test_show_gateway_uses_trusted_ip_binary(monkeypatch, tmp_path):
-    fake_ip = _make_executable(tmp_path / "poisoned", "ip")
-    trusted_ip = _make_executable(tmp_path / "trusted", "ip")
-
-    monkeypatch.setenv("PATH", str(fake_ip.parent))
-    monkeypatch.setattr(
-        tools,
-        "resolve_command",
-        functools.partial(resolve_command, trusted_dirs=(trusted_ip.parent,)),
-    )
-    monkeypatch.setattr(tools, "clear_screen", lambda: None)
-    monkeypatch.setattr(tools, "pause_return", lambda: None)
-    monkeypatch.setattr(tools.platform, "system", lambda: "Linux")
-
+def test_show_gateway_uses_shared_command_runner(monkeypatch):
     captured = {}
 
-    def fake_run(args, **kwargs):
-        captured["args"] = args
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+
         return SimpleNamespace(
             returncode=0,
             stdout="default via 192.168.1.1 dev eth0\n",
             stderr="",
         )
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        tools,
+        "run_command",
+        fake_run,
+    )
+    monkeypatch.setattr(tools, "clear_screen", lambda: None)
+    monkeypatch.setattr(tools, "pause_return", lambda: None)
+    monkeypatch.setattr(tools.platform, "system", lambda: "Linux")
 
     tools.show_gateway()
 
-    assert captured["args"][0] != str(fake_ip)
-    assert captured["args"][0] == str(trusted_ip)
-    assert captured["args"][1:] == ["route"]
+    assert captured["command"] == ["ip", "route"]

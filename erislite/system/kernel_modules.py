@@ -19,10 +19,8 @@ from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.results import make_result
-from erislite.security.command_resolver import (
-    CommandResolutionError,
-    resolve_command,
-)
+from erislite.security.command_resolver import CommandResolutionError
+from erislite.security.command_runner import run_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -55,22 +53,24 @@ def _header() -> None:
 
 def _kernel_release() -> str:
     try:
-        result = subprocess.run(
-            [resolve_command("uname"), "-r"],
-            capture_output=True,
-            text=True,
+        result = run_command(
+            ["uname", "-r"],
             timeout=5,
         )
+
         return result.stdout.strip() if result.returncode == 0 else ""
-    except Exception:
+
+    except (
+        CommandResolutionError,
+        subprocess.TimeoutExpired,
+        OSError,
+    ):
         return ""
 
 def get_module_path(modname: str):
     try:
-        result = subprocess.run(
-            [resolve_command("modinfo"), "-n", modname],
-            capture_output=True,
-            text=True,
+        result = run_command(
+            ["modinfo", "-n", modname],
             timeout=5,
         )
 
@@ -98,15 +98,8 @@ def get_module_path(modname: str):
 
 def get_loaded_modules():
     try:
-        lsmod = resolve_command("lsmod")
-    except CommandResolutionError:
-        return [], "lsmod is not available on this system"
-
-    try:
-        result = subprocess.run(
-            [lsmod],
-            capture_output=True,
-            text=True,
+        result = run_command(
+            ["lsmod"],
             timeout=10,
         )
 
@@ -133,10 +126,13 @@ def get_loaded_modules():
 
         return modules, None
 
+    except CommandResolutionError:
+        return [], "lsmod is not available on this system"
+
     except subprocess.TimeoutExpired:
         return [], "lsmod timed out"
 
-    except Exception as exc:
+    except OSError as exc:
         return [], str(exc)
 
 def _status_text(flags) -> str:
@@ -233,7 +229,7 @@ def run_kernel_module_check(
             rogue.append(name)
 
             if (
-                path != "Unknown"
+                path is not None
                 and not path.startswith(expected_prefix)
             ):
                 flags.append("UnusualPath")

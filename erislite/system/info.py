@@ -58,7 +58,7 @@ def get_ram_info():
 def get_logged_in_users():
     try:
         return len(psutil.users())
-    except Exception:
+    except (OSError, psutil.Error):
         return 0
 
 

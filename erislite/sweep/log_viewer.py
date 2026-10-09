@@ -81,7 +81,7 @@ def view_snapshot_logs():
             content = f.read()
             console.print(Panel.fit(content, title="Snapshot Contents", padding=(1, 4)))
 
-    except Exception as e:
+    except OSError as e:
         console.print(f"[red]Error reading logs:[/] {e}")
 
     pause_return()

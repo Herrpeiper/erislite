@@ -81,7 +81,7 @@ def parse_sshd_config(path: str = SSH_CONFIG_PATH):
                 if key in SECURE_DEFAULTS:
                     found[key] = value
 
-    except Exception:
+    except OSError:
         return None
 
     return found

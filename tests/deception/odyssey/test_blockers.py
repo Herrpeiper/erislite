@@ -125,16 +125,20 @@ def test_active_canary_ports_tracks_running_state(shared_manager):
  
 def _fake_ss(monkeypatch, lines):
     header = "Netid State Recv-Q Send-Q Local Address:Port Peer Address:Port Process\n"
- 
-    monkeypatch.setattr(listeners, "resolve_command", lambda command: "/usr/bin/ss")
-    monkeypatch.setattr(
-        listeners.subprocess,
-        "run",
-        lambda *a, **k: SimpleNamespace(
+
+    def fake_run(command):
+        assert command == ["ss", "-tulnp"]
+
+        return SimpleNamespace(
             stdout=header + "\n".join(lines) + "\n",
             stderr="",
             returncode=0,
-        ),
+        )
+
+    monkeypatch.setattr(
+        listeners,
+        "run_command",
+        fake_run,
     )
  
  

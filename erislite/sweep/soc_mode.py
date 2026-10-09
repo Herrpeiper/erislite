@@ -22,7 +22,6 @@ from rich.text import Text
 from erislite.config.settings import (
     APP_NAME,
     APP_VERSION,
-    DEFAULT_COMMAND_TIMEOUT,
     LAST_SWEEP_FILE,
     SOC_LOG_DIR,
 )
@@ -30,6 +29,7 @@ from erislite.security.command_resolver import (
     CommandResolutionError,
     resolve_command,
 )
+from erislite.security.command_runner import run_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return, prompt_option
 
@@ -58,14 +58,7 @@ def _run_cmd(cmd):
         return 1, ""
 
     try:
-        resolved = [resolve_command(cmd[0]), *cmd[1:]]
-
-        result = subprocess.run(
-            resolved,
-            capture_output=True,
-            text=True,
-            timeout=DEFAULT_COMMAND_TIMEOUT,
-        )
+        result = run_command(cmd)
 
         return result.returncode, result.stdout
 

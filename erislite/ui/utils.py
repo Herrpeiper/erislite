@@ -19,14 +19,17 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
+from erislite.config.settings import (
+    APP_NAME,
+    APP_VERSION,
+    DEFAULT_COMMAND_TIMEOUT,
+)
 from erislite.security.command_resolver import (
     CommandResolutionError,
     resolve_command,
 )
 from erislite.ui.console import console
 
-timeout = DEFAULT_COMMAND_TIMEOUT
 
 def get_os() -> str:
     """
@@ -150,6 +153,7 @@ def get_analyst_id(profile: dict) -> Optional[str]:
         return None
 
     return analyst_id
+
 
 def prompt_option(message: str = "Select an option") -> str:
     """Display the standard ErisLITE cyan menu prompt."""

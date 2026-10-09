@@ -334,7 +334,14 @@ def _load_previous_comparable_sweep(
                 encoding="utf-8",
             ) as file:
                 data = json.load(file)
-        except Exception:
+        except (
+            OSError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+        ):
+            continue
+
+        if not isinstance(data, dict):
             continue
 
         if data.get("hostname") != hostname:
@@ -709,7 +716,7 @@ def _save_sweep(results, sweep_profile, user_profile, changes):
                 default=str,
             )
 
-    except Exception as exc:
+    except OSError as exc:
         console.print(
             f"[yellow]Warning: could not save sweep log: {exc}[/]"
         )

@@ -11,21 +11,19 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 
 from rich import box
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
+from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.deception.odyssey.manager import active_canary_ports
 from erislite.results import make_result
-from erislite.security.command_resolver import resolve_command
+from erislite.security.command_runner import run_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
-timeout = DEFAULT_COMMAND_TIMEOUT
 WHITELISTED_PROCS = {
     "sshd",
     "cupsd",
@@ -106,11 +104,8 @@ def parse_listeners():
         (proto, local_address, proc_name, flags, is_whitelisted)
     """
     try:
-        result = subprocess.run(
-            [resolve_command("ss"), "-tulnp"],
-            capture_output=True,
-            text=True,
-            timeout=DEFAULT_COMMAND_TIMEOUT,
+        result = run_command(
+            ["ss", "-tulnp"],
         )
 
         flagged = []

