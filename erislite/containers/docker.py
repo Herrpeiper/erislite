@@ -16,6 +16,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.security.command_resolver import (
     CommandResolutionError,
     resolve_command,
@@ -177,20 +178,15 @@ def run_docker_scan(silent: bool = False):
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     containers, collection_error = get_running_containers()
 
     if collection_error:
-        result = {
-            "status": "unsupported",
-            "details": [collection_error],
-            "tags": [],
-        }
+        result = make_result(
+            "unsupported",
+            details=[collection_error],
+        )
 
         if silent:
             return result
@@ -252,11 +248,11 @@ def run_docker_scan(silent: bool = False):
         else "ok"
     )
 
-    result = {
-        "status": status,
-        "details": details,
-        "tags": sorted(tags),
-    }
+    result = make_result(
+        status,
+        details=details,
+        tags=sorted(tags),
+    )
 
     if silent:
         return result
