@@ -26,6 +26,7 @@ from erislite.config.settings import (
 from erislite.containers import docker
 from erislite.network import firewall, hosts, listeners
 from erislite.persistence import backdoors, cron, suid, world_writable
+from erislite.results import make_result
 from erislite.system import integrity, kernel_modules, processes
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_analyst_id, pause_return
@@ -222,15 +223,11 @@ def run_sweep(user_profile, sweep_profile="standard"):
         results["firewall"] = firewall.run_firewall_check(silent=True)
 
     except Exception as exc:
-        results["firewall"] = {
-            "status": "error",
-            "details": [
-                f"Firewall check failed: {exc}"
-            ],
-            "tags": [
-                "firewall_check_failed"
-            ],
-        }
+        results["firewall"] = make_result(
+            "error",
+            details=[f"Firewall check failed: {exc}"],
+            tags=["firewall_check_failed"],
+        )
 
     hostname = user_profile.get(
         "hostname",
