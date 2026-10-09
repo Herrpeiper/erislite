@@ -25,6 +25,7 @@ from erislite.config.settings import (
     APP_VERSION,
     INTEGRITY_BASELINE_FILE,
 )
+from erislite.results import make_result
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return, prompt_option
 
@@ -112,13 +113,11 @@ def check_baseline_integrity(profile: str = "critical") -> dict:
     baseline_path = get_baseline_path(profile)
 
     if not os.path.exists(baseline_path):
-        return {
-            "status": "error",
-            "details": [
-                f"{profile.capitalize()} baseline file missing"
-            ],
-            "tags": ["baseline_missing"],
-        }
+        return make_result(
+            "error",
+            details=[f"{profile.capitalize()} baseline file missing"],
+            tags=["baseline_missing"],
+        )
 
     try:
         with open(
@@ -178,20 +177,18 @@ def check_baseline_integrity(profile: str = "critical") -> dict:
                 "Baseline contents do not match recorded monitored files"
             )
 
-        return {
-            "status": "warning" if issues else "ok",
-            "details": issues,
-            "tags": ["baseline_tamper"] if issues else [],
-        }
+        return make_result(
+            "warning" if issues else "ok",
+            details=issues,
+            tags=["baseline_tamper"] if issues else [],
+        )
 
     except Exception as e:
-        return {
-            "status": "error",
-            "details": [
-                f"Failed to validate baseline integrity: {e}"
-            ],
-            "tags": ["baseline_check_error"],
-        }
+        return make_result(
+            "error",
+            details=[f"Failed to validate baseline integrity: {e}"],
+            tags=["baseline_check_error"],
+        )
 
 def scan_for_copies(baseline: dict):
     shady_locations = [
@@ -386,11 +383,7 @@ def scan_integrity(
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     baseline_path = get_baseline_path(profile)
 
@@ -417,13 +410,11 @@ def scan_integrity(
 
             pause_return()
 
-        return {
-            "status": "error",
-            "details": [
-                f"{profile.capitalize()} baseline file missing"
-            ],
-            "tags": ["baseline_missing"],
-        }
+        return make_result(
+            "error",
+            details=[f"{profile.capitalize()} baseline file missing"],
+            tags=["baseline_missing"],
+        )
 
     baseline_check = check_baseline_integrity(profile)
 
@@ -467,34 +458,29 @@ def scan_integrity(
         )
 
     except Exception as e:
-        return {
-            "status": "error",
-            "details": [
-                f"Unable to load baseline: {e}"
-            ],
-            "tags": ["file_integrity_issue"],
-        }
+        return make_result(
+            "error",
+            details=[f"Unable to load baseline: {e}"],
+            tags=["file_integrity_issue"],
+        )
 
     targets, target_errors = _collect_targets(profile)
 
     if not targets:
         if target_errors:
-            return {
-                "status": "error",
-                "details": [
+            return make_result(
+                "error",
+                details=[
                     f"Integrity target collection incomplete: {error}"
                     for error in target_errors
                 ],
-                "tags": ["integrity_scan_incomplete"],
-            }
+                tags=["integrity_scan_incomplete"],
+            )
 
-        return {
-            "status": "ok",
-            "details": [
-                "No files found for selected profile"
-            ],
-            "tags": [],
-        }
+        return make_result(
+            "ok",
+            details=["No files found for selected profile"],
+        )
 
     rows = []
     issues = []
@@ -585,15 +571,15 @@ def scan_integrity(
     else:
         status = "ok"
 
-    result = {
-        "status": status,
-        "details": issues
+    result = make_result(
+        status,
+        details=issues
         + [
             f"Integrity inspection incomplete: {error}"
             for error in scan_errors
         ],
-        "tags": tags,
-    }
+        tags=tags,
+    )
 
     if silent:
         return result
