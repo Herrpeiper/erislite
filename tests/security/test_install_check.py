@@ -24,17 +24,18 @@ def test_foreign_owned_file_is_reported(monkeypatch, tmp_path):
     real_lstat = os.lstat
 
     class Fake:
-        def __init__(self, info):
+        def __init__(self, info, uid):
             self._info = info
+            self.st_uid = uid
 
         def __getattr__(self, name):
             return getattr(self._info, name)
 
-        st_uid = 1000
-
     def fake_lstat(path, *args, **kwargs):
+        # Report everything as root-owned except the planted module, so the
+        # test gives the same answer as root and as an unprivileged CI user.
         info = real_lstat(path, *args, **kwargs)
-        return Fake(info) if os.fspath(path) == os.fspath(module) else info
+        return Fake(info, 1000 if os.fspath(path) == os.fspath(module) else 0)
 
     monkeypatch.setattr(install_check.os, "lstat", fake_lstat)
     monkeypatch.setattr(install_check, "_ancestor_issues", lambda root, uids: [])
