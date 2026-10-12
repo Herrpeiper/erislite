@@ -8,7 +8,6 @@ on:
   pull_request:
     branches:
       - main
-      - dev/**
 
 permissions:
   contents: read
@@ -42,7 +41,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-          python -m pip install pytest ruff
+          python -m pip install pytest pytest-cov ruff
 
       - name: Compile Python sources
         run: python -m compileall -q erislite main.py
@@ -50,5 +49,8 @@ jobs:
       - name: Lint with Ruff
         run: ruff check .
 
+      - name: Check formatting
+        run: ruff format --check .
+
       - name: Run tests
-        run: python -m pytest -q
+        run: python -m pytest -q --cov=erislite --cov-report=term --cov-fail-under=43
