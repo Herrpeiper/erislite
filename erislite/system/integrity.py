@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: integrity.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: SHA-256 file integrity baseline creation and change detection.
 
 import glob
@@ -26,6 +26,7 @@ from erislite.config.settings import (
     INTEGRITY_BASELINE_FILE,
 )
 from erislite.results import make_result
+from erislite.security.safe_io import write_private_json
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return, prompt_option
 
@@ -286,17 +287,7 @@ def create_baseline(profile: str = "critical") -> None:
         "hashes": baseline,
     }
 
-    os.makedirs(
-        os.path.dirname(baseline_path),
-        exist_ok=True,
-    )
-
-    with open(
-        baseline_path,
-        "w",
-        encoding="utf-8",
-    ) as file:
-        json.dump(payload, file, indent=2)
+    write_private_json(baseline_path, payload)
 
     console.print(
         Panel.fit(

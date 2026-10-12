@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: tools.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Network utilities: addressing, DNS, diagnostics, WHOIS, and connections.
 
 import os
@@ -23,6 +23,7 @@ from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION, NETWORK_LOG_DIR
 from erislite.security.command_runner import run_command
+from erislite.security.safe_io import write_private_text
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
@@ -269,14 +270,10 @@ def show_active_connections() -> None:
         )
 
         if save == "y":
-            log_dir = NETWORK_LOG_DIR
-            os.makedirs(log_dir, exist_ok=True)
-
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(log_dir, f"network_connections_{timestamp}.log")
+            filename = os.path.join(NETWORK_LOG_DIR, f"network_connections_{timestamp}.log")
 
-            with open(filename, "w", encoding="utf-8") as file:
-                file.write(result.stdout)
+            write_private_text(filename, result.stdout)
 
             console.print(f"[green]Snapshot saved:[/] {filename}")
 

@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: soc_mode.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: SOC Mode rolling snapshot and posture assessment.
 
 import json
@@ -30,6 +30,7 @@ from erislite.security.command_resolver import (
     resolve_command,
 )
 from erislite.security.command_runner import run_command
+from erislite.security.safe_io import write_private_json
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return, prompt_option
 
@@ -459,11 +460,9 @@ def build_attention(parsed, warning_count):
 
 # Export function
 def export_snapshot(snapshot):
-    os.makedirs(EXPORT_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = os.path.join(EXPORT_DIR, f"soc_snapshot_{ts}.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(snapshot, f, indent=2)
+    write_private_json(path, snapshot)
     return path
 
 def load_latest_sweep_summary():

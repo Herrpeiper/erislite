@@ -27,12 +27,14 @@ because no other user can create one. This keeps system layouts such as
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import secrets
 import stat
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Iterator, List, Optional, Tuple, Union
 
 PathLike = Union[str, Path]
 
@@ -169,13 +171,28 @@ def write_private_bytes(
     return path
 
 
-def write_private_text(path: PathLike, text: str) -> Path:
-    return write_private_bytes(path, text.encode("utf-8"))
+def write_private_text(path: PathLike, text: str, mode: int = FILE_MODE) -> Path:
+    return write_private_bytes(path, text.encode("utf-8"), mode=mode)
 
 
-def write_private_json(path: PathLike, data: Any, **dump_kwargs: Any) -> Path:
+def write_private_json(
+    path: PathLike,
+    data: Any,
+    *,
+    mode: int = FILE_MODE,
+    **dump_kwargs: Any,
+) -> Path:
     dump_kwargs.setdefault("indent", 2)
-    return write_private_text(path, json.dumps(data, **dump_kwargs))
+    return write_private_text(path, json.dumps(data, **dump_kwargs), mode=mode)
+
+
+@contextmanager
+def private_text_writer(path: PathLike) -> Iterator[io.StringIO]:
+    """Buffer text and write it with write_private_text when the block exits cleanly."""
+
+    buffer = io.StringIO()
+    yield buffer
+    write_private_text(path, buffer.getvalue())
 
 
 def read_regular_bytes(path: PathLike) -> bytes:

@@ -1,13 +1,12 @@
 # Project: ErisLITE
 # Module: snapshot.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Captures a system snapshot to a timestamped ErisLITE log.
 
-import os
 import platform
 import socket
 import subprocess
@@ -21,6 +20,7 @@ from erislite.config.settings import SNAPSHOT_LOG_DIR
 from erislite.network.firewall import run_firewall_check
 from erislite.security.command_resolver import CommandResolutionError
 from erislite.security.command_runner import run_command
+from erislite.security.safe_io import private_text_writer
 from erislite.ui.utils import clear_screen, get_analyst_id, pause_return, show_header
 
 console = Console()
@@ -49,9 +49,7 @@ def capture(profile: dict):
     filename = f"{log_dir}/{hostname}_snapshot_{timestamp}.txt"
 
     try:
-        os.makedirs(log_dir, exist_ok=True)
-
-        with open(filename, "w", encoding="utf-8") as f:
+        with private_text_writer(filename) as f:
             # Session Header
             f.write(f"Timestamp: {timestamp}\n")
             f.write(f"Hostname: {hostname}\n")
