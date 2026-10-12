@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: processes.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Process anomaly inspection for suspicious paths and execution context.
 
 import os
@@ -154,10 +154,7 @@ def _is_deleted(proc) -> Tuple[bool, Optional[str]]:
         if not exe:
             return False, None
 
-        deleted = (
-            exe.endswith(" (deleted)")
-            or not os.path.exists(exe.replace(" (deleted)", ""))
-        )
+        deleted = exe.endswith(" (deleted)") or not os.path.exists(exe.replace(" (deleted)", ""))
 
         return deleted, None
 
@@ -214,9 +211,7 @@ def scan_processes():
     errors = []
 
     try:
-        processes = psutil.process_iter(
-            ["pid", "name", "uids", "cmdline", "ppid"]
-        )
+        processes = psutil.process_iter(["pid", "name", "uids", "cmdline", "ppid"])
     except (
         psutil.Error,
         OSError,
@@ -246,9 +241,7 @@ def scan_processes():
         is_kernel, kernel_error = _is_kernel_thread(proc)
 
         if kernel_error:
-            errors.append(
-                f"PID {pid}: kernel-thread inspection failed: {kernel_error}"
-            )
+            errors.append(f"PID {pid}: kernel-thread inspection failed: {kernel_error}")
 
         if is_kernel:
             continue
@@ -259,32 +252,24 @@ def scan_processes():
         if uid == 0 and exe:
             for bad_path in SUSPICIOUS_SPAWN_PATHS:
                 if exe.startswith(bad_path):
-                    reasons.append(
-                        f"Root process spawned from {bad_path}"
-                    )
+                    reasons.append(f"Root process spawned from {bad_path}")
                     tags.add("proc_root_suspicious_path")
                     break
 
         deleted, deleted_error = _is_deleted(proc)
 
         if deleted_error:
-            errors.append(
-                f"PID {pid}: executable inspection failed: {deleted_error}"
-            )
+            errors.append(f"PID {pid}: executable inspection failed: {deleted_error}")
 
         if deleted:
-            reasons.append(
-                "Executable deleted from disk while process remains active"
-            )
+            reasons.append("Executable deleted from disk while process remains active")
             tags.add("proc_deleted_exe")
 
         lowered_cmdline = cmdline.lower()
 
         for bad in KNOWN_BAD_NAMES:
             if bad in base_name or bad in lowered_cmdline:
-                reasons.append(
-                    f"Matches known offensive tool name: {bad}"
-                )
+                reasons.append(f"Matches known offensive tool name: {bad}")
                 tags.add("proc_known_bad")
                 break
 
@@ -294,37 +279,22 @@ def scan_processes():
             and name not in WHITELISTED_ROOT_PROCS
             and base_name not in WHITELISTED_ROOT_PROCS
         ):
-            suspicious_args = any(
-                token in lowered_cmdline
-                for token in SUSPICIOUS_INTERPRETER_ARGS
-            )
+            suspicious_args = any(token in lowered_cmdline for token in SUSPICIOUS_INTERPRETER_ARGS)
 
-            suspicious_path = any(
-                exe.startswith(path)
-                for path in SUSPICIOUS_SPAWN_PATHS
-            )
+            suspicious_path = any(exe.startswith(path) for path in SUSPICIOUS_SPAWN_PATHS)
 
             if suspicious_args or suspicious_path:
                 reasons.append(
-                    "Privileged interpreter with suspicious "
-                    f"execution context: {base_name}"
+                    f"Privileged interpreter with suspicious execution context: {base_name}"
                 )
                 tags.add("proc_root_interpreter")
 
         if name.startswith("."):
-            reasons.append(
-                f"Process name starts with dot: {name}"
-            )
+            reasons.append(f"Process name starts with dot: {name}")
             tags.add("proc_hidden_name")
 
-        if (
-            uid == 0
-            and not exe
-            and name not in WHITELISTED_ROOT_PROCS
-        ):
-            reasons.append(
-                "Root process with no resolvable executable path"
-            )
+        if uid == 0 and not exe and name not in WHITELISTED_ROOT_PROCS:
+            reasons.append("Root process with no resolvable executable path")
             tags.add("proc_no_exe")
 
         if reasons:
@@ -375,10 +345,7 @@ def run_process_scan(silent: bool = False) -> dict:
     ]
 
     if scan_errors:
-        details.extend(
-            f"Process inspection incomplete: {error}"
-            for error in scan_errors[:10]
-        )
+        details.extend(f"Process inspection incomplete: {error}" for error in scan_errors[:10])
         all_tags.add("process_scan_incomplete")
 
     if flagged:
@@ -387,7 +354,7 @@ def run_process_scan(silent: bool = False) -> dict:
         status = "error"
     else:
         status = "ok"
-        
+
     if silent:
         return make_result(
             status,
@@ -425,12 +392,12 @@ def run_process_scan(silent: bool = False) -> dict:
                 box=box.ROUNDED,
             )
         )
-    
+
         for error in scan_errors[:10]:
             console.print(f"  [yellow]•[/] {error}")
-    
+
         pause_return()
-    
+
         return make_result(
             "error",
             details=details,
@@ -477,21 +444,18 @@ def run_process_scan(silent: bool = False) -> dict:
 
     console.print(table)
     console.print()
-    
+
     if scan_errors:
         console.print(
             Panel.fit(
-                "\n".join(
-                    f"[yellow]{error}[/]"
-                    for error in scan_errors[:10]
-                ),
+                "\n".join(f"[yellow]{error}[/]" for error in scan_errors[:10]),
                 title="[bold yellow]COLLECTION WARNING[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
             )
         )
         console.print()
-    
+
     console.print(
         Panel.fit(
             f"[yellow]{len(flagged)} process(es) require review.[/]\n"

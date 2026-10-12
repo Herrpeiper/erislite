@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: scan.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Network listener scan and structured network discovery.
 
 from __future__ import annotations
@@ -211,11 +211,9 @@ def get_network_listeners_data() -> Dict[str, Any]:
 
     except CommandResolutionError:
         response["status"] = "error"
-        response["errors"].append(
-            "The 'ss' utility was not found on this system."
-        )
+        response["errors"].append("The 'ss' utility was not found on this system.")
         return response
-        
+
     except subprocess.TimeoutExpired:
         response["status"] = "error"
         response["errors"].append("Listener scan timed out after 15 seconds.")

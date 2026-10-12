@@ -1,40 +1,33 @@
 # Project: ErisLITE
 # Module: guidance.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Analyst response guidance for threat findings.
 
 DEFAULT_GUIDANCE = {
     "severity": "unknown",
     "summary": "No response guidance is currently available.",
     "investigate": [],
-    "recommendation": (
-        "Review the underlying module findings manually before making changes."
-    ),
+    "recommendation": ("Review the underlying module findings manually before making changes."),
 }
 
 
 RESPONSE_GUIDANCE = {
     "uid0_clone": {
         "severity": "high",
-        "summary": (
-            "A non-root account has UID 0 and therefore has "
-            "root-equivalent privileges."
-        ),
+        "summary": ("A non-root account has UID 0 and therefore has root-equivalent privileges."),
         "investigate": [
             "awk -F: '$3 == 0 {print}' /etc/passwd",
             "getent passwd",
             "last",
         ],
         "recommendation": (
-            "Verify whether the account is authorized before disabling "
-            "or modifying it."
+            "Verify whether the account is authorized before disabling or modifying it."
         ),
     },
-
     "backdoor_ld_preload": {
         "severity": "critical",
         "summary": (
@@ -52,7 +45,6 @@ RESPONSE_GUIDANCE = {
             "the preload configuration."
         ),
     },
-
     "proc_deleted_exe": {
         "severity": "high",
         "summary": (
@@ -69,7 +61,6 @@ RESPONSE_GUIDANCE = {
             "before terminating it."
         ),
     },
-
     "proc_root_suspicious_path": {
         "severity": "high",
         "summary": (
@@ -81,11 +72,8 @@ RESPONSE_GUIDANCE = {
             "ls -l /proc/<PID>/exe",
             "cat /proc/<PID>/cmdline",
         ],
-        "recommendation": (
-            "Validate the process and its parent chain before stopping it."
-        ),
+        "recommendation": ("Validate the process and its parent chain before stopping it."),
     },
-
     "suspicious_cron": {
         "severity": "high",
         "summary": (
@@ -97,42 +85,30 @@ RESPONSE_GUIDANCE = {
             "ls -la /etc/cron.d /etc/cron.daily /etc/cron.hourly",
             "systemctl list-timers --all",
         ],
-        "recommendation": (
-            "Confirm the task owner and purpose before disabling or deleting it."
-        ),
+        "recommendation": ("Confirm the task owner and purpose before disabling or deleting it."),
     },
-
     "unauthorized_key": {
         "severity": "high",
-        "summary": (
-            "An unexpected SSH authorized key may provide persistent remote access."
-        ),
+        "summary": ("An unexpected SSH authorized key may provide persistent remote access."),
         "investigate": [
             "find /root /home -name authorized_keys -type f -print",
             "grep -R '' /root/.ssh /home/*/.ssh 2>/dev/null",
             "last",
         ],
-        "recommendation": (
-            "Verify the key owner and authorization before removing the key."
-        ),
+        "recommendation": ("Verify the key owner and authorization before removing the key."),
     },
-
     "firewall_disabled": {
         "severity": "medium",
-        "summary": (
-            "No active host firewall was detected, increasing network exposure."
-        ),
+        "summary": ("No active host firewall was detected, increasing network exposure."),
         "investigate": [
             "ufw status verbose",
             "iptables -S",
             "nft list ruleset",
         ],
         "recommendation": (
-            "Determine the intended firewall platform and policy before enabling "
-            "or changing rules."
+            "Determine the intended firewall platform and policy before enabling or changing rules."
         ),
     },
-
     "hosts_critical_redirect": {
         "severity": "high",
         "summary": (
@@ -149,7 +125,6 @@ RESPONSE_GUIDANCE = {
             "before editing /etc/hosts."
         ),
     },
-
     "suspicious_listener": {
         "severity": "high",
         "summary": (
@@ -166,7 +141,6 @@ RESPONSE_GUIDANCE = {
             "purpose before stopping the process or blocking the port."
         ),
     },
-
     "firewall_ip_empty": {
         "severity": "medium",
         "summary": (
@@ -183,12 +157,10 @@ RESPONSE_GUIDANCE = {
             "intended policy before adding or changing firewall rules."
         ),
     },
-
     "weak_ssh_config": {
         "severity": "high",
         "summary": (
-            "One or more effective SSH server settings differ from the "
-            "ErisLITE hardening baseline."
+            "One or more effective SSH server settings differ from the ErisLITE hardening baseline."
         ),
         "investigate": [
             "sshd -T",
@@ -201,7 +173,6 @@ RESPONSE_GUIDANCE = {
             "before reloading the SSH service."
         ),
     },
-
     "firewall_ufw_inactive": {
         "severity": "medium",
         "summary": (
@@ -218,7 +189,6 @@ RESPONSE_GUIDANCE = {
             "before enabling UFW or changing its rules."
         ),
     },
-
     "firewall_permission_denied": {
         "severity": "medium",
         "summary": (
@@ -236,7 +206,6 @@ RESPONSE_GUIDANCE = {
             "concluding that the firewall is disabled or misconfigured."
         ),
     },
-
     "firewall_check_failed": {
         "severity": "medium",
         "summary": (

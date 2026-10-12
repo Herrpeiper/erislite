@@ -105,6 +105,7 @@ def test_listener_start_is_idempotent():
     finally:
         listener.stop()
 
+
 def test_listener_survives_callback_failure():
     port = _get_free_port()
     calls = []

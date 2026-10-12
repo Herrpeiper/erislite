@@ -6,6 +6,66 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [1.5.0] - Unreleased
+
+### Security
+
+- As root, ErisLITE refuses to run when its install tree, a directory above it or its data directory can be modified by another account, or when an import directory is not root-controlled. A user-owned clone run with sudo turned that user's compromise into root. `--allow-unsafe-install` overrides the check for one run
+- A suspicious Python import environment is fatal as root instead of a warning
+- Logs, baselines, snapshots, quarantined files and the user profile are written through `safe_io`: paths are walked with `O_NOFOLLOW`, directories are created `0700`, and files are written `0600` through a temporary file renamed into place
+- Rapid Response undo refuses logs another account could edit, only restores files from the quarantine into cron directories, and never restores the world-writable bit
+
+### Fixed
+
+- Rapid Response matched process names by substring, so `sshd`, `rsync` and `php-fpm` were treated as shells and the operator's own SSH session was proposed for blocking. Names are now matched exactly
+- Rapid Response flagged every inbound SSH session as a "non-standard port" connection. Inbound connections to local listeners are only reported when a shell or netcat holds them, and the operator's SSH source address is never flagged
+- Rapid Response proposed locking any system account with a shell, including `postgres` on Debian. Only UID 0 clones are offered for locking; other accounts are listed for review
+- Locking a UID 0 clone ran `pkill -u`, which kills every root process. Sessions are never terminated by user for an account that shares its UID
+- The operator check used the real UID, which is 0 under sudo. It now uses `SUDO_USER` and `SUDO_UID`
+- iptables and ufw block rules were appended behind existing ACCEPT rules. They are now inserted first
+- firewalld blocks used a rich rule that only matched inbound traffic. They now use a direct `OUTPUT` rule and support IPv6
+- Removed cron files were backed up beside the original, where cronie and run-parts still execute them. They are now quarantined under `data/quarantine/rapid_response/`
+- Symlinks in cron directories were reported as world-writable
+- The Rapid Response log was written only after every action finished, so an interrupt lost undo records
+- CVE matching held 20 points in the Threat Sweep maximum that could never score, about 21% of the standard profile
+- Unsupported modules counted toward the maximum score
+- A crash in any Threat Sweep module other than the firewall check lost the whole sweep
+- sudo 1.9.5 and 1.9.5p1 were not flagged for CVE-2021-3156 because the patch level was stripped before comparison
+- Kernel module exports and the CVE cache path were relative to the working directory
+- The user data directory followed `$HOME`, which some sudo configurations keep as the invoking user's
+- The `clear_screen` fallback printed a stray `]`
+
+### Added
+
+- Per-action selection in Rapid Response. Nothing runs until actions are chosen by number and confirmed
+- nftables IP blocking through an `erislite` table with IPv4 and IPv6 address sets, and IPv6 blocking with `ip6tables`
+- A Rapid Response action to kill the shell or netcat process holding a blocked connection, since ufw keeps established sessions
+- Rapid Response refuses to kill init, ErisLITE or its ancestors, and checks the PID still belongs to the triaged process
+- Shells and netcat connected to private addresses are flagged, since competition red teams usually use private ranges
+- A CHANGED state in Threat Sweep comparison for findings whose details changed under the same tag
+- Tests for Rapid Response triage, action selection, quarantine and restore, the install check and the safe writer
+- Coverage gate and `ruff format --check` in CI
+
+### Changed
+
+- The README install instructions use a root-owned install under `/opt/erislite` with a virtual environment
+- The README now describes the CVE Version Check as three built-in rules and the CVE Tools cache as operator-supplied
+- `update_headers.py` covers every module and keeps each file's creation date
+- Source formatted with `ruff format`
+
+### Removed
+
+- Unused `requests` and `websockets` dependencies
+- Unused `erislite/config/logging.py` and `export_json_log` helper
+
+### Upgrade notes
+
+- If you used Rapid Response 1.4 or earlier on a RHEL-family host, delete `*.rr_backup_*` files from `/etc/cron.d` and `/etc/cron.*`
+- Undo cannot restore cron files removed by 1.4 or earlier, because their backups sit outside the quarantine
+- Reinstall under a root-owned directory, or pass `--allow-unsafe-install` when running as root from a user-owned clone
+
+---
+
 ## [1.4.2] - 2026-10-01
 
 ### Fixed

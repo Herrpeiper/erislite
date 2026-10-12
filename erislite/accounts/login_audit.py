@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: login_audit.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Login and authentication audit: failed logins, root shells, and recent login history.
 
 import re
@@ -150,9 +150,7 @@ def get_uid0_shells() -> Tuple[list[str], Optional[str]]:
             command = args.split()[0] if args else ""
 
             if command in ROOT_SHELLS:
-                shells.append(
-                    f"PID {pid} — {tty} — {comm} — {args}"
-                )
+                shells.append(f"PID {pid} — {tty} — {comm} — {args}")
 
         return shells, None
 
@@ -213,16 +211,12 @@ def run_login_audit(silent: bool = False) -> dict:
 
     if len(results["failed_logins"]) > FAILED_LOGIN_THRESHOLD:
         results["flagged"] = True
-        results["issues"].append(
-            f"{len(results['failed_logins'])} failed login attempts detected"
-        )
+        results["issues"].append(f"{len(results['failed_logins'])} failed login attempts detected")
         results["tags"].append("auth_failures")
 
     if results["uid0_shells"]:
         results["flagged"] = True
-        results["issues"].append(
-            f"{len(results['uid0_shells'])} root shell session(s) detected"
-        )
+        results["issues"].append(f"{len(results['uid0_shells'])} root shell session(s) detected")
         results["tags"].append("uid0_shells")
 
     if collection_errors:
@@ -235,7 +229,7 @@ def run_login_audit(silent: bool = False) -> dict:
         results["details"] = results["issues"]
     else:
         results["details"] = ["No login anomalies detected."]
-        
+
     if silent:
         return results
 
@@ -275,9 +269,7 @@ def run_login_audit(silent: bool = False) -> dict:
         console.print()
 
     else:
-        console.print(
-            "[dim]No recent login entries found.[/]"
-        )
+        console.print("[dim]No recent login entries found.[/]")
         console.print()
 
     if results["failed_logins"]:
@@ -315,10 +307,7 @@ def run_login_audit(silent: bool = False) -> dict:
     if results["collection_errors"]:
         console.print(
             Panel.fit(
-                "\n".join(
-                    f"[yellow]{error}[/]"
-                    for error in results["collection_errors"]
-                ),
+                "\n".join(f"[yellow]{error}[/]" for error in results["collection_errors"]),
                 title="[bold yellow]COLLECTION WARNING[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
@@ -329,10 +318,7 @@ def run_login_audit(silent: bool = False) -> dict:
     if results["flagged"]:
         console.print(
             Panel.fit(
-                "\n".join(
-                    f"[yellow]{issue}[/]"
-                    for issue in results["issues"]
-                )
+                "\n".join(f"[yellow]{issue}[/]" for issue in results["issues"])
                 + "\n[dim]Review authentication activity and validate privileged sessions.[/]",
                 title="[bold yellow]REVIEW REQUIRED[/]",
                 border_style="yellow",

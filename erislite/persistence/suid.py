@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: suid.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: SUID/SGID binary scan for unexpected privileged executables.
 
 import os
@@ -111,11 +111,7 @@ def find_suid_sgid() -> List[Dict]:
             dirs[:] = []
             continue
 
-        dirs[:] = [
-            d
-            for d in dirs
-            if not os.path.join(root, d).startswith(SKIP_PREFIXES)
-        ]
+        dirs[:] = [d for d in dirs if not os.path.join(root, d).startswith(SKIP_PREFIXES)]
 
         for name in files:
             path = os.path.join(root, name)
@@ -148,15 +144,9 @@ def find_suid_sgid() -> List[Dict]:
 def _is_known(entry: Dict) -> bool:
     path = entry["path"]
 
-    suid_known = (
-        entry["suid"]
-        and path in WHITELISTED_SUID
-    )
+    suid_known = entry["suid"] and path in WHITELISTED_SUID
 
-    sgid_known = (
-        entry["sgid"]
-        and path in WHITELISTED_SGID
-    )
+    sgid_known = entry["sgid"] and path in WHITELISTED_SGID
 
     if entry["suid"] and entry["sgid"]:
         return suid_known and sgid_known
@@ -228,13 +218,7 @@ def run_suid_scan(silent: bool = False):
 
         tags.update(local_tags)
 
-    details = (
-        [
-            f"{len(suspicious)} suspicious SUID/SGID binary(s) found"
-        ]
-        if suspicious
-        else []
-    )
+    details = [f"{len(suspicious)} suspicious SUID/SGID binary(s) found"] if suspicious else []
 
     result = make_result(
         "warning" if suspicious else "ok",
@@ -288,10 +272,7 @@ def run_suid_scan(silent: bool = False):
     table.add_column("Status", no_wrap=True)
     table.add_column("Reason", style="dim")
 
-    suspicious_map = {
-        entry["path"]: entry
-        for entry in suspicious
-    }
+    suspicious_map = {entry["path"]: entry for entry in suspicious}
 
     for entry in results:
         flags = []
@@ -306,9 +287,7 @@ def run_suid_scan(silent: bool = False):
 
         if path in suspicious_map:
             status = "[yellow]REVIEW[/]"
-            reason = ", ".join(
-                suspicious_map[path]["reasons"]
-            )
+            reason = ", ".join(suspicious_map[path]["reasons"])
         else:
             status = "[green]KNOWN[/]"
             reason = "Known-safe baseline"

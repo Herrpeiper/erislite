@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: shell_console.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Restricted shell console for analyst command execution.
 
 import os
@@ -156,9 +156,7 @@ def launch_shell_console(profile: dict) -> None:
     shell_path = resolve_user_shell()
 
     if shell_path is None:
-        console.print(
-            "[bold red]Unable to locate an executable system shell.[/]"
-        )
+        console.print("[bold red]Unable to locate an executable system shell.[/]")
         console.input("\n[dim cyan][ENTER] Return to menu[/]")
         return
 
@@ -178,12 +176,8 @@ def launch_shell_console(profile: dict) -> None:
         )
     except OSError as exc:
         console.print(
-            f"\n[bold red]Unable to launch shell:[/] "
-            f"[white]{shell_path}[/]\n"
-            f"[dim]{exc}[/]"
+            f"\n[bold red]Unable to launch shell:[/] [white]{shell_path}[/]\n[dim]{exc}[/]"
         )
         console.input("\n[dim cyan][ENTER] Return to menu[/]")
     except KeyboardInterrupt:
-        console.print(
-            "\n[yellow]Shell console interrupted. Returning to ErisLITE.[/]"
-        )
+        console.print("\n[yellow]Shell console interrupted. Returning to ErisLITE.[/]")

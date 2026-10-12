@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: backdoors.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Shell init, profile, and LD_PRELOAD persistence inspection.
 
 import os
@@ -221,19 +221,12 @@ def _check_env_ld_preload() -> list:
 
                 value = variable.split("=", 1)[1]
 
-                libraries = [
-                    lib
-                    for lib in re.split(r"[ :]", value)
-                    if lib
-                ]
+                libraries = [lib for lib in re.split(r"[ :]", value) if lib]
 
                 suspicious = [
                     lib
                     for lib in libraries
-                    if not any(
-                        lib.startswith(prefix)
-                        for prefix in SNAP_PRELOAD_WHITELIST
-                    )
+                    if not any(lib.startswith(prefix) for prefix in SNAP_PRELOAD_WHITELIST)
                     and lib not in BARE_LIB_WHITELIST
                 ]
 
@@ -311,9 +304,7 @@ def _scan_dir(directory: str) -> list:
     try:
         for entry in os.scandir(directory):
             if entry.is_file(follow_symlinks=False):
-                findings.extend(
-                    _scan_file(entry.path)
-                )
+                findings.extend(_scan_file(entry.path))
 
     except PermissionError as exc:
         findings.append(
@@ -339,14 +330,10 @@ def scan_backdoors() -> list:
 
     for path in SYSTEM_INIT_FILES:
         if os.path.isfile(path):
-            findings.extend(
-                _scan_file(path)
-            )
+            findings.extend(_scan_file(path))
 
     for directory in SYSTEM_INIT_DIRS:
-        findings.extend(
-            _scan_dir(directory)
-        )
+        findings.extend(_scan_dir(directory))
 
     try:
         users = pwd.getpwall()
@@ -376,22 +363,14 @@ def scan_backdoors() -> list:
             )
 
             if os.path.isfile(full_path):
-                findings.extend(
-                    _scan_file(full_path)
-                )
+                findings.extend(_scan_file(full_path))
 
             elif os.path.isdir(full_path):
-                findings.extend(
-                    _scan_dir(full_path)
-                )
+                findings.extend(_scan_dir(full_path))
 
-    findings.extend(
-        _check_ld_preload()
-    )
+    findings.extend(_check_ld_preload())
 
-    findings.extend(
-        _check_env_ld_preload()
-    )
+    findings.extend(_check_env_ld_preload())
 
     return findings
 
@@ -418,33 +397,16 @@ def run_backdoor_check(
 
     collected = scan_backdoors()
 
-    findings = [
-        item
-        for item in collected
-        if item["kind"] == "finding"
-    ]
+    findings = [item for item in collected if item["kind"] == "finding"]
 
-    errors = [
-        item
-        for item in collected
-        if item["kind"] == "error"
-    ]
+    errors = [item for item in collected if item["kind"] == "error"]
 
-    all_tags = {
-        item["tag"]
-        for item in collected
-    }
+    all_tags = {item["tag"] for item in collected}
 
-    details = [
-        f"{item['location']} — {item['reason']}"
-        for item in findings
-    ]
+    details = [f"{item['location']} — {item['reason']}" for item in findings]
 
     if errors:
-        details.extend(
-            f"{item['location']} — {item['reason']}"
-            for item in errors
-        )
+        details.extend(f"{item['location']} — {item['reason']}" for item in errors)
 
     if findings:
         status = "warning"

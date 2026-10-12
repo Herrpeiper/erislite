@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: events.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.0
+# Version: 1.5.0
 # License: MIT
 # Created: 2026-09-26
-# Last Updated: 2026-09-30
+# Last Updated: 2026-10-12
 # Description: Event model for Odyssey Lite deception listener activity.
 
 from __future__ import annotations
@@ -22,9 +22,7 @@ class OdysseyEvent:
     destination_port: int
     service: str
     severity: str
-    timestamp: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict[str, object]:
         """Return a serializable representation of the event."""

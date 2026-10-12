@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: network_menu.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Network tools menu.
 
 from rich import box
@@ -59,13 +59,9 @@ def run(profile: dict) -> None:
         ]
 
         if analyst_id:
-            metadata_parts.append(
-                f"[dim]Analyst:[/] [white]{analyst_id}[/]"
-            )
+            metadata_parts.append(f"[dim]Analyst:[/] [white]{analyst_id}[/]")
 
-        metadata = Text.from_markup(
-            "   ".join(metadata_parts)
-        )
+        metadata = Text.from_markup("   ".join(metadata_parts))
 
         header = Panel(
             metadata,
@@ -81,7 +77,6 @@ def run(profile: dict) -> None:
         console.print(build_menu())
 
         choice = prompt_option()
-
 
         if choice == "1":
             tools.show_ips()

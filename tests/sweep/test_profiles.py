@@ -55,9 +55,7 @@ def test_full_profile_contains_all_expected_modules():
 
 def test_profiles_do_not_contain_duplicates():
     for profile_name, modules in SWEEP_PROFILES.items():
-        assert len(modules) == len(set(modules)), (
-            f"{profile_name} contains duplicate modules"
-        )
+        assert len(modules) == len(set(modules)), f"{profile_name} contains duplicate modules"
 
 
 def test_full_profile_contains_suid():

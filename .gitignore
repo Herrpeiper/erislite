@@ -12,6 +12,9 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 dist/
 build/
 
@@ -23,7 +26,7 @@ env/
 
 # ── User profile ─────────────────────────────────
 # Contains real hostname and system metadata.
-# Regenerated automatically on first run by core/user_profile.py.
+# Regenerated automatically on first run by erislite/accounts/profile.py.
 erislite/data/user_profile.json
 
 # ── Integrity baseline ───────────────────
@@ -44,8 +47,12 @@ erislite/data/logs/
 .erislite/
 
 # ── CVE cache ────────────────────────────────────
-# Populated at runtime by the CVE Version Scanner.
+# Optional search cache supplied by the operator.
 data/cve/
+
+# ── Rapid Response quarantine ────────────────────
+# Copies of removed cron files. May contain attacker payloads.
+data/quarantine/
 
 # ── OS / editor noise ────────────────────────────
 .DS_Store

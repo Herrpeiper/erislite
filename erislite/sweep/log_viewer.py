@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: log_viewer.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Snapshot log viewer for browsing and displaying saved snapshot logs.
 
 import os
@@ -32,9 +32,7 @@ def view_snapshot_logs():
             pause_return()
             return
 
-        files = [
-            f for f in os.listdir(SNAPSHOT_LOG_DIR) if f.endswith(".txt") and "snapshot" in f
-        ]
+        files = [f for f in os.listdir(SNAPSHOT_LOG_DIR) if f.endswith(".txt") and "snapshot" in f]
         files.sort(reverse=True)
 
         if not files:
@@ -52,9 +50,7 @@ def view_snapshot_logs():
         console.print(Align.center(table))
 
         choice = Prompt.ask(
-            "\n[bold green]Select a log to view[/] (1-{}) or [b]Q[/b] to cancel".format(
-                len(files)
-            ),
+            "\n[bold green]Select a log to view[/] (1-{}) or [b]Q[/b] to cancel".format(len(files)),
             default="1",
         )
 

@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: threat_sweep.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Threat sweep orchestrator: runs selected modules, scores risk, and saves results.
 
 import json
@@ -26,7 +26,8 @@ from erislite.config.settings import (
 from erislite.containers import docker
 from erislite.network import firewall, hosts, listeners
 from erislite.persistence import backdoors, cron, suid, world_writable
-from erislite.results import make_result
+from erislite.results import make_result, validate_result
+from erislite.security.safe_io import write_private_json
 from erislite.system import integrity, kernel_modules, processes
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_analyst_id, pause_return
@@ -44,19 +45,25 @@ RISK_WEIGHTS = {
     "sshconfig": 10,
     "docker": 15,
     "firewall": 15,
-    "cve": 20,
     "suid": 10,
     "processes": 20,
     "hosts": 20,
     "backdoor": 25,
 }
 
+# CVE version matching reports REVIEW at most, because vendors backport
+# fixes without changing version strings. It never scores, so it has no
+# weight. A weight here put 20 unreachable points in the denominator.
+NON_SCORING_MODULES = {"cve"}
+
+# A module that could not run says nothing about risk on this host.
+UNSCORED_STATUSES = {"unsupported"}
+
 # 🧠 Tag-to-Insight Mapping
 THREAT_TAG_MAP = {
     "cve_match": "Outdated or vulnerable software version detected.",
     "cve_version_match": (
-        "Installed software version matches a known CVE range; "
-        "verify vendor patch level."
+        "Installed software version matches a known CVE range; verify vendor patch level."
     ),
     "firewall_disabled": "No active firewall detected — system may be fully exposed to the network.",
     "firewall_ufw_inactive": "UFW is installed but currently inactive.",
@@ -96,10 +103,16 @@ THREAT_TAG_MAP = {
     "suid_nonstandard_location": "SUID/SGID binary is located outside standard executable paths.",
     "uid0_clone": "A non-root account has UID 0 and root-equivalent privileges.",
     "weak_ssh_config": "One or more SSH server settings differ from the hardening baseline.",
-    "firewall_permission_denied": ("Firewall state could not be fully inspected with the current privileges."),
+    "firewall_permission_denied": (
+        "Firewall state could not be fully inspected with the current privileges."
+    ),
     "firewall_check_failed": "One or more firewall inspection commands failed.",
-    "auth_audit_incomplete": ("One or more authentication audit data sources could not be inspected."),
-    "kernel_module_inspection_incomplete": ("One or more loaded kernel modules could not be fully inspected."),
+    "auth_audit_incomplete": (
+        "One or more authentication audit data sources could not be inspected."
+    ),
+    "kernel_module_inspection_incomplete": (
+        "One or more loaded kernel modules could not be fully inspected."
+    ),
 }
 
 
@@ -111,8 +124,14 @@ def calculate_risk_score(results: dict):
     for module in results:
         if module in RISK_WEIGHTS:
             weight = RISK_WEIGHTS[module]
-            max_score += weight
             status = results[module].get("status", "").lower()
+
+            if status in UNSCORED_STATUSES:
+                breakdown[module] = 0
+                continue
+
+            max_score += weight
+
             if status in ("warning", "error", "issue"):
                 total_score += weight
                 breakdown[module] = weight
@@ -120,6 +139,7 @@ def calculate_risk_score(results: dict):
                 breakdown[module] = 0
 
     return total_score, breakdown, max_score
+
 
 def prioritize_findings(results: dict) -> list:
     """
@@ -163,6 +183,47 @@ def prioritize_findings(results: dict) -> list:
     return findings
 
 
+SWEEP_CHECKS = {
+    "integrity": lambda: integrity.scan_integrity(silent=True),
+    "listeners": lambda: listeners.run_listener_scan(silent=True),
+    "users": lambda: users.run_user_scan(silent=True),
+    "kernel": lambda: kernel_modules.run_kernel_module_check(silent=True),
+    "sshkeys": lambda: ssh_keys.run_ssh_key_check(silent=True),
+    "worldwritable": lambda: world_writable.run_world_writable_check(silent=True),
+    "cron": lambda: cron.run_cron_timer_scan(silent=True),
+    "login": lambda: login_audit.run_login_audit(silent=True),
+    "sshconfig": lambda: ssh_config.run_ssh_config_check(silent=True),
+    "docker": lambda: docker.run_docker_scan(silent=True),
+    "suid": lambda: suid.run_suid_scan(silent=True),
+    "processes": lambda: processes.run_process_scan(silent=True),
+    "hosts": lambda: hosts.run_hosts_check(silent=True),
+    "backdoor": lambda: backdoors.run_backdoor_check(silent=True),
+    "cve": lambda: cve_checker.run_cve_check(silent=True),
+}
+
+
+def run_module_check(module: str, check) -> dict:
+    """Run one sweep module so a crash in it cannot lose the whole sweep."""
+
+    try:
+        result = check()
+    except Exception as exc:
+        return make_result(
+            "error",
+            details=[f"{module} check failed: {type(exc).__name__}: {exc}"],
+            tags=[f"{module}_check_failed"],
+        )
+
+    if not validate_result(result):
+        return make_result(
+            "error",
+            details=[f"{module} check returned an invalid result"],
+            tags=[f"{module}_check_failed"],
+        )
+
+    return result
+
+
 def run_sweep(user_profile, sweep_profile="standard"):
     clear_screen()
     _render_header(user_profile, sweep_profile)
@@ -173,61 +234,16 @@ def run_sweep(user_profile, sweep_profile="standard"):
 
     results = {}
 
-    if "integrity" in profiles[sweep_profile]:
-        results["integrity"] = integrity.scan_integrity(silent=True)
+    for module in profiles[sweep_profile]:
+        check = SWEEP_CHECKS.get(module)
 
-    if "listeners" in profiles[sweep_profile]:
-        results["listeners"] = listeners.run_listener_scan(silent=True)
-
-    if "users" in profiles[sweep_profile]:
-        results["users"] = users.run_user_scan(silent=True)
-
-    if "kernel" in profiles[sweep_profile]:
-        results["kernel"] = kernel_modules.run_kernel_module_check(silent=True)
-
-    if "sshkeys" in profiles[sweep_profile]:
-        results["sshkeys"] = ssh_keys.run_ssh_key_check(silent=True)
-
-    if "worldwritable" in profiles[sweep_profile]:
-        results["worldwritable"] = world_writable.run_world_writable_check(silent=True)
-
-    if "cron" in profiles[sweep_profile]:
-        results["cron"] = cron.run_cron_timer_scan(silent=True)
-
-    if "login" in profiles[sweep_profile]:
-        results["login"] = login_audit.run_login_audit(silent=True)
-
-    if "sshconfig" in profiles[sweep_profile]:
-        results["sshconfig"] = ssh_config.run_ssh_config_check(silent=True)
-
-    if "docker" in profiles[sweep_profile]:
-        results["docker"] = docker.run_docker_scan(silent=True)
-
-    if "suid" in profiles[sweep_profile]:
-        results["suid"] = suid.run_suid_scan(silent=True)
-
-    if "processes" in profiles[sweep_profile]:
-        results["processes"] = processes.run_process_scan(silent=True)
-
-    if "hosts" in profiles[sweep_profile]:
-        results["hosts"] = hosts.run_hosts_check(silent=True)
-
-    if "backdoor" in profiles[sweep_profile]:
-        results["backdoor"] = backdoors.run_backdoor_check(silent=True)
-
-    if "cve" in profiles[sweep_profile]:
-        results["cve"] = cve_checker.run_cve_check(silent=True)
+        if check is not None:
+            results[module] = run_module_check(module, check)
 
     # Firewall check is always run as a baseline signal
-    try:
-        results["firewall"] = firewall.run_firewall_check(silent=True)
-
-    except Exception as exc:
-        results["firewall"] = make_result(
-            "error",
-            details=[f"Firewall check failed: {exc}"],
-            tags=["firewall_check_failed"],
-        )
+    results["firewall"] = run_module_check(
+        "firewall", lambda: firewall.run_firewall_check(silent=True)
+    )
 
     hostname = user_profile.get(
         "hostname",
@@ -247,6 +263,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
     else:
         changes = {
             "new": [],
+            "changed": [],
             "persisting": [],
             "resolved": [],
         }
@@ -265,6 +282,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
         user_profile,
         changes,
     )
+
 
 def _finding_signals(results: dict) -> set:
     """
@@ -308,7 +326,37 @@ def compare_sweep_results(
         "new": sorted(current - previous),
         "persisting": sorted(current & previous),
         "resolved": sorted(previous - current),
+        "changed": _changed_findings(current_results, previous_results),
     }
+
+
+def _changed_findings(current_results: dict, previous_results: dict) -> list:
+    """Report actionable modules whose details changed while their tags did not.
+
+    Tag comparison alone showed a second malicious cron job as PERSISTING,
+    because both sweeps carry the same suspicious_cron tag.
+    """
+
+    changed = []
+
+    for module, result in current_results.items():
+        status = result.get("status", "").lower()
+
+        if status not in {"warning", "issue", "error"}:
+            continue
+
+        previous = previous_results.get(module)
+
+        if not previous or previous.get("status", "").lower() not in {"warning", "issue", "error"}:
+            continue
+
+        before = set(previous.get("details", []))
+
+        for detail in result.get("details", []):
+            if detail not in before:
+                changed.append(f"{module}: {detail}")
+
+    return sorted(changed)
 
 
 def _load_previous_comparable_sweep(
@@ -353,6 +401,7 @@ def _load_previous_comparable_sweep(
         return data
 
     return None
+
 
 def _display_results(results, sweep_profile, user_profile, changes, comparison_available=False):
     label_map = {
@@ -420,8 +469,7 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
     percent = round((score / max_possible) * 100) if max_possible else 0
 
     info_present = any(
-        r.get("status", "").lower() in {"ok", "info", "review"}
-        and r.get("details")
+        r.get("status", "").lower() in {"ok", "info", "review"} and r.get("details")
         for r in results.values()
     )
 
@@ -453,11 +501,7 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
         )
     )
 
-    contributors = [
-        (module, points)
-        for module, points in breakdown.items()
-        if points > 0
-    ]
+    contributors = [(module, points) for module, points in breakdown.items() if points > 0]
 
     if contributors:
         console.print()
@@ -529,11 +573,7 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
         ):
             details = finding["details"]
 
-            primary_detail = (
-                details[0]
-                if details
-                else "Review module findings"
-            )
+            primary_detail = details[0] if details else "Review module findings"
 
             priority_table.add_row(
                 str(index),
@@ -577,6 +617,10 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
                 changes["new"],
             ),
             (
+                "[magenta]CHANGED[/]",
+                changes.get("changed", []),
+            ),
+            (
                 "[yellow]PERSISTING[/]",
                 changes["persisting"],
             ),
@@ -587,16 +631,10 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
         )
 
         for label, signals in change_rows:
-            display_signals = (
-                ", ".join(signals[:4])
-                if signals
-                else "None"
-            )
+            display_signals = ", ".join(signals[:4]) if signals else "None"
 
             if len(signals) > 4:
-                display_signals += (
-                    f" (+{len(signals) - 4} more)"
-                )
+                display_signals += f" (+{len(signals) - 4} more)"
 
             change_table.add_row(
                 label,
@@ -643,17 +681,11 @@ def _save_sweep(results, sweep_profile, user_profile, changes):
         all_tags = []
 
         for result in results.values():
-            all_tags.extend(
-                result.get("tags", [])
-            )
+            all_tags.extend(result.get("tags", []))
 
         score, _, max_possible = calculate_risk_score(results)
 
-        risk_percent = (
-            round((score / max_possible) * 100)
-            if max_possible
-            else 0
-        )
+        risk_percent = round((score / max_possible) * 100) if max_possible else 0
 
         priorities = prioritize_findings(results)
 
@@ -673,53 +705,15 @@ def _save_sweep(results, sweep_profile, user_profile, changes):
             "results": results,
         }
 
-        LAST_SWEEP_FILE.parent.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
+        write_private_json(LAST_SWEEP_FILE, summary, default=str)
 
-        with open(
-            LAST_SWEEP_FILE,
-            "w",
-            encoding="utf-8",
-        ) as file:
-            json.dump(
-                summary,
-                file,
-                indent=2,
-                default=str,
-            )
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_path = SWEEP_LOG_DIR / f"sweep_log_{timestamp}.json"
 
-        SWEEP_LOG_DIR.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
-        timestamp = datetime.now().strftime(
-            "%Y%m%d_%H%M%S"
-        )
-
-        log_path = (
-            SWEEP_LOG_DIR
-            / f"sweep_log_{timestamp}.json"
-        )
-
-        with open(
-            log_path,
-            "w",
-            encoding="utf-8",
-        ) as file:
-            json.dump(
-                summary,
-                file,
-                indent=2,
-                default=str,
-            )
+        write_private_json(log_path, summary, default=str)
 
     except OSError as exc:
-        console.print(
-            f"[yellow]Warning: could not save sweep log: {exc}[/]"
-        )
+        console.print(f"[yellow]Warning: could not save sweep log: {exc}[/]")
 
 
 def _render_header(profile: dict, sweep_profile: str) -> None:
@@ -733,17 +727,11 @@ def _render_header(profile: dict, sweep_profile: str) -> None:
     ]
 
     if analyst_id:
-        metadata_parts.append(
-            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
-        )
+        metadata_parts.append(f"[dim]Analyst:[/] [white]{analyst_id}[/]")
 
-    metadata_parts.append(
-        f"[dim]Profile:[/] [white]{sweep_profile.capitalize()}[/]"
-    )
+    metadata_parts.append(f"[dim]Profile:[/] [white]{sweep_profile.capitalize()}[/]")
 
-    metadata = Text.from_markup(
-        "   ".join(metadata_parts)
-    )
+    metadata = Text.from_markup("   ".join(metadata_parts))
 
     console.print(
         Panel(

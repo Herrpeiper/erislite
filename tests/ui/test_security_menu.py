@@ -99,7 +99,7 @@ def test_score_color_uses_percentage_not_raw_points():
     assert security_menu._score_color(16) == "green"
     assert security_menu._score_color(50) == "yellow"
     assert security_menu._score_color(80) == "red"
-    
+
 
 def test_format_sweep_age_minutes(monkeypatch):
     now = datetime.now()
@@ -111,9 +111,7 @@ def test_format_sweep_age_minutes(monkeypatch):
 
 
 def test_format_sweep_age_hours():
-    timestamp = (
-        datetime.now() - timedelta(hours=2, minutes=15)
-    ).isoformat(timespec="seconds")
+    timestamp = (datetime.now() - timedelta(hours=2, minutes=15)).isoformat(timespec="seconds")
 
     age = security_menu._format_sweep_age(timestamp)
 

@@ -4,6 +4,7 @@
 # Version: 1.5.0
 # License: MIT
 # Created: 2026-10-09
+# Last Updated: 2026-10-12
 # Description: Shared command execution helper for ErisLITE modules.
 
 import subprocess
@@ -31,10 +32,6 @@ def run_command(
         resolved,
         capture_output=True,
         text=True,
-        timeout=(
-            DEFAULT_COMMAND_TIMEOUT
-            if timeout is None
-            else timeout
-        ),
+        timeout=(DEFAULT_COMMAND_TIMEOUT if timeout is None else timeout),
         check=check,
     )
