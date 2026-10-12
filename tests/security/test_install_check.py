@@ -46,6 +46,7 @@ def test_foreign_owned_file_is_reported(monkeypatch, tmp_path):
 
 def test_group_writable_code_is_reported(monkeypatch, tmp_path):
     root = _tree(tmp_path)
+    monkeypatch.setattr(install_check, "_group_has_untrusted_members", lambda gid, uids: True)
     module = root / "erislite" / "__init__.py"
     module.chmod(0o664)
 
@@ -87,3 +88,47 @@ def _owner_agnostic(describe):
         return describe(path, info, set(trusted_uids) | {info.st_uid})
 
     return wrapper
+
+
+def _stat(mode, gid=50):
+    return os.stat_result((mode, 0, 0, 0, 0, gid, 0, 0, 0, 0))
+
+
+def test_group_writable_with_empty_group_is_allowed(monkeypatch):
+    monkeypatch.setattr(install_check, "_group_has_untrusted_members", lambda gid, uids: False)
+
+    assert (
+        install_check._describe("/usr/local/lib/python3.11/dist-packages", _stat(0o42775), {0})
+        is None
+    )
+
+
+def test_group_writable_with_members_is_reported(monkeypatch):
+    monkeypatch.setattr(install_check, "_group_has_untrusted_members", lambda gid, uids: True)
+
+    assert "writable" in install_check._describe("/usr/local/lib", _stat(0o42775), {0})
+
+
+def test_group_membership_lookup(monkeypatch):
+    class Group:
+        gr_mem = ["liam"]
+
+    class Account:
+        def __init__(self, name, uid, gid):
+            self.pw_name, self.pw_uid, self.pw_gid = name, uid, gid
+
+    monkeypatch.setattr(install_check.grp, "getgrgid", lambda gid: Group())
+    monkeypatch.setattr(install_check.pwd, "getpwuid", lambda uid: Account("root", 0, 0))
+    monkeypatch.setattr(install_check.pwd, "getpwall", lambda: [Account("root", 0, 0)])
+
+    assert install_check._group_has_untrusted_members(50, {0}) is True
+
+    Group.gr_mem = ["root"]
+
+    assert install_check._group_has_untrusted_members(50, {0}) is False
+
+    monkeypatch.setattr(
+        install_check.pwd, "getpwall", lambda: [Account("root", 0, 0), Account("svc", 120, 50)]
+    )
+
+    assert install_check._group_has_untrusted_members(50, {0}) is True
