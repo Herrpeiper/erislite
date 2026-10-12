@@ -5,7 +5,8 @@ Tests deterministic risk-scoring behavior without invoking
 host-level security checks.
 """
 
-from erislite.sweep.threat_sweep import calculate_risk_score
+from erislite.sweep import threat_sweep
+from erislite.sweep.threat_sweep import calculate_risk_score, compare_sweep_results
 
 
 def test_empty_results_return_zero_score():
@@ -86,20 +87,19 @@ def test_multiple_modules_are_scored_correctly():
         "listeners": {"status": "ok"},
         "users": {"status": "issue"},
         "login": {"status": "ok"},
-        "cve": {"status": "warning"},
+        "cve": {"status": "review"},
     }
 
     score, breakdown, max_score = calculate_risk_score(results)
 
-    assert score == 55
-    assert max_score == 80
+    assert score == 35
+    assert max_score == 60
 
     assert breakdown == {
         "integrity": 20,
         "listeners": 0,
         "users": 15,
         "login": 0,
-        "cve": 20,
     }
 
 
@@ -148,7 +148,8 @@ def test_unsupported_module_does_not_add_risk():
 
     assert score == 0
     assert breakdown["docker"] == 0
-    assert max_score == 15
+    # A module that could not run must not inflate the denominator.
+    assert max_score == 0
 
 
 def test_review_status_does_not_add_risk():
@@ -167,5 +168,64 @@ def test_review_status_does_not_add_risk():
     score, breakdown, max_score = calculate_risk_score(results)
 
     assert score == 0
-    assert breakdown["cve"] == 0
-    assert max_score == 20
+    assert "cve" not in breakdown
+    # CVE matching is informational, so it adds nothing to the maximum.
+    assert max_score == 0
+
+
+def test_standard_profile_maximum_excludes_cve():
+    results = {
+        module: {"status": "ok", "details": [], "tags": []}
+        for module in ("integrity", "listeners", "users", "login", "cve", "firewall")
+    }
+
+    _, _, max_score = calculate_risk_score(results)
+
+    assert max_score == 75
+
+
+def test_second_cron_job_is_reported_as_changed():
+    previous = {
+        "cron": {"status": "warning", "details": ["1 suspicious scheduled task(s) flagged"], "tags": ["suspicious_cron"]},
+    }
+    current = {
+        "cron": {"status": "warning", "details": ["2 suspicious scheduled task(s) flagged"], "tags": ["suspicious_cron"]},
+    }
+
+    changes = compare_sweep_results(current, previous)
+
+    assert changes["persisting"] == ["cron:suspicious_cron"]
+    assert changes["changed"] == ["cron: 2 suspicious scheduled task(s) flagged"]
+
+
+def test_identical_findings_are_not_changed():
+    result = {"status": "warning", "details": ["x"], "tags": ["t"]}
+
+    changes = compare_sweep_results({"cron": result}, {"cron": result})
+
+    assert changes["changed"] == []
+
+
+def test_run_module_check_isolates_crash():
+    def boom():
+        raise RuntimeError("kaboom")
+
+    result = threat_sweep.run_module_check("cron", boom)
+
+    assert result["status"] == "error"
+    assert "kaboom" in result["details"][0]
+    assert result["tags"] == ["cron_check_failed"]
+
+
+def test_run_module_check_rejects_invalid_result():
+    result = threat_sweep.run_module_check("cron", lambda: {"status": "fine"})
+
+    assert result["status"] == "error"
+
+
+def test_every_profile_module_has_a_check():
+    from erislite.config.settings import SWEEP_PROFILES
+
+    for modules in SWEEP_PROFILES.values():
+        for module in modules:
+            assert module in threat_sweep.SWEEP_CHECKS

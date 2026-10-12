@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: threat_sweep.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Threat sweep orchestrator: runs selected modules, scores risk, and saves results.
 
 import json
@@ -26,7 +26,7 @@ from erislite.config.settings import (
 from erislite.containers import docker
 from erislite.network import firewall, hosts, listeners
 from erislite.persistence import backdoors, cron, suid, world_writable
-from erislite.results import make_result
+from erislite.results import make_result, validate_result
 from erislite.security.safe_io import write_private_json
 from erislite.system import integrity, kernel_modules, processes
 from erislite.ui.console import console
@@ -45,12 +45,19 @@ RISK_WEIGHTS = {
     "sshconfig": 10,
     "docker": 15,
     "firewall": 15,
-    "cve": 20,
     "suid": 10,
     "processes": 20,
     "hosts": 20,
     "backdoor": 25,
 }
+
+# CVE version matching reports REVIEW at most, because vendors backport
+# fixes without changing version strings. It never scores, so it has no
+# weight. A weight here put 20 unreachable points in the denominator.
+NON_SCORING_MODULES = {"cve"}
+
+# A module that could not run says nothing about risk on this host.
+UNSCORED_STATUSES = {"unsupported"}
 
 # 🧠 Tag-to-Insight Mapping
 THREAT_TAG_MAP = {
@@ -112,8 +119,14 @@ def calculate_risk_score(results: dict):
     for module in results:
         if module in RISK_WEIGHTS:
             weight = RISK_WEIGHTS[module]
-            max_score += weight
             status = results[module].get("status", "").lower()
+
+            if status in UNSCORED_STATUSES:
+                breakdown[module] = 0
+                continue
+
+            max_score += weight
+
             if status in ("warning", "error", "issue"):
                 total_score += weight
                 breakdown[module] = weight
@@ -164,6 +177,47 @@ def prioritize_findings(results: dict) -> list:
     return findings
 
 
+SWEEP_CHECKS = {
+    "integrity": lambda: integrity.scan_integrity(silent=True),
+    "listeners": lambda: listeners.run_listener_scan(silent=True),
+    "users": lambda: users.run_user_scan(silent=True),
+    "kernel": lambda: kernel_modules.run_kernel_module_check(silent=True),
+    "sshkeys": lambda: ssh_keys.run_ssh_key_check(silent=True),
+    "worldwritable": lambda: world_writable.run_world_writable_check(silent=True),
+    "cron": lambda: cron.run_cron_timer_scan(silent=True),
+    "login": lambda: login_audit.run_login_audit(silent=True),
+    "sshconfig": lambda: ssh_config.run_ssh_config_check(silent=True),
+    "docker": lambda: docker.run_docker_scan(silent=True),
+    "suid": lambda: suid.run_suid_scan(silent=True),
+    "processes": lambda: processes.run_process_scan(silent=True),
+    "hosts": lambda: hosts.run_hosts_check(silent=True),
+    "backdoor": lambda: backdoors.run_backdoor_check(silent=True),
+    "cve": lambda: cve_checker.run_cve_check(silent=True),
+}
+
+
+def run_module_check(module: str, check) -> dict:
+    """Run one sweep module so a crash in it cannot lose the whole sweep."""
+
+    try:
+        result = check()
+    except Exception as exc:
+        return make_result(
+            "error",
+            details=[f"{module} check failed: {type(exc).__name__}: {exc}"],
+            tags=[f"{module}_check_failed"],
+        )
+
+    if not validate_result(result):
+        return make_result(
+            "error",
+            details=[f"{module} check returned an invalid result"],
+            tags=[f"{module}_check_failed"],
+        )
+
+    return result
+
+
 def run_sweep(user_profile, sweep_profile="standard"):
     clear_screen()
     _render_header(user_profile, sweep_profile)
@@ -174,61 +228,14 @@ def run_sweep(user_profile, sweep_profile="standard"):
 
     results = {}
 
-    if "integrity" in profiles[sweep_profile]:
-        results["integrity"] = integrity.scan_integrity(silent=True)
+    for module in profiles[sweep_profile]:
+        check = SWEEP_CHECKS.get(module)
 
-    if "listeners" in profiles[sweep_profile]:
-        results["listeners"] = listeners.run_listener_scan(silent=True)
-
-    if "users" in profiles[sweep_profile]:
-        results["users"] = users.run_user_scan(silent=True)
-
-    if "kernel" in profiles[sweep_profile]:
-        results["kernel"] = kernel_modules.run_kernel_module_check(silent=True)
-
-    if "sshkeys" in profiles[sweep_profile]:
-        results["sshkeys"] = ssh_keys.run_ssh_key_check(silent=True)
-
-    if "worldwritable" in profiles[sweep_profile]:
-        results["worldwritable"] = world_writable.run_world_writable_check(silent=True)
-
-    if "cron" in profiles[sweep_profile]:
-        results["cron"] = cron.run_cron_timer_scan(silent=True)
-
-    if "login" in profiles[sweep_profile]:
-        results["login"] = login_audit.run_login_audit(silent=True)
-
-    if "sshconfig" in profiles[sweep_profile]:
-        results["sshconfig"] = ssh_config.run_ssh_config_check(silent=True)
-
-    if "docker" in profiles[sweep_profile]:
-        results["docker"] = docker.run_docker_scan(silent=True)
-
-    if "suid" in profiles[sweep_profile]:
-        results["suid"] = suid.run_suid_scan(silent=True)
-
-    if "processes" in profiles[sweep_profile]:
-        results["processes"] = processes.run_process_scan(silent=True)
-
-    if "hosts" in profiles[sweep_profile]:
-        results["hosts"] = hosts.run_hosts_check(silent=True)
-
-    if "backdoor" in profiles[sweep_profile]:
-        results["backdoor"] = backdoors.run_backdoor_check(silent=True)
-
-    if "cve" in profiles[sweep_profile]:
-        results["cve"] = cve_checker.run_cve_check(silent=True)
+        if check is not None:
+            results[module] = run_module_check(module, check)
 
     # Firewall check is always run as a baseline signal
-    try:
-        results["firewall"] = firewall.run_firewall_check(silent=True)
-
-    except Exception as exc:
-        results["firewall"] = make_result(
-            "error",
-            details=[f"Firewall check failed: {exc}"],
-            tags=["firewall_check_failed"],
-        )
+    results["firewall"] = run_module_check("firewall", lambda: firewall.run_firewall_check(silent=True))
 
     hostname = user_profile.get(
         "hostname",
@@ -248,6 +255,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
     else:
         changes = {
             "new": [],
+            "changed": [],
             "persisting": [],
             "resolved": [],
         }
@@ -309,7 +317,37 @@ def compare_sweep_results(
         "new": sorted(current - previous),
         "persisting": sorted(current & previous),
         "resolved": sorted(previous - current),
+        "changed": _changed_findings(current_results, previous_results),
     }
+
+
+def _changed_findings(current_results: dict, previous_results: dict) -> list:
+    """Report actionable modules whose details changed while their tags did not.
+
+    Tag comparison alone showed a second malicious cron job as PERSISTING,
+    because both sweeps carry the same suspicious_cron tag.
+    """
+
+    changed = []
+
+    for module, result in current_results.items():
+        status = result.get("status", "").lower()
+
+        if status not in {"warning", "issue", "error"}:
+            continue
+
+        previous = previous_results.get(module)
+
+        if not previous or previous.get("status", "").lower() not in {"warning", "issue", "error"}:
+            continue
+
+        before = set(previous.get("details", []))
+
+        for detail in result.get("details", []):
+            if detail not in before:
+                changed.append(f"{module}: {detail}")
+
+    return sorted(changed)
 
 
 def _load_previous_comparable_sweep(
@@ -576,6 +614,10 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
             (
                 "[red]NEW[/]",
                 changes["new"],
+            ),
+            (
+                "[magenta]CHANGED[/]",
+                changes.get("changed", []),
             ),
             (
                 "[yellow]PERSISTING[/]",
