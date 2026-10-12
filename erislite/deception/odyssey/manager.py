@@ -57,9 +57,7 @@ class OdysseyManager:
         self.host = host
         self.configs = tuple(configs)
 
-        self._events: deque[OdysseyEvent] = deque(
-            maxlen=MAX_IN_MEMORY_EVENTS
-        )
+        self._events: deque[OdysseyEvent] = deque(maxlen=MAX_IN_MEMORY_EVENTS)
         # Insertion order tracks the time each source was last logged, so
         # the oldest entries are always at the front.
         self._tracked: dict[tuple[str, int, str], _TrackedSource] = {}
@@ -282,8 +280,4 @@ def active_canary_ports() -> frozenset[int]:
     if manager is None:
         return frozenset()
 
-    return frozenset(
-        listener.config.port
-        for listener in manager.listeners
-        if listener.running
-    )
+    return frozenset(listener.config.port for listener in manager.listeners if listener.running)

@@ -17,8 +17,7 @@ def _uses_pep604_annotation(tree: ast.AST) -> bool:
             return False
 
         return any(
-            isinstance(node, ast.BinOp)
-            and isinstance(node.op, ast.BitOr)
+            isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr)
             for node in ast.walk(annotation)
         )
 

@@ -73,6 +73,7 @@ def test_odyssey_event_default_timestamp_is_utc():
     assert event.timestamp.tzinfo is not None
     assert event.timestamp.utcoffset() == timezone.utc.utcoffset(event.timestamp)
 
+
 def test_repeat_summary_to_dict():
     from erislite.deception.odyssey.events import OdysseyRepeatSummary
 

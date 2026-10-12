@@ -91,9 +91,7 @@ KNOWN_SERVICE_USERS = {
 def _header() -> None:
     console.print(
         Panel(
-            Text.from_markup(
-                "[dim]Review local accounts for privilege and shell anomalies[/]"
-            ),
+            Text.from_markup("[dim]Review local accounts for privilege and shell anomalies[/]"),
             title="[bold cyan]USER ACCOUNT SCAN[/]",
             subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
             border_style="cyan",
@@ -107,11 +105,7 @@ def _header() -> None:
 def _load_valid_shells() -> set[str]:
     try:
         with open("/etc/shells", "r", encoding="utf-8") as file:
-            return {
-                line.strip()
-                for line in file
-                if line.strip() and not line.startswith("#")
-            }
+            return {line.strip() for line in file if line.strip() and not line.startswith("#")}
     except OSError:
         return set()
 
@@ -209,10 +203,7 @@ def run_user_scan(silent: bool = False):
 
         return make_result(
             "warning",
-            details=[
-                f"{len(flagged)} account finding(s) across "
-                f"{len(unique_accounts)} account(s)"
-            ],
+            details=[f"{len(flagged)} account finding(s) across {len(unique_accounts)} account(s)"],
             tags=sorted(tags),
         )
 
@@ -282,9 +273,6 @@ def run_user_scan(silent: bool = False):
 
     return make_result(
         "warning",
-        details=[
-            f"{len(flagged)} account finding(s) across "
-            f"{len(unique_accounts)} account(s)"
-        ],
+        details=[f"{len(flagged)} account finding(s) across {len(unique_accounts)} account(s)"],
         tags=sorted(tags),
     )

@@ -13,16 +13,15 @@ from pathlib import Path
 
 from erislite.version import VERSION
 
-TODAY = "2026-10-01"
+TODAY = "2026-10-12"
 
 
 FILES = [
     (
         "main.py",
         "main.py",
-        "ErisLITE entry point — initializes user profile and launches the CLI.",
+        "ErisLITE entry point — verifies the runtime environment and launches the CLI.",
     ),
-
     # ---------------------------------------------------------------------
     # Accounts
     # ---------------------------------------------------------------------
@@ -51,7 +50,6 @@ FILES = [
         "ssh_config.py",
         "sshd_config audit against the ErisLITE hardening baseline.",
     ),
-
     # ---------------------------------------------------------------------
     # Configuration
     # ---------------------------------------------------------------------
@@ -65,12 +63,6 @@ FILES = [
         "theme.py",
         "Shared ErisLITE terminal theme and presentation constants.",
     ),
-    (
-        "erislite/config/logging.py",
-        "logging.py",
-        "Shared ErisLITE runtime logging configuration.",
-    ),
-
     # ---------------------------------------------------------------------
     # Containers
     # ---------------------------------------------------------------------
@@ -79,7 +71,6 @@ FILES = [
         "docker.py",
         "Docker security check: privileged containers and risky host exposure.",
     ),
-
     # ---------------------------------------------------------------------
     # Network
     # ---------------------------------------------------------------------
@@ -113,7 +104,6 @@ FILES = [
         "hosts.py",
         "/etc/hosts inspection for suspicious redirects and tampering.",
     ),
-
     # ---------------------------------------------------------------------
     # Persistence
     # ---------------------------------------------------------------------
@@ -137,7 +127,6 @@ FILES = [
         "world_writable.py",
         "World-writable file and directory inspection in critical filesystem paths.",
     ),
-
     # ---------------------------------------------------------------------
     # Response
     # ---------------------------------------------------------------------
@@ -171,12 +160,11 @@ FILES = [
         "utils.py",
         "Shared Rapid Response utility functions and runtime paths.",
     ),
-        (
+    (
         "erislite/response/guidance.py",
         "guidance.py",
         "Analyst response guidance for threat findings.",
     ),
-
     # ---------------------------------------------------------------------
     # Security
     # ---------------------------------------------------------------------
@@ -185,13 +173,59 @@ FILES = [
         "command_resolver.py",
         "Trusted command resolution and executable path validation.",
     ),
-
     (
         "erislite/security/import_guard.py",
         "import_guard.py",
         "Monitors and validates dynamic imports to prevent unauthorized code execution.",
     ),
-
+    (
+        "erislite/security/command_runner.py",
+        "command_runner.py",
+        "Shared command execution helper for ErisLITE modules.",
+    ),
+    (
+        "erislite/security/install_check.py",
+        "install_check.py",
+        "Validates install-tree ownership and permissions before privileged use.",
+    ),
+    (
+        "erislite/security/safe_io.py",
+        "safe_io.py",
+        "Symlink-safe private file writes for data ErisLITE creates as root.",
+    ),
+    # ---------------------------------------------------------------------
+    # Deception
+    # ---------------------------------------------------------------------
+    (
+        "erislite/deception/odyssey/config.py",
+        "config.py",
+        "Configuration and defaults for Odyssey Lite deception listeners.",
+    ),
+    (
+        "erislite/deception/odyssey/events.py",
+        "events.py",
+        "Event model for Odyssey Lite deception listener activity.",
+    ),
+    (
+        "erislite/deception/odyssey/listeners.py",
+        "listeners.py",
+        "TCP canary listeners for Odyssey Lite.",
+    ),
+    (
+        "erislite/deception/odyssey/manager.py",
+        "manager.py",
+        "Lifecycle and event management for Odyssey Lite.",
+    ),
+    (
+        "erislite/deception/odyssey/menu.py",
+        "menu.py",
+        "Interactive control and status interface for Odyssey Lite.",
+    ),
+    (
+        "erislite/deception/odyssey/storage.py",
+        "storage.py",
+        "Persistent event storage for Odyssey Lite.",
+    ),
     # ---------------------------------------------------------------------
     # Sweep
     # ---------------------------------------------------------------------
@@ -220,7 +254,6 @@ FILES = [
         "soc_mode.py",
         "SOC Mode rolling snapshot and posture assessment.",
     ),
-
     # ---------------------------------------------------------------------
     # System
     # ---------------------------------------------------------------------
@@ -249,7 +282,6 @@ FILES = [
         "security_audit.py",
         "Snapshot-style host security posture assessment.",
     ),
-
     # ---------------------------------------------------------------------
     # Vulnerability
     # ---------------------------------------------------------------------
@@ -263,7 +295,6 @@ FILES = [
         "cve_tools.py",
         "Offline CVE search and lookup against the local cache.",
     ),
-
     # ---------------------------------------------------------------------
     # UI
     # ---------------------------------------------------------------------
@@ -312,14 +343,11 @@ FILES = [
         "cve_tools_menu.py",
         "CVE tools launcher menu.",
     ),
-
     (
         "erislite/ui/shell_console.py",
         "shell_console.py",
         "Restricted shell console for analyst command execution.",
     ),
-
-
     # ---------------------------------------------------------------------
     # Version
     # ---------------------------------------------------------------------
@@ -328,7 +356,6 @@ FILES = [
         "version.py",
         "Single source of truth for ErisLITE version and build metadata.",
     ),
-
     # ---------------------------------------------------------------------
     # Shared Results
     # ---------------------------------------------------------------------
@@ -353,14 +380,17 @@ HEADER_PATTERN = re.compile(
 )
 
 
-def make_header(module_name: str, description: str) -> str:
+CREATED_PATTERN = re.compile(r"^# Created: (.+)$", re.MULTILINE)
+
+
+def make_header(module_name: str, description: str, created: str = "2025-06-01") -> str:
     return (
         "# Project: ErisLITE\n"
         f"# Module: {module_name}\n"
         "# Author: Liam Piper-Brandon\n"
         f"# Version: {VERSION}\n"
         "# License: MIT\n"
-        "# Created: 2025-06-01\n"
+        f"# Created: {created}\n"
         f"# Last Updated: {TODAY}\n"
         f"# Description: {description}\n"
     )
@@ -371,13 +401,15 @@ def update_file(
     module_name: str,
     description: str,
 ) -> bool:
-    content = path.read_text(
-        encoding="utf-8"
-    )
+    content = path.read_text(encoding="utf-8")
+
+    # Keep each file's real creation date instead of resetting it.
+    created_match = CREATED_PATTERN.search(content[:500])
 
     new_header = make_header(
         module_name,
         description,
+        created_match.group(1).strip() if created_match else TODAY,
     )
 
     # Preserve shebang if present.
@@ -400,12 +432,7 @@ def update_file(
 
     content = content.lstrip("\n")
 
-    updated_content = (
-        shebang
-        + new_header
-        + "\n"
-        + content
-    )
+    updated_content = shebang + new_header + "\n" + content
 
     path.write_text(
         updated_content,
@@ -434,18 +461,13 @@ def main() -> None:
 
         updated.append(rel_path)
 
-    print(
-        f"\nUpdated {len(updated)} file(s):"
-    )
+    print(f"\nUpdated {len(updated)} file(s):")
 
     for path in updated:
         print(f"  ✓ {path}")
 
     if skipped:
-        print(
-            f"\nSkipped {len(skipped)} file(s) "
-            "(not found):"
-        )
+        print(f"\nSkipped {len(skipped)} file(s) (not found):")
 
         for path in skipped:
             print(f"  - {path}")

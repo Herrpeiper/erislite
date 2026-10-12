@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: firewall.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Firewall status inspection for UFW, firewalld, nftables, and iptables.
 
 import ipaddress
@@ -38,9 +38,7 @@ def detect_firewall_backend():
         if ufw.returncode == 0 and "status: active" in output:
             return "ufw"
 
-    firewalld, _ = _run_command(
-        ["systemctl", "is-active", "firewalld"]
-    )
+    firewalld, _ = _run_command(["systemctl", "is-active", "firewalld"])
 
     if (
         firewalld is not None
@@ -49,96 +47,110 @@ def detect_firewall_backend():
     ):
         return "firewalld"
 
-    nftables, _ = _run_command(
-        ["nft", "list", "ruleset"]
-    )
+    nftables, _ = _run_command(["nft", "list", "ruleset"])
 
-    if (
-        nftables is not None
-        and nftables.returncode == 0
-        and _nftables_has_rules(nftables.stdout)
-    ):
+    if nftables is not None and nftables.returncode == 0 and _nftables_has_rules(nftables.stdout):
         return "nftables"
 
-    iptables, _ = _run_command(
-        ["iptables", "-S"]
-    )
+    iptables, _ = _run_command(["iptables", "-S"])
 
-    if (
-        iptables is not None
-        and iptables.returncode == 0
-        and _iptables_has_rules(iptables.stdout)
-    ):
+    if iptables is not None and iptables.returncode == 0 and _iptables_has_rules(iptables.stdout):
         return "iptables"
 
     return None
 
 
+NFT_TABLE = "erislite"
+
+
+def _nftables_setup_commands():
+    """Idempotent commands that create the ErisLITE block table.
+
+    The table has its own output base chain that drops anything in the
+    blocked4 or blocked6 sets. A drop in any base chain is final, so this
+    works alongside an existing ruleset without editing it. Flushing and
+    re-adding the two rules keeps repeated runs from duplicating them.
+    """
+
+    table = ["inet", NFT_TABLE]
+
+    return [
+        ["nft", "add", "table", *table],
+        [
+            "nft",
+            "add",
+            "chain",
+            *table,
+            "output",
+            "{ type filter hook output priority -10 ; policy accept ; }",
+        ],
+        ["nft", "add", "set", *table, "blocked4", "{ type ipv4_addr ; }"],
+        ["nft", "add", "set", *table, "blocked6", "{ type ipv6_addr ; }"],
+        ["nft", "flush", "chain", *table, "output"],
+        ["nft", "add", "rule", *table, "output", "ip", "daddr", "@blocked4", "drop"],
+        ["nft", "add", "rule", *table, "output", "ip6", "daddr", "@blocked6", "drop"],
+    ]
+
+
 def build_ip_block_commands(ip, backend):
+    """Return the commands that block outbound traffic to ip.
+
+    The result has "apply" and "undo" commands. It can also have "setup"
+    commands to run first and a "fallback" to try when apply fails.
+
+    Rules are placed ahead of existing rules where the backend allows it.
+    An appended rule sits behind any ESTABLISHED accept rule, so an
+    attacker's live session would survive the block.
+    """
+
     try:
         address = ipaddress.ip_address(ip)
     except ValueError:
         return None
 
+    ip = str(address)
+    v6 = address.version == 6
+
     if backend == "ufw":
         return {
-            "apply": [
-                "ufw",
-                "deny",
-                "out",
-                "to",
-                ip,
-            ],
-            "undo": [
-                "ufw",
-                "delete",
-                "deny",
-                "out",
-                "to",
-                ip,
-            ],
+            "apply": ["ufw", "insert", "1", "deny", "out", "to", ip],
+            # ufw refuses "insert 1" on an empty rule list and when an
+            # IPv6 rule would land ahead of IPv4 rules.
+            "fallback": ["ufw", "deny", "out", "to", ip],
+            "undo": ["ufw", "delete", "deny", "out", "to", ip],
+            "established_note": (
+                "ufw accepts ESTABLISHED traffic before user rules, so an existing "
+                "session to this address can survive. Terminate the owning process."
+            ),
         }
 
     if backend == "firewalld":
-        if address.version != 4:
-            return None
-
-        rule = (
-            f'rule family="ipv4" '
-            f'destination address="{ip}" drop'
-        )
+        # A rich rule with a destination address filters incoming traffic
+        # in a zone. It never matched outbound packets.
+        family = "ipv6" if v6 else "ipv4"
+        rule = [family, "filter", "OUTPUT", "0", "-d", ip, "-j", "DROP"]
 
         return {
-            "apply": [
-                "firewall-cmd",
-                f"--add-rich-rule={rule}",
-            ],
-            "undo": [
-                "firewall-cmd",
-                f"--remove-rich-rule={rule}",
-            ],
+            "apply": ["firewall-cmd", "--direct", "--add-rule", *rule],
+            "undo": ["firewall-cmd", "--direct", "--remove-rule", *rule],
         }
 
     if backend == "iptables":
+        tool = "ip6tables" if v6 else "iptables"
+
         return {
-            "apply": [
-                "iptables",
-                "-A",
-                "OUTPUT",
-                "-d",
-                ip,
-                "-j",
-                "DROP",
-            ],
-            "undo": [
-                "iptables",
-                "-D",
-                "OUTPUT",
-                "-d",
-                ip,
-                "-j",
-                "DROP",
-            ],
+            "apply": [tool, "-I", "OUTPUT", "1", "-d", ip, "-j", "DROP"],
+            "undo": [tool, "-D", "OUTPUT", "-d", ip, "-j", "DROP"],
+        }
+
+    if backend == "nftables":
+        element_set = "blocked6" if v6 else "blocked4"
+        element = f"{{ {ip} }}"
+
+        return {
+            "setup": _nftables_setup_commands(),
+            "apply": ["nft", "add", "element", "inet", NFT_TABLE, element_set, element],
+            "undo": ["nft", "delete", "element", "inet", NFT_TABLE, element_set, element],
         }
 
     return None
@@ -159,10 +171,7 @@ def _run_command(command):
 def _permission_denied(result) -> bool:
     error = (result.stderr or "").lower()
 
-    return any(
-        marker in error
-        for marker in PERMISSION_ERRORS
-    )
+    return any(marker in error for marker in PERMISSION_ERRORS)
 
 
 def _iptables_has_rules(output: str) -> bool:
@@ -196,10 +205,7 @@ def _nftables_has_rules(output: str) -> bool:
     for line in output.splitlines():
         normalized = f" {line.strip().lower()}"
 
-        if any(
-            indicator in normalized
-            for indicator in indicators
-        ):
+        if any(indicator in normalized for indicator in indicators):
             return True
 
     return False
@@ -256,9 +262,7 @@ def run_firewall_check(silent=False):
     empty_nftables = False
 
     # Check UFW.
-    ufw, ufw_error = _run_command(
-        ["ufw", "status"]
-    )
+    ufw, ufw_error = _run_command(["ufw", "status"])
 
     if ufw is not None:
         output = ufw.stdout.strip().lower()
@@ -282,9 +286,7 @@ def run_firewall_check(silent=False):
         command_failure = True
 
     # Check firewalld.
-    firewalld, firewalld_error = _run_command(
-        ["systemctl", "is-active", "firewalld"]
-    )
+    firewalld, firewalld_error = _run_command(["systemctl", "is-active", "firewalld"])
 
     if firewalld is not None:
         state = firewalld.stdout.strip().lower()
@@ -311,9 +313,7 @@ def run_firewall_check(silent=False):
         command_failure = True
 
     # Check nftables.
-    nftables, nftables_error = _run_command(
-        ["nft", "list", "ruleset"]
-    )
+    nftables, nftables_error = _run_command(["nft", "list", "ruleset"])
 
     if nftables is not None:
         if nftables.returncode == 0:
@@ -335,9 +335,7 @@ def run_firewall_check(silent=False):
         command_failure = True
 
     # Check iptables.
-    iptables, iptables_error = _run_command(
-        ["iptables", "-S"]
-    )
+    iptables, iptables_error = _run_command(["iptables", "-S"])
 
     if iptables is not None:
         if iptables.returncode == 0:
@@ -368,11 +366,7 @@ def run_firewall_check(silent=False):
         )
 
     if empty_iptables or empty_nftables:
-        firewall_type = (
-            "iptables"
-            if empty_iptables
-            else "nftables"
-        )
+        firewall_type = "iptables" if empty_iptables else "nftables"
 
         return _return_result(
             firewall_type,
@@ -392,16 +386,9 @@ def run_firewall_check(silent=False):
         )
 
     if inactive_frontends:
-        detail = (
-            f"{', '.join(inactive_frontends)} "
-            "reported an inactive state"
-        )
+        detail = f"{', '.join(inactive_frontends)} reported an inactive state"
 
-        tags = (
-            ["firewall_ufw_inactive"]
-            if inactive_frontends == ["UFW"]
-            else ["firewall_disabled"]
-        )
+        tags = ["firewall_ufw_inactive"] if inactive_frontends == ["UFW"] else ["firewall_disabled"]
 
         return _return_result(
             inactive_frontends[0],

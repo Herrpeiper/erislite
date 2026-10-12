@@ -211,11 +211,9 @@ def get_network_listeners_data() -> Dict[str, Any]:
 
     except CommandResolutionError:
         response["status"] = "error"
-        response["errors"].append(
-            "The 'ss' utility was not found on this system."
-        )
+        response["errors"].append("The 'ss' utility was not found on this system.")
         return response
-        
+
     except subprocess.TimeoutExpired:
         response["status"] = "error"
         response["errors"].append("Listener scan timed out after 15 seconds.")

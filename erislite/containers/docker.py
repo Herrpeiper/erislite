@@ -55,10 +55,7 @@ def get_running_containers():
         )
 
         if result.returncode != 0:
-            error = (
-                result.stderr.strip()
-                or f"docker ps exited with code {result.returncode}"
-            )
+            error = result.stderr.strip() or f"docker ps exited with code {result.returncode}"
             return [], error
 
         return result.stdout.strip().splitlines(), None
@@ -118,9 +115,7 @@ def _analyze_container(container_id: str, data: dict) -> dict:
         destination = mount.get("Destination", "")
 
         if destination in RISKY_MOUNT_DESTINATIONS:
-            flags.append(
-                RISKY_MOUNT_DESTINATIONS[destination]
-            )
+            flags.append(RISKY_MOUNT_DESTINATIONS[destination])
 
             if destination == "/":
                 tags.add("docker_mount_root")
@@ -129,10 +124,7 @@ def _analyze_container(container_id: str, data: dict) -> dict:
             elif destination == "/root":
                 tags.add("docker_mount_root_home")
 
-        if (
-            source == DOCKER_SOCKET
-            or destination == DOCKER_SOCKET
-        ):
+        if source == DOCKER_SOCKET or destination == DOCKER_SOCKET:
             flags.append("Docker Socket")
             tags.add("docker_sock_exposed")
 
@@ -183,8 +175,7 @@ def run_docker_scan(silent: bool = False):
 
         console.print(
             Panel.fit(
-                f"[yellow]Docker inspection is unavailable.[/]\n"
-                f"[dim]{collection_error}[/]",
+                f"[yellow]Docker inspection is unavailable.[/]\n[dim]{collection_error}[/]",
                 title="[bold yellow]UNAVAILABLE[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
@@ -220,20 +211,12 @@ def run_docker_scan(silent: bool = False):
     details = []
 
     if flagged:
-        details.append(
-            f"{len(flagged)} container(s) with risky configuration"
-        )
+        details.append(f"{len(flagged)} container(s) with risky configuration")
 
     if failed_inspections:
-        details.append(
-            f"{failed_inspections} container inspection(s) failed"
-        )
+        details.append(f"{failed_inspections} container inspection(s) failed")
 
-    status = (
-        "warning"
-        if flagged or failed_inspections
-        else "ok"
-    )
+    status = "warning" if flagged or failed_inspections else "ok"
 
     result = make_result(
         status,
@@ -308,16 +291,8 @@ def run_docker_scan(silent: bool = False):
             table.add_row(
                 container["name"],
                 container["id"][:12],
-                (
-                    "[yellow]REVIEW[/]"
-                    if is_flagged
-                    else "[green]OK[/]"
-                ),
-                (
-                    ", ".join(container["flags"])
-                    if container["flags"]
-                    else "-"
-                ),
+                ("[yellow]REVIEW[/]" if is_flagged else "[green]OK[/]"),
+                (", ".join(container["flags"]) if container["flags"] else "-"),
             )
 
         console.print(table)

@@ -32,9 +32,7 @@ def view_snapshot_logs():
             pause_return()
             return
 
-        files = [
-            f for f in os.listdir(SNAPSHOT_LOG_DIR) if f.endswith(".txt") and "snapshot" in f
-        ]
+        files = [f for f in os.listdir(SNAPSHOT_LOG_DIR) if f.endswith(".txt") and "snapshot" in f]
         files.sort(reverse=True)
 
         if not files:
@@ -52,9 +50,7 @@ def view_snapshot_logs():
         console.print(Align.center(table))
 
         choice = Prompt.ask(
-            "\n[bold green]Select a log to view[/] (1-{}) or [b]Q[/b] to cancel".format(
-                len(files)
-            ),
+            "\n[bold green]Select a log to view[/] (1-{}) or [b]Q[/b] to cancel".format(len(files)),
             default="1",
         )
 

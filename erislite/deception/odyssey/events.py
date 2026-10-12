@@ -22,9 +22,7 @@ class OdysseyEvent:
     destination_port: int
     service: str
     severity: str
-    timestamp: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict[str, object]:
         """Return a serializable representation of the event."""
