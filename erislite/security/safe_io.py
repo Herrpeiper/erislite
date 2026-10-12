@@ -4,6 +4,7 @@
 # Version: 1.5.0
 # License: MIT
 # Created: 2026-10-12
+# Last Updated: 2026-10-12
 # Description: Symlink-safe private file writes for data ErisLITE creates as root.
 
 """

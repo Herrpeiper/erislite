@@ -13,14 +13,14 @@ from pathlib import Path
 
 from erislite.version import VERSION
 
-TODAY = "2026-10-01"
+TODAY = "2026-10-12"
 
 
 FILES = [
     (
         "main.py",
         "main.py",
-        "ErisLITE entry point — initializes user profile and launches the CLI.",
+        "ErisLITE entry point — verifies the runtime environment and launches the CLI.",
     ),
 
     # ---------------------------------------------------------------------
@@ -64,11 +64,6 @@ FILES = [
         "erislite/config/theme.py",
         "theme.py",
         "Shared ErisLITE terminal theme and presentation constants.",
-    ),
-    (
-        "erislite/config/logging.py",
-        "logging.py",
-        "Shared ErisLITE runtime logging configuration.",
     ),
 
     # ---------------------------------------------------------------------
@@ -190,6 +185,55 @@ FILES = [
         "erislite/security/import_guard.py",
         "import_guard.py",
         "Monitors and validates dynamic imports to prevent unauthorized code execution.",
+    ),
+    (
+        "erislite/security/command_runner.py",
+        "command_runner.py",
+        "Shared command execution helper for ErisLITE modules.",
+    ),
+    (
+        "erislite/security/install_check.py",
+        "install_check.py",
+        "Refuses root execution from an install tree other users can modify.",
+    ),
+    (
+        "erislite/security/safe_io.py",
+        "safe_io.py",
+        "Symlink-safe private file writes for data ErisLITE creates as root.",
+    ),
+
+    # ---------------------------------------------------------------------
+    # Deception
+    # ---------------------------------------------------------------------
+    (
+        "erislite/deception/odyssey/config.py",
+        "config.py",
+        "Configuration and defaults for Odyssey Lite deception listeners.",
+    ),
+    (
+        "erislite/deception/odyssey/events.py",
+        "events.py",
+        "Event model for Odyssey Lite deception listener activity.",
+    ),
+    (
+        "erislite/deception/odyssey/listeners.py",
+        "listeners.py",
+        "TCP canary listeners for Odyssey Lite.",
+    ),
+    (
+        "erislite/deception/odyssey/manager.py",
+        "manager.py",
+        "Lifecycle and event management for Odyssey Lite.",
+    ),
+    (
+        "erislite/deception/odyssey/menu.py",
+        "menu.py",
+        "Interactive control and status interface for Odyssey Lite.",
+    ),
+    (
+        "erislite/deception/odyssey/storage.py",
+        "storage.py",
+        "Persistent event storage for Odyssey Lite.",
     ),
 
     # ---------------------------------------------------------------------
@@ -353,14 +397,17 @@ HEADER_PATTERN = re.compile(
 )
 
 
-def make_header(module_name: str, description: str) -> str:
+CREATED_PATTERN = re.compile(r"^# Created: (.+)$", re.MULTILINE)
+
+
+def make_header(module_name: str, description: str, created: str = "2025-06-01") -> str:
     return (
         "# Project: ErisLITE\n"
         f"# Module: {module_name}\n"
         "# Author: Liam Piper-Brandon\n"
         f"# Version: {VERSION}\n"
         "# License: MIT\n"
-        "# Created: 2025-06-01\n"
+        f"# Created: {created}\n"
         f"# Last Updated: {TODAY}\n"
         f"# Description: {description}\n"
     )
@@ -375,9 +422,13 @@ def update_file(
         encoding="utf-8"
     )
 
+    # Keep each file's real creation date instead of resetting it.
+    created_match = CREATED_PATTERN.search(content[:500])
+
     new_header = make_header(
         module_name,
         description,
+        created_match.group(1).strip() if created_match else TODAY,
     )
 
     # Preserve shebang if present.
