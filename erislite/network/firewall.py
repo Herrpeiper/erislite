@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: firewall.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Firewall status inspection for UFW, firewalld, nftables, and iptables.
 
 import ipaddress
@@ -74,71 +74,97 @@ def detect_firewall_backend():
     return None
 
 
+NFT_TABLE = "erislite"
+
+
+def _nftables_setup_commands():
+    """Idempotent commands that create the ErisLITE block table.
+
+    The table has its own output base chain that drops anything in the
+    blocked4 or blocked6 sets. A drop in any base chain is final, so this
+    works alongside an existing ruleset without editing it. Flushing and
+    re-adding the two rules keeps repeated runs from duplicating them.
+    """
+
+    table = ["inet", NFT_TABLE]
+
+    return [
+        ["nft", "add", "table", *table],
+        [
+            "nft",
+            "add",
+            "chain",
+            *table,
+            "output",
+            "{ type filter hook output priority -10 ; policy accept ; }",
+        ],
+        ["nft", "add", "set", *table, "blocked4", "{ type ipv4_addr ; }"],
+        ["nft", "add", "set", *table, "blocked6", "{ type ipv6_addr ; }"],
+        ["nft", "flush", "chain", *table, "output"],
+        ["nft", "add", "rule", *table, "output", "ip", "daddr", "@blocked4", "drop"],
+        ["nft", "add", "rule", *table, "output", "ip6", "daddr", "@blocked6", "drop"],
+    ]
+
+
 def build_ip_block_commands(ip, backend):
+    """Return the commands that block outbound traffic to ip.
+
+    The result has "apply" and "undo" commands. It can also have "setup"
+    commands to run first and a "fallback" to try when apply fails.
+
+    Rules are placed ahead of existing rules where the backend allows it.
+    An appended rule sits behind any ESTABLISHED accept rule, so an
+    attacker's live session would survive the block.
+    """
+
     try:
         address = ipaddress.ip_address(ip)
     except ValueError:
         return None
 
+    ip = str(address)
+    v6 = address.version == 6
+
     if backend == "ufw":
         return {
-            "apply": [
-                "ufw",
-                "deny",
-                "out",
-                "to",
-                ip,
-            ],
-            "undo": [
-                "ufw",
-                "delete",
-                "deny",
-                "out",
-                "to",
-                ip,
-            ],
+            "apply": ["ufw", "insert", "1", "deny", "out", "to", ip],
+            # ufw refuses "insert 1" on an empty rule list and when an
+            # IPv6 rule would land ahead of IPv4 rules.
+            "fallback": ["ufw", "deny", "out", "to", ip],
+            "undo": ["ufw", "delete", "deny", "out", "to", ip],
+            "established_note": (
+                "ufw accepts ESTABLISHED traffic before user rules, so an existing "
+                "session to this address can survive. Terminate the owning process."
+            ),
         }
 
     if backend == "firewalld":
-        if address.version != 4:
-            return None
-
-        rule = (
-            f'rule family="ipv4" '
-            f'destination address="{ip}" drop'
-        )
+        # A rich rule with a destination address filters incoming traffic
+        # in a zone. It never matched outbound packets.
+        family = "ipv6" if v6 else "ipv4"
+        rule = [family, "filter", "OUTPUT", "0", "-d", ip, "-j", "DROP"]
 
         return {
-            "apply": [
-                "firewall-cmd",
-                f"--add-rich-rule={rule}",
-            ],
-            "undo": [
-                "firewall-cmd",
-                f"--remove-rich-rule={rule}",
-            ],
+            "apply": ["firewall-cmd", "--direct", "--add-rule", *rule],
+            "undo": ["firewall-cmd", "--direct", "--remove-rule", *rule],
         }
 
     if backend == "iptables":
+        tool = "ip6tables" if v6 else "iptables"
+
         return {
-            "apply": [
-                "iptables",
-                "-A",
-                "OUTPUT",
-                "-d",
-                ip,
-                "-j",
-                "DROP",
-            ],
-            "undo": [
-                "iptables",
-                "-D",
-                "OUTPUT",
-                "-d",
-                ip,
-                "-j",
-                "DROP",
-            ],
+            "apply": [tool, "-I", "OUTPUT", "1", "-d", ip, "-j", "DROP"],
+            "undo": [tool, "-D", "OUTPUT", "-d", ip, "-j", "DROP"],
+        }
+
+    if backend == "nftables":
+        element_set = "blocked6" if v6 else "blocked4"
+        element = f"{{ {ip} }}"
+
+        return {
+            "setup": _nftables_setup_commands(),
+            "apply": ["nft", "add", "element", "inet", NFT_TABLE, element_set, element],
+            "undo": ["nft", "delete", "element", "inet", NFT_TABLE, element_set, element],
         }
 
     return None

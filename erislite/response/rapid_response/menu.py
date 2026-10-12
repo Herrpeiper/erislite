@@ -1,21 +1,20 @@
 # Project: ErisLITE
 # Module: menu.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Rapid Response menu and workflow entry point.
 
 from __future__ import annotations
 
-import json
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional, Sequence
 
 from rich import box
 from rich.panel import Panel
-from rich.prompt import Confirm
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich.text import Text
 
@@ -29,6 +28,7 @@ from erislite.response.rapid_response.triage import (
 )
 from erislite.response.rapid_response.undo import select_and_undo
 from erislite.response.rapid_response.utils import log_path, now
+from erislite.security.safe_io import write_private_json
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return, prompt_option
 
@@ -117,6 +117,76 @@ def _show_actions(actions) -> None:
     console.print()
 
 
+def parse_action_selection(raw: str, count: int) -> Optional[List[int]]:
+    """Parse "1,3-5", "all" or "" into zero-based action indexes.
+
+    Returns an empty list for no selection and None for invalid input.
+    """
+
+    raw = raw.strip().lower()
+
+    if not raw or raw in {"0", "none", "n"}:
+        return []
+
+    if raw == "all":
+        return list(range(count))
+
+    selected = set()
+
+    for part in raw.replace(" ", "").split(","):
+        if not part:
+            continue
+
+        bounds = part.split("-")
+
+        if len(bounds) > 2 or not all(bound.isdigit() for bound in bounds):
+            return None
+
+        start, end = int(bounds[0]), int(bounds[-1])
+
+        if start < 1 or end > count or start > end:
+            return None
+
+        selected.update(range(start - 1, end))
+
+    return sorted(selected)
+
+
+def _select_actions(actions: Sequence[Dict]) -> List[Dict]:
+    """Ask which actions to run. Nothing runs unless the analyst names it."""
+
+    while True:
+        raw = Prompt.ask(
+            "[bold red]Actions to execute[/] "
+            "[dim](e.g. 1,3-5, 'all', or Enter for none)[/]",
+            default="",
+            show_default=False,
+        )
+
+        indexes = parse_action_selection(raw, len(actions))
+
+        if indexes is not None:
+            return [actions[index] for index in indexes]
+
+        console.print(f"[red]Invalid selection. Use numbers from 1 to {len(actions)}.[/]")
+
+
+def _write_response_log(path, actions_log, success, failed, total) -> None:
+    write_private_json(
+        path,
+        {
+            "timestamp": now(),
+            "mode": "live",
+            "summary": {
+                "success": success,
+                "failed": failed,
+                "total": total,
+            },
+            "actions": actions_log,
+        },
+    )
+
+
 def run_rapid_response(dry_run: bool = False) -> None:
     if get_os() != "Linux":
         console.print("[yellow]Rapid Response is only supported on Linux.[/]")
@@ -156,7 +226,7 @@ def run_rapid_response(dry_run: bool = False) -> None:
 
     procs = suspicious_processes()
     conns, conn_error = suspicious_connections()
-    users, user_error = flagged_users()
+    users, review_users, user_error = flagged_users()
     crons, cron_errors = writable_crons()
 
     collection_errors = []
@@ -170,6 +240,12 @@ def run_rapid_response(dry_run: bool = False) -> None:
     collection_errors.extend(cron_errors)
 
     total = len(procs) + len(conns) + len(users) + len(crons)
+
+    if total == 0 and review_users:
+        console.print(
+            "[yellow]No containment actions proposed. System accounts with an "
+            f"interactive shell to review:[/] [white]{', '.join(review_users)}[/]\n"
+        )
 
     if total == 0:
         if collection_errors:
@@ -203,7 +279,13 @@ def run_rapid_response(dry_run: bool = False) -> None:
     _show_connections(conns)
 
     if users:
-        console.print(f"[red]Flagged Accounts:[/] [white]{', '.join(users)}[/]\n")
+        console.print(f"[red]UID 0 Accounts:[/] [white]{', '.join(users)}[/]\n")
+
+    if review_users:
+        console.print(
+            "[yellow]System accounts with an interactive shell (review only, "
+            f"not offered for locking):[/] [white]{', '.join(review_users)}[/]\n"
+        )
 
     if crons:
         console.print("[red]World-Writable Cron Files[/]")
@@ -232,8 +314,16 @@ def run_rapid_response(dry_run: bool = False) -> None:
         pause_return()
         return
 
+    selected = _select_actions(actions)
+
+    if not selected:
+        console.print("[yellow]No actions selected. Rapid Response cancelled.[/]")
+        pause_return()
+        return
+
     if not Confirm.ask(
-        "[bold red]Execute all actions?[/] [white]This will modify the system.[/]",
+        f"[bold red]Execute {len(selected)} selected action(s)?[/] "
+        "[white]This will modify the system.[/]",
         default=False,
     ):
         console.print("[yellow]Rapid Response cancelled.[/]")
@@ -247,28 +337,19 @@ def run_rapid_response(dry_run: bool = False) -> None:
     action_log: List[Dict] = []
     success = 0
     failed = 0
+    path = log_path()
 
-    for action in actions:
+    for action in selected:
         if execute_action(action, action_log):
             success += 1
         else:
             failed += 1
 
-    path = log_path()
-
-    log_data = {
-        "timestamp": now(),
-        "mode": "live",
-        "summary": {
-            "success": success,
-            "failed": failed,
-            "total": len(actions),
-        },
-        "actions": action_log,
-    }
-
-    with open(path, "w", encoding="utf-8") as file:
-        json.dump(log_data, file, indent=2)
+        # Write after every action so an interrupt never loses undo records.
+        try:
+            _write_response_log(path, action_log, success, failed, len(selected))
+        except OSError as exc:
+            console.print(f"[bold red]Could not write response log {path}: {exc}[/]")
 
     console.print()
     console.print(

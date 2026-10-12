@@ -267,89 +267,73 @@ def test_detect_firewall_backend_returns_none_when_unavailable(monkeypatch):
     assert firewall.detect_firewall_backend() is None
 
 
-def test_build_ufw_block_commands():
-    commands = firewall.build_ip_block_commands(
-        "203.0.113.10",
-        "ufw",
-    )
+def test_build_ufw_block_commands_insert_ahead_of_existing_rules():
+    commands = firewall.build_ip_block_commands("203.0.113.10", "ufw")
+
+    assert commands["apply"] == ["ufw", "insert", "1", "deny", "out", "to", "203.0.113.10"]
+    assert commands["fallback"] == ["ufw", "deny", "out", "to", "203.0.113.10"]
+    assert commands["undo"] == ["ufw", "delete", "deny", "out", "to", "203.0.113.10"]
+    assert "ESTABLISHED" in commands["established_note"]
+
+
+def test_build_firewalld_block_commands_use_direct_output_rule():
+    commands = firewall.build_ip_block_commands("203.0.113.10", "firewalld")
+
+    rule = ["ipv4", "filter", "OUTPUT", "0", "-d", "203.0.113.10", "-j", "DROP"]
 
     assert commands == {
-        "apply": [
-            "ufw",
-            "deny",
-            "out",
-            "to",
-            "203.0.113.10",
-        ],
-        "undo": [
-            "ufw",
-            "delete",
-            "deny",
-            "out",
-            "to",
-            "203.0.113.10",
-        ],
+        "apply": ["firewall-cmd", "--direct", "--add-rule", *rule],
+        "undo": ["firewall-cmd", "--direct", "--remove-rule", *rule],
     }
 
 
-def test_build_firewalld_block_commands():
-    commands = firewall.build_ip_block_commands(
-        "203.0.113.10",
-        "firewalld",
-    )
+def test_build_firewalld_block_commands_support_ipv6():
+    commands = firewall.build_ip_block_commands("2001:db8::1", "firewalld")
 
-    rule = (
-        'rule family="ipv4" '
-        'destination address="203.0.113.10" drop'
-    )
+    assert commands["apply"][3] == "ipv6"
+
+
+def test_build_iptables_block_commands_insert_at_top():
+    commands = firewall.build_ip_block_commands("203.0.113.10", "iptables")
 
     assert commands == {
-        "apply": [
-            "firewall-cmd",
-            f"--add-rich-rule={rule}",
-        ],
-        "undo": [
-            "firewall-cmd",
-            f"--remove-rich-rule={rule}",
-        ],
+        "apply": ["iptables", "-I", "OUTPUT", "1", "-d", "203.0.113.10", "-j", "DROP"],
+        "undo": ["iptables", "-D", "OUTPUT", "-d", "203.0.113.10", "-j", "DROP"],
     }
 
 
-def test_build_iptables_block_commands():
-    commands = firewall.build_ip_block_commands(
-        "203.0.113.10",
-        "iptables",
-    )
+def test_build_iptables_block_commands_use_ip6tables_for_ipv6():
+    commands = firewall.build_ip_block_commands("2001:db8::1", "iptables")
 
-    assert commands == {
-        "apply": [
-            "iptables",
-            "-A",
-            "OUTPUT",
-            "-d",
-            "203.0.113.10",
-            "-j",
-            "DROP",
-        ],
-        "undo": [
-            "iptables",
-            "-D",
-            "OUTPUT",
-            "-d",
-            "203.0.113.10",
-            "-j",
-            "DROP",
-        ],
-    }
+    assert commands["apply"][0] == "ip6tables"
+    assert commands["undo"][0] == "ip6tables"
 
 
-def test_build_nftables_block_commands_refuses_unknown_chain():
-    commands = firewall.build_ip_block_commands(
-        "203.0.113.10",
-        "nftables",
-    )
+def test_build_nftables_block_commands_use_erislite_set():
+    commands = firewall.build_ip_block_commands("203.0.113.10", "nftables")
 
-    assert commands is None
+    assert commands["apply"] == [
+        "nft", "add", "element", "inet", "erislite", "blocked4", "{ 203.0.113.10 }",
+    ]
+    assert commands["undo"] == [
+        "nft", "delete", "element", "inet", "erislite", "blocked4", "{ 203.0.113.10 }",
+    ]
+    assert ["nft", "flush", "chain", "inet", "erislite", "output"] in commands["setup"]
+
+
+def test_nftables_setup_flushes_before_adding_rules():
+    setup = firewall.build_ip_block_commands("2001:db8::1", "nftables")["setup"]
+
+    flush = setup.index(["nft", "flush", "chain", "inet", "erislite", "output"])
+    rule_indexes = [index for index, command in enumerate(setup) if command[1:3] == ["add", "rule"]]
+
+    assert rule_indexes and all(index > flush for index in rule_indexes)
+
+
+def test_build_block_commands_normalizes_address():
+    commands = firewall.build_ip_block_commands("2001:DB8:0::1", "iptables")
+
+    assert "2001:db8::1" in commands["apply"]
 
 
 @pytest.mark.parametrize(
@@ -369,12 +353,3 @@ def test_build_block_commands_rejects_invalid_ip(invalid_ip):
         )
         is None
     )
-
-
-def test_firewalld_rejects_ipv6():
-    commands = firewall.build_ip_block_commands(
-        "2001:db8::1",
-        "firewalld",
-    )
-
-    assert commands is None
