@@ -1,14 +1,13 @@
 # Project: ErisLITE
 # Module: kernel_modules.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Kernel module inspection for known-bad names, untracked modules, and unusual paths.
 
 import json
-import os
 import subprocess
 from datetime import datetime
 
@@ -17,12 +16,15 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.config.settings import APP_NAME, APP_VERSION, LOG_DIR
 from erislite.results import make_result
 from erislite.security.command_resolver import CommandResolutionError
 from erislite.security.command_runner import run_command
+from erislite.security.safe_io import private_text_writer
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
+
+KERNEL_LOG_DIR = LOG_DIR / "kernel_check"
 
 KNOWN_BAD_MODULES = {
     "adore",
@@ -272,24 +274,11 @@ def run_kernel_module_check(
 
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_dir = os.path.join(
-            "data",
-            "logs",
-            "kernel_check",
-        )
+        # This was relative to the working directory, so logs landed
+        # wherever ErisLITE happened to be launched from.
+        export_path = KERNEL_LOG_DIR / f"kernel_check_{timestamp}.json"
 
-        os.makedirs(log_dir, exist_ok=True)
-
-        export_path = os.path.join(
-            log_dir,
-            f"kernel_check_{timestamp}.json",
-        )
-
-        with open(
-            export_path,
-            "w",
-            encoding="utf-8",
-        ) as file:
+        with private_text_writer(export_path) as file:
             json.dump(
                 {
                     "timestamp": datetime.now().isoformat(),

@@ -27,6 +27,7 @@ from erislite.containers import docker
 from erislite.network import firewall, hosts, listeners
 from erislite.persistence import backdoors, cron, suid, world_writable
 from erislite.results import make_result
+from erislite.security.safe_io import write_private_json
 from erislite.system import integrity, kernel_modules, processes
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_analyst_id, pause_return
@@ -673,48 +674,12 @@ def _save_sweep(results, sweep_profile, user_profile, changes):
             "results": results,
         }
 
-        LAST_SWEEP_FILE.parent.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
+        write_private_json(LAST_SWEEP_FILE, summary, default=str)
 
-        with open(
-            LAST_SWEEP_FILE,
-            "w",
-            encoding="utf-8",
-        ) as file:
-            json.dump(
-                summary,
-                file,
-                indent=2,
-                default=str,
-            )
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_path = SWEEP_LOG_DIR / f"sweep_log_{timestamp}.json"
 
-        SWEEP_LOG_DIR.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
-        timestamp = datetime.now().strftime(
-            "%Y%m%d_%H%M%S"
-        )
-
-        log_path = (
-            SWEEP_LOG_DIR
-            / f"sweep_log_{timestamp}.json"
-        )
-
-        with open(
-            log_path,
-            "w",
-            encoding="utf-8",
-        ) as file:
-            json.dump(
-                summary,
-                file,
-                indent=2,
-                default=str,
-            )
+        write_private_json(log_path, summary, default=str)
 
     except OSError as exc:
         console.print(

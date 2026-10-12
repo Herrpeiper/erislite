@@ -1,17 +1,15 @@
 # Project: ErisLITE
 # Module: utils.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Shared UI utilities for screen control, headers, prompts, and platform detection.
 
-import json
 import os
 import platform
 import subprocess
-from datetime import datetime
 from typing import Optional
 
 from rich import box
@@ -59,7 +57,7 @@ def clear_screen() -> None:
         )
     except (CommandResolutionError, OSError):
         # Best-effort fallback if clear is unavailable.
-        print("\033[2J\033[H]", end="")
+        print("\033[2J\033[H", end="")
 
 
 def show_header(
@@ -102,43 +100,6 @@ def pause_return(centered: bool = False) -> None:
     console.input(
         "\n[dim cyan][ENTER] Return to menu[/]"
     )
-
-
-def export_json_log(
-    data,
-    prefix: str = "log",
-    folder: str = "logs",
-) -> str:
-    """
-    Export structured data to a timestamped JSON file.
-    """
-    timestamp = datetime.now().strftime(
-        "%Y%m%d_%H%M%S"
-    )
-
-    os.makedirs(
-        folder,
-        exist_ok=True,
-    )
-
-    filename = f"{prefix}_{timestamp}.json"
-    filepath = os.path.join(
-        folder,
-        filename,
-    )
-
-    with open(
-        filepath,
-        "w",
-        encoding="utf-8",
-    ) as file:
-        json.dump(
-            data,
-            file,
-            indent=2,
-        )
-
-    return filepath
 
 
 def get_analyst_id(profile: dict) -> Optional[str]:
