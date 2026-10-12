@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: utils.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Shared Rapid Response utility functions and runtime paths.
 
 from __future__ import annotations
@@ -22,6 +22,10 @@ from erislite.security.command_runner import run_command
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 LOG_DIR = REPO_ROOT / "data" / "logs" / "rapid_response"
+
+# Removed files are kept here, outside every cron directory, so cronie and
+# run-parts never execute a backup copy.
+QUARANTINE_DIR = REPO_ROOT / "data" / "quarantine" / "rapid_response"
 
 
 def have(cmd: str) -> bool:
@@ -64,6 +68,5 @@ def now() -> str:
 
 
 def log_path() -> Path:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return LOG_DIR / f"rapid_response_{timestamp}.json"
