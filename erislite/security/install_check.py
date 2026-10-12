@@ -4,7 +4,8 @@
 # Version: 1.5.0
 # License: MIT
 # Created: 2026-10-12
-# Description: Refuses root execution from an install tree other users can modify.
+# Last Updated: 2026-10-12
+# Description: Validates install-tree ownership and permissions before privileged use.
 
 """
 Install tree ownership check.
@@ -116,6 +117,24 @@ def _tree_issues(root: Path, trusted_uids) -> List[str]:
             info = os.lstat(path)
         except OSError as exc:
             issues.append(f"{path}: cannot inspect ({exc})")
+            return
+
+        if stat.S_ISLNK(info.st_mode):
+            try:
+                target = path.resolve(strict=True)
+                target_info = os.stat(target)
+            except OSError as exc:
+                issues.append(f"{path}: cannot resolve symlink target ({exc})")
+                return
+
+            target_issue = _describe(target, target_info, trusted_uids)
+
+            if target_issue:
+                issues.append(f"{path} -> {target}: {target_issue}")
+
+            for ancestor_issue in _ancestor_issues(target, trusted_uids):
+                issues.append(f"{path} target path is unsafe: {ancestor_issue}")
+
             return
 
         issue = _describe(path, info, trusted_uids)

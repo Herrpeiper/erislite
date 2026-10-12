@@ -243,6 +243,7 @@ def test_block_ip_logs_failed_command(monkeypatch):
     assert len(log) == 1
     assert log[0]["result"] == "Failed: permission denied"
 
+
 def test_lock_user_rejects_root(monkeypatch):
     log = []
 
@@ -361,9 +362,7 @@ def test_terminate_user_sessions_uses_loginctl(monkeypatch):
         fake_run_cmd,
     )
 
-    success, detail = actions._terminate_user_sessions(
-        "suspicioususer"
-    )
+    success, detail = actions._terminate_user_sessions("suspicioususer")
 
     assert success is True
     assert detail == "sessions terminated with loginctl"
@@ -400,9 +399,7 @@ def test_terminate_user_sessions_falls_back_to_pkill(monkeypatch):
         fake_run_cmd,
     )
 
-    success, detail = actions._terminate_user_sessions(
-        "suspicioususer"
-    )
+    success, detail = actions._terminate_user_sessions("suspicioususer")
 
     assert success is True
     assert detail == "user processes terminated with pkill"
@@ -466,8 +463,9 @@ def test_lock_user_logs_partial_containment(monkeypatch):
 
     assert result is True
     assert len(log) == 1
-    assert "Locked suspicioususer" in log[0]["result"]
+    assert "Password authentication locked for suspicioususer" in log[0]["result"]
     assert "sessions not terminated" in log[0]["result"]
+
 
 def test_lock_user_rejects_service_account(monkeypatch):
     log = []
@@ -532,7 +530,9 @@ def test_operator_identity_uses_sudo_user(monkeypatch):
     monkeypatch.setenv("SUDO_UID", "1000")
     monkeypatch.setattr(actions.os, "getuid", lambda: 0)
     monkeypatch.setattr(actions.os, "getlogin", lambda: (_ for _ in ()).throw(OSError()))
-    monkeypatch.setattr(actions.pwd, "getpwuid", lambda uid: _Account({0: "root", 1000: "liam"}[uid], uid))
+    monkeypatch.setattr(
+        actions.pwd, "getpwuid", lambda uid: _Account({0: "root", 1000: "liam"}[uid], uid)
+    )
 
     names, uids = actions.operator_identity()
 
@@ -655,6 +655,51 @@ def test_block_ip_runs_setup_then_apply_for_nftables(monkeypatch):
     assert log[0]["undo"][:3] == ["nft", "delete", "element"]
 
 
+def test_block_ip_tolerates_existing_nftables_objects(monkeypatch):
+    log = []
+    calls = []
+
+    monkeypatch.setattr(actions, "operator_source_ips", lambda: set())
+    monkeypatch.setattr(actions, "detect_firewall_backend", lambda: "nftables")
+
+    def fake_run_cmd(command):
+        calls.append(command)
+
+        # Simulate the ErisLITE nftables objects already existing from
+        # an earlier block action.
+        if command[:3] in (
+            ["nft", "add", "table"],
+            ["nft", "add", "chain"],
+            ["nft", "add", "set"],
+        ):
+            return 1, "", "Error: Could not process rule: File exists"
+
+        return 0, "", ""
+
+    monkeypatch.setattr(actions, "run_cmd", fake_run_cmd)
+
+    result = actions.execute_action(
+        {
+            "type": "block_ip",
+            "data": {"remote_ip": "203.0.113.11"},
+            "undo": None,
+        },
+        log,
+    )
+
+    assert result is True
+    assert log[0]["result"].startswith("Blocked 203.0.113.11")
+    assert calls[-1] == [
+        "nft",
+        "add",
+        "element",
+        "inet",
+        "erislite",
+        "blocked4",
+        "{ 203.0.113.11 }",
+    ]
+
+
 def test_block_ip_uses_ufw_fallback_when_insert_fails(monkeypatch):
     log = []
     calls = []
@@ -745,4 +790,3 @@ def test_build_action_plan_adds_kill_for_shell_holding_connection(monkeypatch):
 
     assert [action["type"] for action in plan] == ["block_ip", "kill_process"]
     assert plan[1]["data"]["pid"] == 77
-

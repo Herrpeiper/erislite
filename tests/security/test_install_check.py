@@ -21,12 +21,22 @@ def test_non_root_is_never_blocked(tmp_path):
 def test_foreign_owned_file_is_reported(monkeypatch, tmp_path):
     root = _tree(tmp_path)
     module = root / "erislite" / "__init__.py"
+
+    for path in [
+        root,
+        root / "erislite",
+        root / "main.py",
+        module,
+    ]:
+        path.chmod(0o755 if path.is_dir() else 0o644)
+
     real_lstat = os.lstat
 
     class Fake:
-        def __init__(self, info, uid):
+        def __init__(self, info, uid, gid=0):
             self._info = info
             self.st_uid = uid
+            self.st_gid = gid
 
         def __getattr__(self, name):
             return getattr(self._info, name)
@@ -133,3 +143,52 @@ def test_group_membership_lookup(monkeypatch):
     )
 
     assert install_check._group_has_untrusted_members(50, {0}) is True
+
+
+def test_symlink_to_foreign_owned_code_is_reported(monkeypatch, tmp_path):
+    root = _tree(tmp_path)
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    target = outside / "evil.py"
+    target.write_text("print('owned')")
+
+    for path in [
+        root,
+        root / "erislite",
+        root / "main.py",
+        root / "erislite" / "__init__.py",
+        outside,
+        target,
+    ]:
+        path.chmod(0o755 if path.is_dir() else 0o644)
+
+    link = root / "erislite" / "linked.py"
+    link.symlink_to(target)
+
+    real_stat = os.stat
+
+    class Fake:
+        def __init__(self, info, uid, gid=0):
+            self._info = info
+            self.st_uid = uid
+            self.st_gid = gid
+
+        def __getattr__(self, name):
+            return getattr(self._info, name)
+
+    def fake_stat(path, *args, **kwargs):
+        info = real_stat(path, *args, **kwargs)
+
+        if os.path.abspath(os.fspath(path)) == os.path.abspath(os.fspath(target)):
+            return Fake(info, 1000)
+
+        return Fake(info, 0)
+
+    monkeypatch.setattr(install_check.os, "stat", fake_stat)
+    monkeypatch.setattr(install_check, "_ancestor_issues", lambda root, uids: [])
+
+    issues = install_check.find_unsafe_install_paths(root, euid=0)
+
+    assert any("linked.py" in issue and "owned by uid 1000" in issue for issue in issues)

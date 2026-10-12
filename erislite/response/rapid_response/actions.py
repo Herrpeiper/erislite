@@ -261,7 +261,9 @@ def _block_ip(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
     commands = build_ip_block_commands(ip, backend)
 
     if commands is None:
-        entry["result"] = f"Failed: {backend} cannot safely block {ip} with the current configuration"
+        entry["result"] = (
+            f"Failed: {backend} cannot safely block {ip} with the current configuration"
+        )
         console.print(
             f"[red]{backend} is active, but Rapid Response cannot "
             f"safely create a block rule for {ip}[/]"
@@ -274,6 +276,11 @@ def _block_ip(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
         rc, _, err = run_cmd(setup)
 
         if rc != 0:
+            # nftables setup is intentionally repeatable. On later block
+            # actions, the ErisLITE table, chain, and sets may already exist.
+            if backend == "nftables" and "file exists" in (err or "").lower():
+                continue
+
             entry["result"] = f"Failed: {backend} setup failed: {err}"
             console.print(f"[red]Failed to prepare {backend} block table: {err}[/]")
             return False
@@ -401,15 +408,20 @@ def _lock_user(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
     terminated, detail = _terminate_user_sessions(username)
 
     if terminated:
-        entry["result"] = f"Locked {username}; {detail}"
-        console.print(f"[green]Locked account and terminated active sessions: {username}[/]")
+        entry["result"] = f"Password authentication locked for {username}; {detail}"
+        console.print(
+            f"[green]Locked password authentication and terminated active sessions: {username}[/]"
+        )
         return True
 
-    entry["result"] = f"Locked {username}; sessions not terminated: {detail}"
-    console.print(
-        f"[yellow]Locked account {username}, but active sessions were not terminated: "
-        f"{detail}[/]"
+    entry["result"] = (
+        f"Password authentication locked for {username}; sessions not terminated: {detail}"
     )
+    console.print(
+        f"[yellow]Locked password authentication for {username}, but active "
+        f"sessions were not terminated: {detail}[/]"
+    )
+    console.print("[yellow]Review SSH keys and other authentication methods for this account.[/]")
 
     # Locking succeeded, so containment was partial rather than failed.
     return True

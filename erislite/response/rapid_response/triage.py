@@ -61,6 +61,34 @@ SUSPICIOUS_PROCESS_NAMES = {
 
 # Interpreters are often installed with a version suffix (perl5.36, php8.2).
 _SUSPICIOUS_INTERPRETER = re.compile(r"^(perl|ruby|lua|php)[0-9.]*$")
+_PYTHON_PROCESS = re.compile(r"^python(?:[0-9]+(?:\.[0-9]+)*)?$")
+
+
+def is_suspicious_python_command(name: str, cmdline: str) -> bool:
+    """Return True for Python command lines that resemble a reverse shell."""
+
+    name = (name or "").strip().lower()
+    cmdline = (cmdline or "").lower()
+
+    if not _PYTHON_PROCESS.match(name):
+        return False
+
+    network_indicator = "socket.socket" in cmdline and (
+        ".connect(" in cmdline or "connect_ex(" in cmdline
+    )
+
+    shell_indicator = any(
+        marker in cmdline
+        for marker in (
+            "os.dup2",
+            "pty.spawn",
+            "/bin/sh",
+            "/bin/bash",
+            "subprocess",
+        )
+    )
+
+    return network_indicator and shell_indicator
 
 
 SSHD_PROCESS_NAMES = {"sshd", "sshd-session"}
@@ -91,10 +119,7 @@ def is_internal_address(ip: str) -> bool:
         address = mapped
 
     return (
-        address.is_private
-        or address.is_loopback
-        or address.is_link_local
-        or address.is_unspecified
+        address.is_private or address.is_loopback or address.is_link_local or address.is_unspecified
     )
 
 
@@ -256,6 +281,16 @@ def operator_source_ips() -> Set[str]:
     return ips
 
 
+def _process_cmdline(pid: Optional[int]) -> str:
+    if not pid:
+        return ""
+
+    try:
+        return " ".join(psutil.Process(pid).cmdline())
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, OSError):
+        return ""
+
+
 def _process_name(pid: Optional[int]) -> str:
     if not pid:
         return ""
@@ -269,6 +304,7 @@ def _process_name(pid: Optional[int]) -> str:
 def classify_connections(
     connections: Iterable[Any],
     name_for_pid=_process_name,
+    cmdline_for_pid=_process_cmdline,
     protected_ips: Optional[Set[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Return suspicious established connections from psutil connection records.
@@ -289,9 +325,7 @@ def classify_connections(
     connections = list(connections)
 
     listening_ports = {
-        conn.laddr.port
-        for conn in connections
-        if conn.status == "LISTEN" and conn.laddr
+        conn.laddr.port for conn in connections if conn.status == "LISTEN" and conn.laddr
     }
 
     found = []
@@ -306,6 +340,7 @@ def classify_connections(
             continue
 
         proc_name = name_for_pid(conn.pid)
+        proc_cmdline = cmdline_for_pid(conn.pid)
         inbound = bool(conn.laddr) and conn.laddr.port in listening_ports
         laddr = f"{conn.laddr.ip}:{conn.laddr.port}" if conn.laddr else "—"
 
@@ -318,7 +353,9 @@ def classify_connections(
             "direction": "inbound" if inbound else "outbound",
         }
 
-        if is_suspicious_process_name(proc_name):
+        if is_suspicious_process_name(proc_name) or is_suspicious_python_command(
+            proc_name, proc_cmdline
+        ):
             record["reason"] = f"{proc_name} holds a {record['direction']} connection"
             found.append(record)
             continue

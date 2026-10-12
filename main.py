@@ -14,9 +14,9 @@ import sys
 from erislite.security.import_guard import check_import_environment
 from erislite.security.install_check import find_unsafe_install_paths, remediation
 
-# Both checks use the standard library only and intentionally run before
-# third-party and application imports. Do not move the delayed imports
-# above them.
+# These checks run before third-party and most application imports to catch
+# unsafe deployment conditions early. They are sanity checks, not a security
+# boundary against an already-compromised ErisLITE installation.
 IMPORT_STATUS = check_import_environment()
 INSTALL_ISSUES = find_unsafe_install_paths()
 
@@ -67,10 +67,10 @@ def _show_import_warning() -> None:
 
 
 def check_root_safety(allow_unsafe: bool, euid=None) -> bool:
-    """Return True when it is safe to continue.
+    """Return True when privileged startup may continue.
 
-    As root, an install or import path another user can modify turns that
-    user's compromise into root. Refuse unless the operator overrides it.
+    As root, refuse known-unsafe install or import paths unless the operator
+    explicitly overrides the deployment warning.
     """
 
     if euid is None:
