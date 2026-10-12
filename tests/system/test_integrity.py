@@ -26,9 +26,7 @@ def _write_baseline(
         "hashes": hashes or {},
     }
 
-    baseline_path.write_text(
-        json.dumps(payload)
-    )
+    baseline_path.write_text(json.dumps(payload))
 
 
 def _patch_baseline_path(
@@ -46,9 +44,7 @@ def test_get_sha256_success(tmp_path):
     test_file = tmp_path / "sample.txt"
     test_file.write_text("hello world")
 
-    digest, error = integrity.get_sha256(
-        str(test_file)
-    )
+    digest, error = integrity.get_sha256(str(test_file))
 
     assert digest is not None
     assert error is None
@@ -57,9 +53,7 @@ def test_get_sha256_success(tmp_path):
 def test_get_sha256_missing(tmp_path):
     missing = tmp_path / "missing.txt"
 
-    digest, error = integrity.get_sha256(
-        str(missing)
-    )
+    digest, error = integrity.get_sha256(str(missing))
 
     assert digest is None
     assert error == "missing"
@@ -74,9 +68,7 @@ def test_get_sha256_permission_error(monkeypatch):
         fail_open,
     )
 
-    digest, error = integrity.get_sha256(
-        "/etc/shadow"
-    )
+    digest, error = integrity.get_sha256("/etc/shadow")
 
     assert digest is None
     assert error is not None
@@ -84,29 +76,17 @@ def test_get_sha256_permission_error(monkeypatch):
 
 
 def test_baseline_paths_are_profile_specific():
-    critical = integrity.get_baseline_path(
-        "critical"
-    )
-    system = integrity.get_baseline_path(
-        "system"
-    )
-    user = integrity.get_baseline_path(
-        "user"
-    )
+    critical = integrity.get_baseline_path("critical")
+    system = integrity.get_baseline_path("system")
+    user = integrity.get_baseline_path("user")
 
     assert critical != system
     assert critical != user
     assert system != user
 
-    assert critical.endswith(
-        "integrity_baseline_critical.json"
-    )
-    assert system.endswith(
-        "integrity_baseline_system.json"
-    )
-    assert user.endswith(
-        "integrity_baseline_user.json"
-    )
+    assert critical.endswith("integrity_baseline_critical.json")
+    assert system.endswith("integrity_baseline_system.json")
+    assert user.endswith("integrity_baseline_user.json")
 
 
 def test_collect_targets_keeps_missing_explicit_file(
@@ -125,9 +105,7 @@ def test_collect_targets_keeps_missing_explicit_file(
         },
     )
 
-    targets, errors = integrity._collect_targets(
-        "test"
-    )
+    targets, errors = integrity._collect_targets("test")
 
     assert str(missing) in targets
     assert errors == []
@@ -168,9 +146,7 @@ def test_collect_targets_reports_directory_error(
         fake_walk,
     )
 
-    targets, errors = integrity._collect_targets(
-        "test"
-    )
+    targets, errors = integrity._collect_targets("test")
 
     assert targets == []
     assert errors
@@ -220,10 +196,7 @@ def test_scan_integrity_missing_file_is_warning(
     assert result["status"] == "warning"
     assert "file_integrity_issue" in result["tags"]
 
-    assert any(
-        "is missing" in detail
-        for detail in result["details"]
-    )
+    assert any("is missing" in detail for detail in result["details"])
 
 
 def test_scan_integrity_unreadable_file_is_error(
@@ -276,15 +249,9 @@ def test_scan_integrity_unreadable_file_is_error(
     )
 
     assert result["status"] == "error"
-    assert (
-        "integrity_scan_incomplete"
-        in result["tags"]
-    )
+    assert "integrity_scan_incomplete" in result["tags"]
 
-    assert any(
-        "could not be inspected" in detail
-        for detail in result["details"]
-    )
+    assert any("could not be inspected" in detail for detail in result["details"])
 
 
 def test_scan_integrity_modified_and_incomplete(
@@ -351,10 +318,7 @@ def test_scan_integrity_modified_and_incomplete(
     assert result["status"] == "warning"
     assert "file_integrity_issue" in result["tags"]
 
-    assert (
-        "integrity_scan_incomplete"
-        in result["tags"]
-    )
+    assert "integrity_scan_incomplete" in result["tags"]
 
 
 def test_scan_integrity_target_collection_failure(
@@ -398,16 +362,9 @@ def test_scan_integrity_target_collection_failure(
 
     assert result["status"] == "error"
 
-    assert (
-        "integrity_scan_incomplete"
-        in result["tags"]
-    )
+    assert "integrity_scan_incomplete" in result["tags"]
 
-    assert any(
-        "target collection incomplete"
-        in detail.lower()
-        for detail in result["details"]
-    )
+    assert any("target collection incomplete" in detail.lower() for detail in result["details"])
 
 
 def test_scan_integrity_expected_absent_is_ok(
@@ -421,9 +378,7 @@ def test_scan_integrity_expected_absent_is_ok(
 
     present.write_text("profile data")
 
-    present_hash, error = integrity.get_sha256(
-        str(present)
-    )
+    present_hash, error = integrity.get_sha256(str(present))
 
     assert error is None
 
@@ -485,9 +440,7 @@ def test_scan_integrity_expected_absent_created(
     present.write_text("profile data")
     appeared.write_text("ssh-rsa example")
 
-    present_hash, error = integrity.get_sha256(
-        str(present)
-    )
+    present_hash, error = integrity.get_sha256(str(present))
 
     assert error is None
 
@@ -536,11 +489,7 @@ def test_scan_integrity_expected_absent_created(
     assert result["status"] == "warning"
     assert "file_integrity_issue" in result["tags"]
 
-    assert any(
-        "appeared but was absent"
-        in detail
-        for detail in result["details"]
-    )
+    assert any("appeared but was absent" in detail for detail in result["details"])
 
 
 def test_scan_integrity_expected_absent_broken_symlink(
@@ -554,13 +503,9 @@ def test_scan_integrity_expected_absent_broken_symlink(
 
     present.write_text("profile data")
 
-    link.symlink_to(
-        tmp_path / "missing_target"
-    )
+    link.symlink_to(tmp_path / "missing_target")
 
-    present_hash, error = integrity.get_sha256(
-        str(present)
-    )
+    present_hash, error = integrity.get_sha256(str(present))
 
     assert error is None
 
@@ -609,10 +554,7 @@ def test_scan_integrity_expected_absent_broken_symlink(
     assert result["status"] == "warning"
     assert "file_integrity_issue" in result["tags"]
 
-    assert any(
-        "broken symbolic link" in detail
-        for detail in result["details"]
-    )
+    assert any("broken symbolic link" in detail for detail in result["details"])
 
 
 def test_baseline_profile_mismatch(
@@ -637,14 +579,9 @@ def test_baseline_profile_mismatch(
         baseline_path,
     )
 
-    result = integrity.check_baseline_integrity(
-        profile="system"
-    )
+    result = integrity.check_baseline_integrity(profile="system")
 
     assert result["status"] == "warning"
     assert "baseline_tamper" in result["tags"]
 
-    assert any(
-        "does not match" in detail
-        for detail in result["details"]
-    )
+    assert any("does not match" in detail for detail in result["details"])

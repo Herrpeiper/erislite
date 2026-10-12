@@ -39,6 +39,7 @@ def _format_risk(data: dict) -> str:
 
     return str(score)
 
+
 def _header(title: str) -> None:
     console.print(
         Panel(
@@ -51,6 +52,7 @@ def _header(title: str) -> None:
         )
     )
     console.print()
+
 
 MODULE_LABELS = {
     "integrity": "Integrity",
@@ -86,6 +88,7 @@ def _guidance_for_result(result: dict) -> list:
 
     return guidance_items
 
+
 def _render_guidance(result: dict) -> None:
     severity_colors = {
         "critical": "red",
@@ -106,8 +109,7 @@ def _render_guidance(result: dict) -> None:
         ]
 
         content.extend(
-            Text(f"• {command}", style="white")
-            for command in guidance.get("investigate", [])
+            Text(f"• {command}", style="white") for command in guidance.get("investigate", [])
         )
 
         content.extend(
@@ -121,21 +123,20 @@ def _render_guidance(result: dict) -> None:
         console.print(
             Panel.fit(
                 Group(*content),
-                title=(
-                    f"[bold {border_color}]Response Guidance — "
-                    f"{tag} [{severity.upper()}][/]"
-                ),
+                title=(f"[bold {border_color}]Response Guidance — {tag} [{severity.upper()}][/]"),
                 border_style=border_color,
                 box=box.ROUNDED,
             )
         )
         console.print()
 
+
 def _module_label(module: str) -> str:
     return MODULE_LABELS.get(
         module,
         module.replace("_", " ").title(),
     )
+
 
 def _get_changes(data: dict) -> dict:
     changes = data.get("changes")
@@ -155,15 +156,15 @@ def _get_changes(data: dict) -> dict:
         "resolved": [],
     }
 
+
 def _get_priorities(data: dict) -> list:
     priorities = data.get("priorities")
 
     if isinstance(priorities, list):
         return priorities
 
-    return prioritize_findings(
-        data.get("results", {})
-    )
+    return prioritize_findings(data.get("results", {}))
+
 
 def _get_profile(data: dict) -> str:
     return str(
@@ -172,6 +173,7 @@ def _get_profile(data: dict) -> str:
             data.get("sweep_profile", "unknown"),
         )
     ).capitalize()
+
 
 def load_sweep_logs(limit=5):
     if not SWEEP_LOG_DIR.exists():
@@ -263,7 +265,6 @@ def show_recent_sweeps(limit=5):
 def view_full_report():
     logs = load_sweep_logs(limit=5)
 
-
     if not logs:
         console.print("[yellow]No recent sweep logs found.[/]")
         pause_return()
@@ -311,8 +312,7 @@ def view_full_report():
 
     console.print(
         Panel.fit(
-            f"[dim]Profile:[/] [white]{profile}[/]   "
-            f"[dim]Risk:[/] [white]{risk}[/]",
+            f"[dim]Profile:[/] [white]{profile}[/]   [dim]Risk:[/] [white]{risk}[/]",
             title="[bold cyan]Sweep Metadata[/]",
             border_style="cyan",
             box=box.ROUNDED,
@@ -370,11 +370,7 @@ def view_full_report():
         ):
             details = finding.get("details", [])
 
-            primary_signal = (
-                details[0]
-                if details
-                else "Review module findings"
-            )
+            primary_signal = details[0] if details else "Review module findings"
 
             status = finding.get(
                 "status",
@@ -436,16 +432,10 @@ def view_full_report():
         )
 
         for label, signals in change_rows:
-            display_signals = (
-                ", ".join(signals[:5])
-                if signals
-                else "None"
-            )
+            display_signals = ", ".join(signals[:5]) if signals else "None"
 
             if len(signals) > 5:
-                display_signals += (
-                    f" (+{len(signals) - 5} more)"
-                )
+                display_signals += f" (+{len(signals) - 5} more)"
 
             change_table.add_row(
                 label,

@@ -46,6 +46,7 @@ SECURITY_LOG_DIR = LOG_DIR
 INTEGRITY_DIR = DATA_DIR / "integrity"
 INTEGRITY_BASELINE_FILE = INTEGRITY_DIR / "baseline.json"
 
+
 def _effective_home() -> Path:
     # Path.home() reads $HOME, which some sudo configurations keep as the
     # invoking user's home. Root would then write into a user-owned directory.

@@ -75,7 +75,7 @@ def _parse_key(line: str) -> dict:
                 key_data = parts[index + 1]
 
             if len(parts) > index + 2:
-                comment = " ".join(parts[index + 2:])
+                comment = " ".join(parts[index + 2 :])
 
             break
 
@@ -222,23 +222,15 @@ def run_ssh_key_check(silent: bool = False):
 
             tags.update(local_tags)
 
-    users = {
-        entry["user"]
-        for entry in entries
-    }
+    users = {entry["user"] for entry in entries}
 
     details = []
 
     if findings:
-        details.append(
-            f"{len(findings)} SSH authorized key(s) require review"
-        )
+        details.append(f"{len(findings)} SSH authorized key(s) require review")
 
     if errors:
-        details.extend(
-            f"{error['path']} — {error['reason']}"
-            for error in errors
-        )
+        details.extend(f"{error['path']} — {error['reason']}" for error in errors)
 
     if findings:
         status = "warning"
@@ -317,10 +309,7 @@ def run_ssh_key_check(silent: bool = False):
             style="dim",
         )
 
-        finding_paths = {
-            (entry["path"], entry["line"])
-            for entry in findings
-        }
+        finding_paths = {(entry["path"], entry["line"]) for entry in findings}
 
         for entry in entries:
             is_finding = (
@@ -328,11 +317,7 @@ def run_ssh_key_check(silent: bool = False):
                 entry["line"],
             ) in finding_paths
 
-            status = (
-                "[yellow]REVIEW[/]"
-                if is_finding
-                else "[green]KNOWN[/]"
-            )
+            status = "[yellow]REVIEW[/]" if is_finding else "[green]KNOWN[/]"
 
             table.add_row(
                 entry["user"],

@@ -156,12 +156,8 @@ def test_review_status_does_not_add_risk():
     results = {
         "cve": {
             "status": "review",
-            "details": [
-                "1 version match detected"
-            ],
-            "tags": [
-                "cve_version_match"
-            ],
+            "details": ["1 version match detected"],
+            "tags": ["cve_version_match"],
         }
     }
 
@@ -186,10 +182,18 @@ def test_standard_profile_maximum_excludes_cve():
 
 def test_second_cron_job_is_reported_as_changed():
     previous = {
-        "cron": {"status": "warning", "details": ["1 suspicious scheduled task(s) flagged"], "tags": ["suspicious_cron"]},
+        "cron": {
+            "status": "warning",
+            "details": ["1 suspicious scheduled task(s) flagged"],
+            "tags": ["suspicious_cron"],
+        },
     }
     current = {
-        "cron": {"status": "warning", "details": ["2 suspicious scheduled task(s) flagged"], "tags": ["suspicious_cron"]},
+        "cron": {
+            "status": "warning",
+            "details": ["2 suspicious scheduled task(s) flagged"],
+            "tags": ["suspicious_cron"],
+        },
     }
 
     changes = compare_sweep_results(current, previous)

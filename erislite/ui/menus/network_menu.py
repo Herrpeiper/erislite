@@ -59,13 +59,9 @@ def run(profile: dict) -> None:
         ]
 
         if analyst_id:
-            metadata_parts.append(
-                f"[dim]Analyst:[/] [white]{analyst_id}[/]"
-            )
+            metadata_parts.append(f"[dim]Analyst:[/] [white]{analyst_id}[/]")
 
-        metadata = Text.from_markup(
-            "   ".join(metadata_parts)
-        )
+        metadata = Text.from_markup("   ".join(metadata_parts))
 
         header = Panel(
             metadata,
@@ -81,7 +77,6 @@ def run(profile: dict) -> None:
         console.print(build_menu())
 
         choice = prompt_option()
-
 
         if choice == "1":
             tools.show_ips()

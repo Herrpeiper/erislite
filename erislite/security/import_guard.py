@@ -44,9 +44,7 @@ def check_pythonpath() -> List[str]:
     pythonpath = os.environ.get("PYTHONPATH")
 
     if pythonpath:
-        issues.append(
-            f"PYTHONPATH is set: {pythonpath}"
-        )
+        issues.append(f"PYTHONPATH is set: {pythonpath}")
 
     return issues
 
@@ -67,9 +65,7 @@ def check_sys_path() -> List[str]:
 
         for suspicious_root in SUSPICIOUS_IMPORT_ROOTS:
             if _is_under(resolved, suspicious_root):
-                issues.append(
-                    f"Suspicious import path: {resolved}"
-                )
+                issues.append(f"Suspicious import path: {resolved}")
                 break
 
     return issues
@@ -91,9 +87,7 @@ def check_shadow_files() -> List[str]:
 
         for candidate in candidates:
             if candidate.exists():
-                issues.append(
-                    f"Potential module shadowing detected: {candidate}"
-                )
+                issues.append(f"Potential module shadowing detected: {candidate}")
 
     return issues
 

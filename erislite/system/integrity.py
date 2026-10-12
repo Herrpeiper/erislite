@@ -39,6 +39,7 @@ def get_baseline_path(profile: str) -> str:
         f"integrity_baseline_{profile}.json",
     )
 
+
 MONITORED_FILES = [
     "/etc/passwd",
     "/etc/shadow",
@@ -48,7 +49,6 @@ MONITORED_FILES = [
 
 SCAN_PROFILES = {
     "critical": MONITORED_FILES,
-
     "system": [
         "/etc/ssh/",
         "/etc/systemd/",
@@ -70,13 +70,13 @@ SCAN_PROFILES = {
         "/usr/bin/",
         "/usr/sbin/",
     ],
-
     "user": [
         os.path.expanduser("~/.bashrc"),
         os.path.expanduser("~/.ssh/authorized_keys"),
         os.path.expanduser("~/.profile"),
     ],
 }
+
 
 def _header(title: str, subtitle: str) -> None:
     console.print(
@@ -90,6 +90,7 @@ def _header(title: str, subtitle: str) -> None:
         )
     )
     console.print()
+
 
 def get_sha256(path: str) -> Tuple[Optional[str], Optional[str]]:
     try:
@@ -109,6 +110,7 @@ def get_sha256(path: str) -> Tuple[Optional[str], Optional[str]]:
 
     except OSError as exc:
         return None, f"read failed: {exc}"
+
 
 def check_baseline_integrity(profile: str = "critical") -> dict:
     baseline_path = get_baseline_path(profile)
@@ -136,47 +138,31 @@ def check_baseline_integrity(profile: str = "critical") -> dict:
         issues = []
 
         if not created_at:
-            issues.append(
-                "Baseline creation metadata is missing"
-            )
+            issues.append("Baseline creation metadata is missing")
 
         if not baseline_profile:
-            issues.append(
-                "Baseline profile metadata is missing"
-            )
+            issues.append("Baseline profile metadata is missing")
         elif baseline_profile not in SCAN_PROFILES:
-            issues.append(
-                f"Baseline profile is invalid: {baseline_profile}"
-            )
+            issues.append(f"Baseline profile is invalid: {baseline_profile}")
         elif baseline_profile != profile:
             issues.append(
-                f"Baseline profile '{baseline_profile}' does not match "
-                f"expected profile '{profile}'"
+                f"Baseline profile '{baseline_profile}' does not match expected profile '{profile}'"
             )
 
         if not isinstance(hashes, dict):
-            issues.append(
-                "Baseline hash data is malformed"
-            )
+            issues.append("Baseline hash data is malformed")
 
         monitored = metadata.get("monitored", [])
         unavailable = metadata.get("unavailable", [])
         expected_absent = metadata.get("expected_absent", [])
 
         if not hashes:
-            issues.append(
-                "Baseline contains no readable file hashes"
-            )
+            issues.append("Baseline contains no readable file hashes")
 
         elif monitored and (
-            len(hashes)
-            + len(unavailable)
-            + len(expected_absent)
-            != len(monitored)
+            len(hashes) + len(unavailable) + len(expected_absent) != len(monitored)
         ):
-            issues.append(
-                "Baseline contents do not match recorded monitored files"
-            )
+            issues.append("Baseline contents do not match recorded monitored files")
 
         return make_result(
             "warning" if issues else "ok",
@@ -190,6 +176,7 @@ def check_baseline_integrity(profile: str = "critical") -> dict:
             details=[f"Failed to validate baseline integrity: {e}"],
             tags=["baseline_check_error"],
         )
+
 
 def scan_for_copies(baseline: dict):
     shady_locations = [
@@ -236,12 +223,11 @@ def scan_for_copies(baseline: dict):
                         and copy_hash
                         and copy_hash == base_hash
                     ):
-                        flagged.append(
-                            (path, "Exact copy of monitored file")
-                        )
+                        flagged.append((path, "Exact copy of monitored file"))
                         break
 
     return flagged
+
 
 def create_baseline(profile: str = "critical") -> None:
     baseline_path = get_baseline_path(profile)
@@ -249,8 +235,7 @@ def create_baseline(profile: str = "critical") -> None:
     clear_screen()
     _header(
         "FILE INTEGRITY",
-        f"Create a SHA-256 baseline • Profile: "
-        f"{profile.capitalize()}",
+        f"Create a SHA-256 baseline • Profile: {profile.capitalize()}",
     )
 
     targets, target_errors = _collect_targets(profile)
@@ -270,9 +255,7 @@ def create_baseline(profile: str = "critical") -> None:
             expected_absent.append(path)
 
         else:
-            unavailable.append(
-                f"{path}: {hash_error or 'unavailable'}"
-            )
+            unavailable.append(f"{path}: {hash_error or 'unavailable'}")
 
     payload = {
         "_metadata": {
@@ -324,6 +307,7 @@ def create_baseline(profile: str = "critical") -> None:
 
     pause_return()
 
+
 def _collect_targets(profile: str) -> Tuple[list[str], list[str]]:
     targets = []
     errors = []
@@ -338,19 +322,16 @@ def _collect_targets(profile: str) -> Tuple[list[str], list[str]]:
                 onerror=_walk_error,
             ):
                 for filename in files:
-                    targets.append(
-                        os.path.join(root, filename)
-                    )
+                    targets.append(os.path.join(root, filename))
 
         elif item.endswith(os.sep):
-            errors.append(
-                f"Expected directory unavailable: {item}"
-            )
+            errors.append(f"Expected directory unavailable: {item}")
 
         else:
             targets.append(item)
 
     return targets, errors
+
 
 def scan_integrity(
     profile: str = "critical",
@@ -383,8 +364,7 @@ def scan_integrity(
             clear_screen()
             _header(
                 "FILE INTEGRITY",
-                f"Validate files against the baseline • "
-                f"Profile: {profile.capitalize()}",
+                f"Validate files against the baseline • Profile: {profile.capitalize()}",
             )
 
             console.print(
@@ -414,16 +394,12 @@ def scan_integrity(
             clear_screen()
             _header(
                 "FILE INTEGRITY",
-                f"Validate files against the baseline • "
-                f"Profile: {profile.capitalize()}",
+                f"Validate files against the baseline • Profile: {profile.capitalize()}",
             )
 
             console.print(
                 Panel.fit(
-                    "\n".join(
-                        f"[yellow]{detail}[/]"
-                        for detail in baseline_check["details"]
-                    ),
+                    "\n".join(f"[yellow]{detail}[/]" for detail in baseline_check["details"]),
                     title="[bold yellow]BASELINE WARNING[/]",
                     border_style="yellow",
                     box=box.ROUNDED,
@@ -444,9 +420,7 @@ def scan_integrity(
 
         baseline = baseline_data.get("hashes", {})
         metadata = baseline_data.get("_metadata", {})
-        expected_absent = set(
-            metadata.get("expected_absent", [])
-        )
+        expected_absent = set(metadata.get("expected_absent", []))
 
     except Exception as e:
         return make_result(
@@ -462,8 +436,7 @@ def scan_integrity(
             return make_result(
                 "error",
                 details=[
-                    f"Integrity target collection incomplete: {error}"
-                    for error in target_errors
+                    f"Integrity target collection incomplete: {error}" for error in target_errors
                 ],
                 tags=["integrity_scan_incomplete"],
             )
@@ -485,10 +458,7 @@ def scan_integrity(
 
             if os.path.islink(path) and not os.path.exists(path):
                 rows.append((path, "BROKEN LINK"))
-                issues.append(
-                    f"{path} appeared after baseline creation "
-                    "as a broken symbolic link"
-                )
+                issues.append(f"{path} appeared after baseline creation as a broken symbolic link")
                 continue
 
             new_hash, hash_error = get_sha256(path)
@@ -501,10 +471,7 @@ def scan_integrity(
                 )
             else:
                 rows.append((path, "CREATED"))
-                issues.append(
-                    f"{path} appeared but was absent when "
-                    "the baseline was created"
-                )
+                issues.append(f"{path} appeared but was absent when the baseline was created")
 
             continue
 
@@ -513,14 +480,10 @@ def scan_integrity(
         if old_hash is None:
             if os.path.islink(path) and not os.path.exists(path):
                 rows.append((path, "UNAVAILABLE"))
-                scan_errors.append(
-                    f"{path} is a broken symbolic link"
-                )
+                scan_errors.append(f"{path} is a broken symbolic link")
             else:
                 rows.append((path, "UNAVAILABLE"))
-                scan_errors.append(
-                    f"{path} is not represented in the active baseline"
-                )
+                scan_errors.append(f"{path} is not represented in the active baseline")
 
             continue
 
@@ -528,21 +491,15 @@ def scan_integrity(
 
         if hash_error == "missing":
             rows.append((path, "MISSING"))
-            issues.append(
-                f"{path} is missing"
-            )
+            issues.append(f"{path} is missing")
 
         elif hash_error:
             rows.append((path, "UNAVAILABLE"))
-            scan_errors.append(
-                f"{path} could not be inspected: {hash_error}"
-            )
+            scan_errors.append(f"{path} could not be inspected: {hash_error}")
 
         elif new_hash != old_hash:
             rows.append((path, "MODIFIED"))
-            issues.append(
-                f"{path} was modified"
-            )
+            issues.append(f"{path} was modified")
 
         else:
             rows.append((path, "UNCHANGED"))
@@ -564,11 +521,7 @@ def scan_integrity(
 
     result = make_result(
         status,
-        details=issues
-        + [
-            f"Integrity inspection incomplete: {error}"
-            for error in scan_errors
-        ],
+        details=issues + [f"Integrity inspection incomplete: {error}" for error in scan_errors],
         tags=tags,
     )
 
@@ -578,8 +531,7 @@ def scan_integrity(
     clear_screen()
     _header(
         "FILE INTEGRITY SCAN",
-        f"Validate files against the baseline • "
-        f"Profile: {profile.capitalize()}",
+        f"Validate files against the baseline • Profile: {profile.capitalize()}",
     )
 
     console.print(
@@ -652,16 +604,10 @@ def scan_integrity(
         console.print()
 
     if scan_errors and (issues or copies):
-        details = "\n".join(
-            f"[yellow]• {error}[/]"
-            for error in scan_errors[:10]
-        )
+        details = "\n".join(f"[yellow]• {error}[/]" for error in scan_errors[:10])
 
         if len(scan_errors) > 10:
-            details += (
-                f"\n[dim]...and {len(scan_errors) - 10} "
-                "additional inspection error(s).[/]"
-            )
+            details += f"\n[dim]...and {len(scan_errors) - 10} additional inspection error(s).[/]"
 
         console.print(
             Panel.fit(
@@ -687,22 +633,15 @@ def scan_integrity(
         )
 
     elif scan_errors:
-        details = "\n".join(
-            f"[yellow]• {error}[/]"
-            for error in scan_errors[:10]
-        )
+        details = "\n".join(f"[yellow]• {error}[/]" for error in scan_errors[:10])
 
         if len(scan_errors) > 10:
-            details += (
-                f"\n[dim]...and {len(scan_errors) - 10} "
-                "additional inspection error(s).[/]"
-            )
+            details += f"\n[dim]...and {len(scan_errors) - 10} additional inspection error(s).[/]"
 
         console.print(
             Panel.fit(
                 "[yellow]No integrity changes were detected, "
-                "but the scan was incomplete.[/]\n\n"
-                + details,
+                "but the scan was incomplete.[/]\n\n" + details,
                 title="[bold yellow]STATUS: INCOMPLETE[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
@@ -722,6 +661,7 @@ def scan_integrity(
 
     pause_return()
     return result
+
 
 def integrity_menu() -> None:
     while True:
@@ -780,8 +720,7 @@ def integrity_menu() -> None:
             profiles.add_row(
                 "[cyan][2][/]",
                 "System",
-                "[dim]Security configs, persistence paths, "
-                "and system binaries[/]",
+                "[dim]Security configs, persistence paths, and system binaries[/]",
             )
             profiles.add_row(
                 "[cyan][3][/]",
@@ -832,8 +771,7 @@ def integrity_menu() -> None:
             profiles.add_row(
                 "[cyan][2][/]",
                 "System",
-                "[dim]Security configs, persistence paths, "
-                "and system binaries[/]",
+                "[dim]Security configs, persistence paths, and system binaries[/]",
             )
             profiles.add_row(
                 "[cyan][3][/]",

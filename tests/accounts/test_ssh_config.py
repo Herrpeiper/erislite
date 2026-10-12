@@ -118,10 +118,7 @@ def test_secure_configuration_returns_ok(monkeypatch):
     assert result["details"] == []
     assert result["tags"] == []
 
-    assert all(
-        finding["status"] == "secure"
-        for finding in result["findings"]
-    )
+    assert all(finding["status"] == "secure" for finding in result["findings"])
 
 
 def test_insecure_setting_returns_warning(monkeypatch):
@@ -142,8 +139,7 @@ def test_insecure_setting_returns_warning(monkeypatch):
     assert "weak_ssh_config" in result["tags"]
 
     assert any(
-        finding["setting"] == "PermitRootLogin"
-        and finding["status"] == "insecure"
+        finding["setting"] == "PermitRootLogin" and finding["status"] == "insecure"
         for finding in result["findings"]
     )
 
@@ -166,9 +162,7 @@ def test_unset_setting_is_not_treated_as_insecure(monkeypatch):
     assert result["tags"] == []
 
     finding = next(
-        finding
-        for finding in result["findings"]
-        if finding["setting"] == "X11Forwarding"
+        finding for finding in result["findings"] if finding["setting"] == "X11Forwarding"
     )
 
     assert finding["status"] == "unset"
@@ -212,11 +206,6 @@ def test_all_baseline_settings_generate_findings(monkeypatch):
 
     result = ssh_config.run_ssh_config_check(silent=True)
 
-    assert len(result["findings"]) == len(
-        ssh_config.SECURE_DEFAULTS
-    )
+    assert len(result["findings"]) == len(ssh_config.SECURE_DEFAULTS)
 
-    assert all(
-        finding["status"] == "unset"
-        for finding in result["findings"]
-    )
+    assert all(finding["status"] == "unset" for finding in result["findings"])

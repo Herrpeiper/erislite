@@ -91,8 +91,7 @@ def open_private_dir(path: PathLike, create: bool = True) -> int:
             if stat.S_ISLNK(info.st_mode):
                 if not _trusted_owner(info.st_uid):
                     raise UnsafePathError(
-                        f"Refusing to follow symlink owned by uid {info.st_uid}: "
-                        f"{name} in {path}"
+                        f"Refusing to follow symlink owned by uid {info.st_uid}: {name} in {path}"
                     )
 
                 hops += 1

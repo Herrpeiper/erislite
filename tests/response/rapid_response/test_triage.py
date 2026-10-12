@@ -11,7 +11,16 @@ Account = namedtuple("Account", "pw_name pw_uid pw_shell")
 
 @pytest.mark.parametrize(
     "name",
-    ["sshd", "sshd-session", "ssh", "rsync", "php-fpm8.2", "containerd-shim", "syncthing", "bashful"],
+    [
+        "sshd",
+        "sshd-session",
+        "ssh",
+        "rsync",
+        "php-fpm8.2",
+        "containerd-shim",
+        "syncthing",
+        "bashful",
+    ],
 )
 def test_legitimate_processes_are_not_shells(name):
     assert triage.is_suspicious_process_name(name) is False
@@ -19,7 +28,20 @@ def test_legitimate_processes_are_not_shells(name):
 
 @pytest.mark.parametrize(
     "name",
-    ["bash", "sh", "dash", "zsh", "nc", "ncat", "socat", "perl", "perl5.36", "php8.2", "ruby", "lua5.4"],
+    [
+        "bash",
+        "sh",
+        "dash",
+        "zsh",
+        "nc",
+        "ncat",
+        "socat",
+        "perl",
+        "perl5.36",
+        "php8.2",
+        "ruby",
+        "lua5.4",
+    ],
 )
 def test_shells_and_interpreters_are_suspicious(name):
     assert triage.is_suspicious_process_name(name) is True

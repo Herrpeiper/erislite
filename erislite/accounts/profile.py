@@ -99,7 +99,5 @@ def load_or_create_profile() -> dict:
             console.print(f"[red]Warning: could not save user profile ({exc}).[/]")
             return profile
 
-        console.print(
-            f"[yellow]User profile created at {PROFILE_PATH} (read-only).[/]"
-        )
+        console.print(f"[yellow]User profile created at {PROFILE_PATH} (read-only).[/]")
         return profile

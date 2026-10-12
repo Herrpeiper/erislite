@@ -73,6 +73,7 @@ PERIODIC_CRON_DIRS = (
     "/etc/cron.monthly",
 )
 
+
 def _collection_error(source: str, reason: str) -> Dict:
     return {
         "type": "Collection Error",
@@ -83,6 +84,7 @@ def _collection_error(source: str, reason: str) -> Dict:
         "tags": ["cron_scan_incomplete"],
         "kind": "error",
     }
+
 
 def _header() -> None:
     console.print(
@@ -99,6 +101,7 @@ def _header() -> None:
     )
     console.print()
 
+
 def tag_command(command: str) -> List[str]:
     tags = []
     command_lower = command.lower()
@@ -114,12 +117,14 @@ def tag_command(command: str) -> List[str]:
 
     return tags
 
+
 def _file_owner(path: str) -> str:
     try:
         uid = os.stat(path).st_uid
         return pwd.getpwuid(uid).pw_name
     except (OSError, KeyError):
         return "unknown"
+
 
 def _parse_system_crontab(path: str) -> List[Dict]:
     """
@@ -191,6 +196,7 @@ def _parse_system_crontab(path: str) -> List[Dict]:
 
     return flagged
 
+
 def _inspect_periodic_scripts() -> List[Dict]:
     flagged = []
 
@@ -251,6 +257,7 @@ def _inspect_periodic_scripts() -> List[Dict]:
 
     return flagged
 
+
 def _first_interesting_line(content: str) -> str:
     for raw_line in content.splitlines():
         line = raw_line.strip()
@@ -263,13 +270,12 @@ def _first_interesting_line(content: str) -> str:
 
     return "Suspicious pattern detected in script"
 
+
 def check_cron_jobs() -> List[Dict]:
     flagged = []
 
     if os.path.isfile("/etc/crontab"):
-        flagged.extend(
-            _parse_system_crontab("/etc/crontab")
-        )
+        flagged.extend(_parse_system_crontab("/etc/crontab"))
 
     if os.path.isdir("/etc/cron.d"):
         try:
@@ -277,9 +283,7 @@ def check_cron_jobs() -> List[Dict]:
                 path = os.path.join("/etc/cron.d", name)
 
                 if os.path.isfile(path):
-                    flagged.extend(
-                        _parse_system_crontab(path)
-                    )
+                    flagged.extend(_parse_system_crontab(path))
         except OSError as exc:
             flagged.append(
                 _collection_error(
@@ -291,6 +295,7 @@ def check_cron_jobs() -> List[Dict]:
     flagged.extend(_inspect_periodic_scripts())
 
     return flagged
+
 
 def check_user_crontabs() -> List[Dict]:
     flagged = []
@@ -458,11 +463,7 @@ def check_systemd_timers() -> List[Dict]:
         if timer_match:
             timer = timer_match.group(1)
         else:
-            candidates = [
-                part
-                for part in line.split()
-                if part.endswith(".timer")
-            ]
+            candidates = [part for part in line.split() if part.endswith(".timer")]
 
             if not candidates:
                 continue
@@ -587,6 +588,7 @@ def check_systemd_timers() -> List[Dict]:
 
     return flagged
 
+
 def check_windows_scheduled_tasks() -> List[Dict]:
     flagged = []
 
@@ -606,8 +608,7 @@ def check_windows_scheduled_tasks() -> List[Dict]:
             return [
                 _collection_error(
                     "Windows scheduled tasks",
-                    result.stderr.strip()
-                    or f"schtasks exited with code {result.returncode}",
+                    result.stderr.strip() or f"schtasks exited with code {result.returncode}",
                 )
             ]
 
@@ -677,6 +678,7 @@ def check_windows_scheduled_tasks() -> List[Dict]:
 
     return flagged
 
+
 def run_cron_timer_scan(silent: bool = False):
     os_type = get_os()
 
@@ -688,9 +690,7 @@ def run_cron_timer_scan(silent: bool = False):
         findings.extend(check_systemd_timers())
 
     elif os_type == "Windows":
-        findings.extend(
-            check_windows_scheduled_tasks()
-        )
+        findings.extend(check_windows_scheduled_tasks())
 
     else:
         if not silent:
@@ -709,17 +709,9 @@ def run_cron_timer_scan(silent: bool = False):
 
         return make_result("unsupported")
 
-    errors = [
-        entry
-        for entry in findings
-        if entry.get("kind") == "error"
-    ]
+    errors = [entry for entry in findings if entry.get("kind") == "error"]
 
-    scheduled_findings = [
-        entry
-        for entry in findings
-        if entry.get("kind") != "error"
-    ]
+    scheduled_findings = [entry for entry in findings if entry.get("kind") != "error"]
 
     total = len(scheduled_findings)
 
@@ -733,15 +725,10 @@ def run_cron_timer_scan(silent: bool = False):
     details = []
 
     if scheduled_findings:
-        details.append(
-            f"{total} suspicious scheduled task(s) flagged"
-        )
+        details.append(f"{total} suspicious scheduled task(s) flagged")
 
     if errors:
-        details.extend(
-            f"{entry['path']} — {entry['command']}"
-            for entry in errors
-        )
+        details.extend(f"{entry['path']} — {entry['command']}" for entry in errors)
 
     tags = []
 

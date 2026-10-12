@@ -261,7 +261,9 @@ def _block_ip(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
     commands = build_ip_block_commands(ip, backend)
 
     if commands is None:
-        entry["result"] = f"Failed: {backend} cannot safely block {ip} with the current configuration"
+        entry["result"] = (
+            f"Failed: {backend} cannot safely block {ip} with the current configuration"
+        )
         console.print(
             f"[red]{backend} is active, but Rapid Response cannot "
             f"safely create a block rule for {ip}[/]"
@@ -407,8 +409,7 @@ def _lock_user(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
 
     entry["result"] = f"Locked {username}; sessions not terminated: {detail}"
     console.print(
-        f"[yellow]Locked account {username}, but active sessions were not terminated: "
-        f"{detail}[/]"
+        f"[yellow]Locked account {username}, but active sessions were not terminated: {detail}[/]"
     )
 
     # Locking succeeded, so containment was partial rather than failed.

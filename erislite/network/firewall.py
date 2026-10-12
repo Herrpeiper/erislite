@@ -38,9 +38,7 @@ def detect_firewall_backend():
         if ufw.returncode == 0 and "status: active" in output:
             return "ufw"
 
-    firewalld, _ = _run_command(
-        ["systemctl", "is-active", "firewalld"]
-    )
+    firewalld, _ = _run_command(["systemctl", "is-active", "firewalld"])
 
     if (
         firewalld is not None
@@ -49,26 +47,14 @@ def detect_firewall_backend():
     ):
         return "firewalld"
 
-    nftables, _ = _run_command(
-        ["nft", "list", "ruleset"]
-    )
+    nftables, _ = _run_command(["nft", "list", "ruleset"])
 
-    if (
-        nftables is not None
-        and nftables.returncode == 0
-        and _nftables_has_rules(nftables.stdout)
-    ):
+    if nftables is not None and nftables.returncode == 0 and _nftables_has_rules(nftables.stdout):
         return "nftables"
 
-    iptables, _ = _run_command(
-        ["iptables", "-S"]
-    )
+    iptables, _ = _run_command(["iptables", "-S"])
 
-    if (
-        iptables is not None
-        and iptables.returncode == 0
-        and _iptables_has_rules(iptables.stdout)
-    ):
+    if iptables is not None and iptables.returncode == 0 and _iptables_has_rules(iptables.stdout):
         return "iptables"
 
     return None
@@ -185,10 +171,7 @@ def _run_command(command):
 def _permission_denied(result) -> bool:
     error = (result.stderr or "").lower()
 
-    return any(
-        marker in error
-        for marker in PERMISSION_ERRORS
-    )
+    return any(marker in error for marker in PERMISSION_ERRORS)
 
 
 def _iptables_has_rules(output: str) -> bool:
@@ -222,10 +205,7 @@ def _nftables_has_rules(output: str) -> bool:
     for line in output.splitlines():
         normalized = f" {line.strip().lower()}"
 
-        if any(
-            indicator in normalized
-            for indicator in indicators
-        ):
+        if any(indicator in normalized for indicator in indicators):
             return True
 
     return False
@@ -282,9 +262,7 @@ def run_firewall_check(silent=False):
     empty_nftables = False
 
     # Check UFW.
-    ufw, ufw_error = _run_command(
-        ["ufw", "status"]
-    )
+    ufw, ufw_error = _run_command(["ufw", "status"])
 
     if ufw is not None:
         output = ufw.stdout.strip().lower()
@@ -308,9 +286,7 @@ def run_firewall_check(silent=False):
         command_failure = True
 
     # Check firewalld.
-    firewalld, firewalld_error = _run_command(
-        ["systemctl", "is-active", "firewalld"]
-    )
+    firewalld, firewalld_error = _run_command(["systemctl", "is-active", "firewalld"])
 
     if firewalld is not None:
         state = firewalld.stdout.strip().lower()
@@ -337,9 +313,7 @@ def run_firewall_check(silent=False):
         command_failure = True
 
     # Check nftables.
-    nftables, nftables_error = _run_command(
-        ["nft", "list", "ruleset"]
-    )
+    nftables, nftables_error = _run_command(["nft", "list", "ruleset"])
 
     if nftables is not None:
         if nftables.returncode == 0:
@@ -361,9 +335,7 @@ def run_firewall_check(silent=False):
         command_failure = True
 
     # Check iptables.
-    iptables, iptables_error = _run_command(
-        ["iptables", "-S"]
-    )
+    iptables, iptables_error = _run_command(["iptables", "-S"])
 
     if iptables is not None:
         if iptables.returncode == 0:
@@ -394,11 +366,7 @@ def run_firewall_check(silent=False):
         )
 
     if empty_iptables or empty_nftables:
-        firewall_type = (
-            "iptables"
-            if empty_iptables
-            else "nftables"
-        )
+        firewall_type = "iptables" if empty_iptables else "nftables"
 
         return _return_result(
             firewall_type,
@@ -418,16 +386,9 @@ def run_firewall_check(silent=False):
         )
 
     if inactive_frontends:
-        detail = (
-            f"{', '.join(inactive_frontends)} "
-            "reported an inactive state"
-        )
+        detail = f"{', '.join(inactive_frontends)} reported an inactive state"
 
-        tags = (
-            ["firewall_ufw_inactive"]
-            if inactive_frontends == ["UFW"]
-            else ["firewall_disabled"]
-        )
+        tags = ["firewall_ufw_inactive"] if inactive_frontends == ["UFW"] else ["firewall_disabled"]
 
         return _return_result(
             inactive_frontends[0],

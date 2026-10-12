@@ -51,11 +51,7 @@ def test_show_import_warning_suspicious(monkeypatch):
 
     main._show_import_warning()
 
-    rendered = "\n".join(
-        str(item)
-        for call in printed
-        for item in call
-    )
+    rendered = "\n".join(str(item) for call in printed for item in call)
 
     assert "IMPORT ENVIRONMENT WARNING" in rendered
     assert "PYTHONPATH is set: /tmp/evil" in rendered

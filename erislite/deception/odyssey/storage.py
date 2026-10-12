@@ -91,9 +91,7 @@ def _open_event_log(dir_fd: int, name: str):
             raise OSError(f"Refusing to write hard-linked Odyssey event log: {name}")
 
         if info.st_uid != os.geteuid():
-            raise OSError(
-                f"Refusing to write Odyssey event log owned by uid {info.st_uid}: {name}"
-            )
+            raise OSError(f"Refusing to write Odyssey event log owned by uid {info.st_uid}: {name}")
 
         os.fchmod(fd, _FILE_MODE)
         return os.fdopen(fd, "a", encoding="utf-8")

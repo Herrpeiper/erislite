@@ -74,10 +74,7 @@ def test_run_command_uses_default_timeout(monkeypatch):
 
     command_runner.run_command(["example"])
 
-    assert (
-        captured["timeout"]
-        == command_runner.DEFAULT_COMMAND_TIMEOUT
-    )
+    assert captured["timeout"] == command_runner.DEFAULT_COMMAND_TIMEOUT
 
 
 def test_run_command_forwards_check(monkeypatch):

@@ -119,24 +119,16 @@ def show_splash(profile: dict) -> None:
 
     profile_lines = [
         f"[bold white]Hostname:[/] {hostname}",
-        (
-            f"[bold white]Role:[/] {role}  [dim]|[/]  "
-            f"[bold white]Segment:[/] {segment}"
-        ),
+        (f"[bold white]Role:[/] {role}  [dim]|[/]  [bold white]Segment:[/] {segment}"),
     ]
 
     if analyst_id:
-        profile_lines.append(
-            f"[bold white]Analyst ID:[/] {analyst_id}"
-        )
+        profile_lines.append(f"[bold white]Analyst ID:[/] {analyst_id}")
 
     profile_lines.extend(
         [
             f"[bold white]Firewall:[/] {firewall_display}",
-            (
-                f"[bold white]Kernel:[/] {kernel}  [dim]|[/]  "
-                f"[bold white]Uptime:[/] {uptime}"
-            ),
+            (f"[bold white]Kernel:[/] {kernel}  [dim]|[/]  [bold white]Uptime:[/] {uptime}"),
         ]
     )
 
@@ -161,22 +153,10 @@ def show_splash(profile: dict) -> None:
         justify="center",
     )
 
-    console.print(
-        Align.center(
-            "[cyan]────────────────────────────────────────────[/]"
-        )
-    )
+    console.print(Align.center("[cyan]────────────────────────────────────────────[/]"))
 
-    console.print(
-        Align.center(
-            f"[italic white]{quote}[/]"
-        )
-    )
+    console.print(Align.center(f"[italic white]{quote}[/]"))
 
-    console.print(
-        Align.center(
-            "[cyan]────────────────────────────────────────────[/]"
-        )
-    )
+    console.print(Align.center("[cyan]────────────────────────────────────────────[/]"))
 
     time.sleep(1.5)

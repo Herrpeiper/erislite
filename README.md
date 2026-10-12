@@ -341,6 +341,7 @@ A security check should support structured non-interactive results built with `e
 ```python
 from erislite.results import make_result
 
+
 def run_my_check(silent: bool = False) -> dict:
     return make_result("ok", details=[], tags=[])
 ```

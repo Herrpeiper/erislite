@@ -70,11 +70,7 @@ def show_header(
     Newer modules may define their own page-specific header,
     but older modules can continue calling show_header().
     """
-    body = (
-        Text.from_markup(f"[dim]{description}[/]")
-        if description
-        else Text("")
-    )
+    body = Text.from_markup(f"[dim]{description}[/]") if description else Text("")
 
     console.print(
         Panel(
@@ -97,9 +93,7 @@ def pause_return(centered: bool = False) -> None:
     `centered` is retained for compatibility with older callers,
     but the prompt now uses the standard ErisLITE layout.
     """
-    console.input(
-        "\n[dim cyan][ENTER] Return to menu[/]"
-    )
+    console.input("\n[dim cyan][ENTER] Return to menu[/]")
 
 
 def get_analyst_id(profile: dict) -> Optional[str]:

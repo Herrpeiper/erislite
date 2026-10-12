@@ -152,10 +152,7 @@ def run_ssh_config_check(silent: bool = False):
             continue
 
         if actual != expected:
-            issues.append(
-                f"{key} is '{actual}' "
-                f"(recommended: '{expected}')"
-            )
+            issues.append(f"{key} is '{actual}' (recommended: '{expected}')")
 
             findings.append(
                 {
@@ -176,23 +173,11 @@ def run_ssh_config_check(silent: bool = False):
                 }
             )
 
-    secure_count = sum(
-        1
-        for finding in findings
-        if finding["status"] == "secure"
-    )
+    secure_count = sum(1 for finding in findings if finding["status"] == "secure")
 
-    insecure_count = sum(
-        1
-        for finding in findings
-        if finding["status"] == "insecure"
-    )
+    insecure_count = sum(1 for finding in findings if finding["status"] == "insecure")
 
-    unset_count = sum(
-        1
-        for finding in findings
-        if finding["status"] == "unset"
-    )
+    unset_count = sum(1 for finding in findings if finding["status"] == "unset")
 
     result = make_result(
         "warning" if issues else "ok",

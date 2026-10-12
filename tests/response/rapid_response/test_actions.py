@@ -243,6 +243,7 @@ def test_block_ip_logs_failed_command(monkeypatch):
     assert len(log) == 1
     assert log[0]["result"] == "Failed: permission denied"
 
+
 def test_lock_user_rejects_root(monkeypatch):
     log = []
 
@@ -361,9 +362,7 @@ def test_terminate_user_sessions_uses_loginctl(monkeypatch):
         fake_run_cmd,
     )
 
-    success, detail = actions._terminate_user_sessions(
-        "suspicioususer"
-    )
+    success, detail = actions._terminate_user_sessions("suspicioususer")
 
     assert success is True
     assert detail == "sessions terminated with loginctl"
@@ -400,9 +399,7 @@ def test_terminate_user_sessions_falls_back_to_pkill(monkeypatch):
         fake_run_cmd,
     )
 
-    success, detail = actions._terminate_user_sessions(
-        "suspicioususer"
-    )
+    success, detail = actions._terminate_user_sessions("suspicioususer")
 
     assert success is True
     assert detail == "user processes terminated with pkill"
@@ -469,6 +466,7 @@ def test_lock_user_logs_partial_containment(monkeypatch):
     assert "Locked suspicioususer" in log[0]["result"]
     assert "sessions not terminated" in log[0]["result"]
 
+
 def test_lock_user_rejects_service_account(monkeypatch):
     log = []
 
@@ -532,7 +530,9 @@ def test_operator_identity_uses_sudo_user(monkeypatch):
     monkeypatch.setenv("SUDO_UID", "1000")
     monkeypatch.setattr(actions.os, "getuid", lambda: 0)
     monkeypatch.setattr(actions.os, "getlogin", lambda: (_ for _ in ()).throw(OSError()))
-    monkeypatch.setattr(actions.pwd, "getpwuid", lambda uid: _Account({0: "root", 1000: "liam"}[uid], uid))
+    monkeypatch.setattr(
+        actions.pwd, "getpwuid", lambda uid: _Account({0: "root", 1000: "liam"}[uid], uid)
+    )
 
     names, uids = actions.operator_identity()
 
@@ -745,4 +745,3 @@ def test_build_action_plan_adds_kill_for_shell_holding_connection(monkeypatch):
 
     assert [action["type"] for action in plan] == ["block_ip", "kill_process"]
     assert plan[1]["data"]["pid"] == 77
-

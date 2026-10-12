@@ -91,10 +91,7 @@ def is_internal_address(ip: str) -> bool:
         address = mapped
 
     return (
-        address.is_private
-        or address.is_loopback
-        or address.is_link_local
-        or address.is_unspecified
+        address.is_private or address.is_loopback or address.is_link_local or address.is_unspecified
     )
 
 
@@ -289,9 +286,7 @@ def classify_connections(
     connections = list(connections)
 
     listening_ports = {
-        conn.laddr.port
-        for conn in connections
-        if conn.status == "LISTEN" and conn.laddr
+        conn.laddr.port for conn in connections if conn.status == "LISTEN" and conn.laddr
     }
 
     found = []

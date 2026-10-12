@@ -63,8 +63,7 @@ UNSCORED_STATUSES = {"unsupported"}
 THREAT_TAG_MAP = {
     "cve_match": "Outdated or vulnerable software version detected.",
     "cve_version_match": (
-        "Installed software version matches a known CVE range; "
-        "verify vendor patch level."
+        "Installed software version matches a known CVE range; verify vendor patch level."
     ),
     "firewall_disabled": "No active firewall detected — system may be fully exposed to the network.",
     "firewall_ufw_inactive": "UFW is installed but currently inactive.",
@@ -104,10 +103,16 @@ THREAT_TAG_MAP = {
     "suid_nonstandard_location": "SUID/SGID binary is located outside standard executable paths.",
     "uid0_clone": "A non-root account has UID 0 and root-equivalent privileges.",
     "weak_ssh_config": "One or more SSH server settings differ from the hardening baseline.",
-    "firewall_permission_denied": ("Firewall state could not be fully inspected with the current privileges."),
+    "firewall_permission_denied": (
+        "Firewall state could not be fully inspected with the current privileges."
+    ),
     "firewall_check_failed": "One or more firewall inspection commands failed.",
-    "auth_audit_incomplete": ("One or more authentication audit data sources could not be inspected."),
-    "kernel_module_inspection_incomplete": ("One or more loaded kernel modules could not be fully inspected."),
+    "auth_audit_incomplete": (
+        "One or more authentication audit data sources could not be inspected."
+    ),
+    "kernel_module_inspection_incomplete": (
+        "One or more loaded kernel modules could not be fully inspected."
+    ),
 }
 
 
@@ -134,6 +139,7 @@ def calculate_risk_score(results: dict):
                 breakdown[module] = 0
 
     return total_score, breakdown, max_score
+
 
 def prioritize_findings(results: dict) -> list:
     """
@@ -235,7 +241,9 @@ def run_sweep(user_profile, sweep_profile="standard"):
             results[module] = run_module_check(module, check)
 
     # Firewall check is always run as a baseline signal
-    results["firewall"] = run_module_check("firewall", lambda: firewall.run_firewall_check(silent=True))
+    results["firewall"] = run_module_check(
+        "firewall", lambda: firewall.run_firewall_check(silent=True)
+    )
 
     hostname = user_profile.get(
         "hostname",
@@ -274,6 +282,7 @@ def run_sweep(user_profile, sweep_profile="standard"):
         user_profile,
         changes,
     )
+
 
 def _finding_signals(results: dict) -> set:
     """
@@ -393,6 +402,7 @@ def _load_previous_comparable_sweep(
 
     return None
 
+
 def _display_results(results, sweep_profile, user_profile, changes, comparison_available=False):
     label_map = {
         "integrity": "Integrity",
@@ -459,8 +469,7 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
     percent = round((score / max_possible) * 100) if max_possible else 0
 
     info_present = any(
-        r.get("status", "").lower() in {"ok", "info", "review"}
-        and r.get("details")
+        r.get("status", "").lower() in {"ok", "info", "review"} and r.get("details")
         for r in results.values()
     )
 
@@ -492,11 +501,7 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
         )
     )
 
-    contributors = [
-        (module, points)
-        for module, points in breakdown.items()
-        if points > 0
-    ]
+    contributors = [(module, points) for module, points in breakdown.items() if points > 0]
 
     if contributors:
         console.print()
@@ -568,11 +573,7 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
         ):
             details = finding["details"]
 
-            primary_detail = (
-                details[0]
-                if details
-                else "Review module findings"
-            )
+            primary_detail = details[0] if details else "Review module findings"
 
             priority_table.add_row(
                 str(index),
@@ -630,16 +631,10 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
         )
 
         for label, signals in change_rows:
-            display_signals = (
-                ", ".join(signals[:4])
-                if signals
-                else "None"
-            )
+            display_signals = ", ".join(signals[:4]) if signals else "None"
 
             if len(signals) > 4:
-                display_signals += (
-                    f" (+{len(signals) - 4} more)"
-                )
+                display_signals += f" (+{len(signals) - 4} more)"
 
             change_table.add_row(
                 label,
@@ -686,17 +681,11 @@ def _save_sweep(results, sweep_profile, user_profile, changes):
         all_tags = []
 
         for result in results.values():
-            all_tags.extend(
-                result.get("tags", [])
-            )
+            all_tags.extend(result.get("tags", []))
 
         score, _, max_possible = calculate_risk_score(results)
 
-        risk_percent = (
-            round((score / max_possible) * 100)
-            if max_possible
-            else 0
-        )
+        risk_percent = round((score / max_possible) * 100) if max_possible else 0
 
         priorities = prioritize_findings(results)
 
@@ -724,9 +713,7 @@ def _save_sweep(results, sweep_profile, user_profile, changes):
         write_private_json(log_path, summary, default=str)
 
     except OSError as exc:
-        console.print(
-            f"[yellow]Warning: could not save sweep log: {exc}[/]"
-        )
+        console.print(f"[yellow]Warning: could not save sweep log: {exc}[/]")
 
 
 def _render_header(profile: dict, sweep_profile: str) -> None:
@@ -740,17 +727,11 @@ def _render_header(profile: dict, sweep_profile: str) -> None:
     ]
 
     if analyst_id:
-        metadata_parts.append(
-            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
-        )
+        metadata_parts.append(f"[dim]Analyst:[/] [white]{analyst_id}[/]")
 
-    metadata_parts.append(
-        f"[dim]Profile:[/] [white]{sweep_profile.capitalize()}[/]"
-    )
+    metadata_parts.append(f"[dim]Profile:[/] [white]{sweep_profile.capitalize()}[/]")
 
-    metadata = Text.from_markup(
-        "   ".join(metadata_parts)
-    )
+    metadata = Text.from_markup("   ".join(metadata_parts))
 
     console.print(
         Panel(

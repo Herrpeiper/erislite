@@ -10,10 +10,7 @@ def test_listener_scan_uses_shared_command_runner(monkeypatch):
         captured["command"] = command
 
         return SimpleNamespace(
-            stdout=(
-                "Netid State Recv-Q Send-Q Local Address:Port "
-                "Peer Address:Port Process\n"
-            ),
+            stdout=("Netid State Recv-Q Send-Q Local Address:Port Peer Address:Port Process\n"),
             stderr="",
             returncode=0,
         )

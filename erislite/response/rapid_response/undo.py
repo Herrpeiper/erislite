@@ -32,10 +32,7 @@ def _format_undo(undo) -> str:
 
     if isinstance(undo, dict):
         if undo.get("type") == "restore_file":
-            return (
-                f"restore {undo.get('source', '?')} "
-                f"→ {undo.get('destination', '?')}"
-            )
+            return f"restore {undo.get('source', '?')} → {undo.get('destination', '?')}"
 
     return str(undo)
 
@@ -169,6 +166,7 @@ def _execute_undo(entry: dict) -> tuple[bool, str]:
 
     return True, _format_undo(args)
 
+
 def _log_is_trusted(log_file: Path) -> tuple[bool, str]:
     """Undo runs commands from the log, so only trust logs no one else could edit."""
 
@@ -221,11 +219,7 @@ def run_undo(log_file: Path) -> None:
     console.print(f"[bold cyan]Undoable Actions ({len(undoable)})[/]\n")
 
     for index, entry in enumerate(undoable, start=1):
-        console.print(
-            f"[cyan][{index}][/] "
-            f"{entry['type']} — "
-            f"{_format_undo(entry['undo'])}"
-        )
+        console.print(f"[cyan][{index}][/] {entry['type']} — {_format_undo(entry['undo'])}")
 
     console.print()
 
@@ -238,14 +232,9 @@ def run_undo(log_file: Path) -> None:
         success, detail = _execute_undo(entry)
 
         if success:
-            console.print(
-                f"[green]Undone:[/] {_format_undo(entry['undo'])}"
-            )
+            console.print(f"[green]Undone:[/] {_format_undo(entry['undo'])}")
         else:
-            console.print(
-                f"[red]Failed:[/] "
-                f"{_format_undo(entry['undo'])} — {detail}"
-            )
+            console.print(f"[red]Failed:[/] {_format_undo(entry['undo'])} — {detail}")
 
     pause_return()
 

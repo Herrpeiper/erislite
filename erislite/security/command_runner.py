@@ -32,10 +32,6 @@ def run_command(
         resolved,
         capture_output=True,
         text=True,
-        timeout=(
-            DEFAULT_COMMAND_TIMEOUT
-            if timeout is None
-            else timeout
-        ),
+        timeout=(DEFAULT_COMMAND_TIMEOUT if timeout is None else timeout),
         check=check,
     )
