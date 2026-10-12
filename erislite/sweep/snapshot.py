@@ -25,6 +25,7 @@ from erislite.ui.utils import clear_screen, get_analyst_id, pause_return, show_h
 
 console = Console()
 
+
 # Capture a system snapshot and save it to a timestamped file in the logs directory
 def capture(profile: dict):
     clear_screen()
@@ -135,10 +136,7 @@ def capture(profile: dict):
                                 parts = line.split()
 
                                 if len(parts) > 4:
-                                    f.write(
-                                        f"Default Gateway: {parts[2]} "
-                                        f"via {parts[4]}\n"
-                                    )
+                                    f.write(f"Default Gateway: {parts[2]} via {parts[4]}\n")
                                     gateway_found = True
 
                                 break
@@ -168,9 +166,7 @@ def capture(profile: dict):
                                 parts = line.split()
 
                                 if len(parts) >= 4:
-                                    f.write(
-                                        f"Default Gateway: {parts[2]}\n"
-                                    )
+                                    f.write(f"Default Gateway: {parts[2]}\n")
                                     gateway_found = True
                                     break
 

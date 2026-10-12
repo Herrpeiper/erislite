@@ -39,9 +39,7 @@ UNCOMMON_PORT_THRESHOLD = 1024
 def _header() -> None:
     console.print(
         Panel(
-            Text.from_markup(
-                "[dim]Review listening services, exposure, and suspicious binds[/]"
-            ),
+            Text.from_markup("[dim]Review listening services, exposure, and suspicious binds[/]"),
             title="[bold cyan]LISTENER CHECK[/]",
             subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
             border_style="cyan",
@@ -91,11 +89,7 @@ def _is_loopback(local_address: str) -> bool:
 
 
 def _is_external_bind(local_address: str) -> bool:
-    return (
-        "0.0.0.0" in local_address
-        or "[::]" in local_address
-        or local_address.startswith("::")
-    )
+    return "0.0.0.0" in local_address or "[::]" in local_address or local_address.startswith("::")
 
 
 def parse_listeners():
@@ -125,7 +119,7 @@ def parse_listeners():
             port = _parse_port(local_address)
             is_whitelisted = proc_name in WHITELISTED_PROCS
             flags = []
-            
+
             if _is_own_canary(port, pid_info, canary_ports):
                 is_whitelisted = True
                 flags.append("ErisLITE Canary")
@@ -180,11 +174,7 @@ def _is_suspicious(flags, is_whitelisted: bool) -> bool:
 
 
 def _severity(flags, is_whitelisted: bool) -> str:
-    return (
-        "[yellow]WARNING[/]"
-        if _is_suspicious(flags, is_whitelisted)
-        else "[green]INFO[/]"
-    )
+    return "[yellow]WARNING[/]" if _is_suspicious(flags, is_whitelisted) else "[green]INFO[/]"
 
 
 def run_listener_scan(silent: bool = False):
@@ -208,9 +198,7 @@ def run_listener_scan(silent: bool = False):
     flagged = parse_listeners()
 
     suspicious = sum(
-        1
-        for _, _, _, flags, is_whitelisted in flagged
-        if _is_suspicious(flags, is_whitelisted)
+        1 for _, _, _, flags, is_whitelisted in flagged if _is_suspicious(flags, is_whitelisted)
     )
 
     if silent:
@@ -227,8 +215,7 @@ def run_listener_scan(silent: bool = False):
         return make_result(
             "warning",
             details=[
-                f"{suspicious} suspicious listener(s) detected "
-                f"({len(flagged)} total notable)"
+                f"{suspicious} suspicious listener(s) detected ({len(flagged)} total notable)"
             ],
             tags=["suspicious_listener"],
         )
@@ -312,9 +299,6 @@ def run_listener_scan(silent: bool = False):
 
     return make_result(
         "warning",
-        details=[
-            f"{suspicious} suspicious listener(s) detected "
-            f"({len(flagged)} total notable)"
-        ],
+        details=[f"{suspicious} suspicious listener(s) detected ({len(flagged)} total notable)"],
         tags=["suspicious_listener"],
     )

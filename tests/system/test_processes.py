@@ -81,10 +81,7 @@ def test_process_scan_enumeration_failure(monkeypatch):
 
     assert result["status"] == "error"
     assert "process_scan_incomplete" in result["tags"]
-    assert any(
-        "process table unavailable" in detail
-        for detail in result["details"]
-    )
+    assert any("process table unavailable" in detail for detail in result["details"])
 
 
 def test_process_scan_detects_suspicious_process(monkeypatch):
@@ -149,9 +146,7 @@ def test_is_deleted_ignores_no_such_process():
         def exe(self):
             raise psutil.NoSuchProcess(pid=123)
 
-    deleted, error = processes._is_deleted(
-        VanishedProcess()
-    )
+    deleted, error = processes._is_deleted(VanishedProcess())
 
     assert deleted is False
     assert error is None
@@ -165,9 +160,7 @@ def test_is_kernel_thread_ignores_no_such_process():
         def exe(self):
             raise psutil.NoSuchProcess(pid=123)
 
-    is_kernel, error = processes._is_kernel_thread(
-        VanishedProcess()
-    )
+    is_kernel, error = processes._is_kernel_thread(VanishedProcess())
 
     assert is_kernel is False
     assert error is None

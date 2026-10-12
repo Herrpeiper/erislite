@@ -15,10 +15,7 @@ def test_failed_logins_ignores_poisoned_path(monkeypatch, tmp_path):
     def fake_run(command, **kwargs):
         captured["command"] = command
         return SimpleNamespace(
-            stdout=(
-                "Failed password for invalid user admin "
-                "from 10.0.0.5 port 2222\n"
-            ),
+            stdout=("Failed password for invalid user admin from 10.0.0.5 port 2222\n"),
             stderr="",
             returncode=0,
         )

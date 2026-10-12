@@ -20,10 +20,13 @@ def test_block_ip_undo_accepts_exact_iptables_command():
         "DROP",
     ]
 
-    assert undo._validate_command_undo(
-        entry,
-        args,
-    ) is True
+    assert (
+        undo._validate_command_undo(
+            entry,
+            args,
+        )
+        is True
+    )
 
 
 def test_block_ip_undo_accepts_exact_ufw_command():
@@ -44,10 +47,13 @@ def test_block_ip_undo_accepts_exact_ufw_command():
         "203.0.113.10",
     ]
 
-    assert undo._validate_command_undo(
-        entry,
-        args,
-    ) is True
+    assert (
+        undo._validate_command_undo(
+            entry,
+            args,
+        )
+        is True
+    )
 
 
 def test_block_ip_undo_accepts_exact_firewalld_command():
@@ -59,20 +65,20 @@ def test_block_ip_undo_accepts_exact_firewalld_command():
         },
     }
 
-    rule = (
-        'rule family="ipv4" '
-        'destination address="203.0.113.10" drop'
-    )
+    rule = 'rule family="ipv4" destination address="203.0.113.10" drop'
 
     args = [
         "firewall-cmd",
         f"--remove-rich-rule={rule}",
     ]
 
-    assert undo._validate_command_undo(
-        entry,
-        args,
-    ) is True
+    assert (
+        undo._validate_command_undo(
+            entry,
+            args,
+        )
+        is True
+    )
 
 
 def test_block_ip_undo_rejects_tampered_command():
@@ -89,10 +95,13 @@ def test_block_ip_undo_rejects_tampered_command():
         "-F",
     ]
 
-    assert undo._validate_command_undo(
-        entry,
-        args,
-    ) is False
+    assert (
+        undo._validate_command_undo(
+            entry,
+            args,
+        )
+        is False
+    )
 
 
 def test_block_ip_undo_rejects_missing_backend():
@@ -113,10 +122,13 @@ def test_block_ip_undo_rejects_missing_backend():
         "DROP",
     ]
 
-    assert undo._validate_command_undo(
-        entry,
-        args,
-    ) is False
+    assert (
+        undo._validate_command_undo(
+            entry,
+            args,
+        )
+        is False
+    )
 
 
 def test_block_ip_undo_rejects_unsupported_backend():
@@ -134,10 +146,14 @@ def test_block_ip_undo_rejects_unsupported_backend():
         "rule",
     ]
 
-    assert undo._validate_command_undo(
-        entry,
-        args,
-    ) is False
+    assert (
+        undo._validate_command_undo(
+            entry,
+            args,
+        )
+        is False
+    )
+
 
 def _restore_entry(destination, source, mode=0o666):
     return {

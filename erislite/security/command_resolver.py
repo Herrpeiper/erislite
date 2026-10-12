@@ -40,9 +40,7 @@ def resolve_command(
         raise CommandResolutionError("Command name cannot be empty")
 
     if os.path.sep in command:
-        raise CommandResolutionError(
-            f"Command must be a bare executable name: {command!r}"
-        )
+        raise CommandResolutionError(f"Command must be a bare executable name: {command!r}")
 
     for directory in trusted_dirs:
         candidate = directory / command
@@ -55,9 +53,7 @@ def resolve_command(
 
         return str(candidate)
 
-    raise CommandResolutionError(
-        f"Trusted executable not found: {command}"
-    )
+    raise CommandResolutionError(f"Trusted executable not found: {command}")
 
 
 def command_available(command: str) -> bool:

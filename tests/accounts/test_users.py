@@ -24,11 +24,14 @@ def setup_linux(monkeypatch, accounts, valid_shells=None):
     monkeypatch.setattr(
         users,
         "_load_valid_shells",
-        lambda: valid_shells or {
-            "/bin/bash",
-            "/bin/sh",
-            "/usr/bin/zsh",
-        },
+        lambda: (
+            valid_shells
+            or {
+                "/bin/bash",
+                "/bin/sh",
+                "/usr/bin/zsh",
+            }
+        ),
     )
 
 

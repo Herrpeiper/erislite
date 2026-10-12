@@ -31,14 +31,10 @@ def run(profile: dict) -> None:
     ]
 
     if analyst_id:
-        metadata_parts.append(
-            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
-        )
+        metadata_parts.append(f"[dim]Analyst:[/] [white]{analyst_id}[/]")
 
     header = Panel(
-        Text.from_markup(
-            "   ".join(metadata_parts)
-        ),
+        Text.from_markup("   ".join(metadata_parts)),
         title="[bold cyan]SYSTEM INFO[/]",
         subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
         border_style="cyan",

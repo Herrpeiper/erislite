@@ -99,13 +99,7 @@ def test_permission_failure_has_distinct_tag(monkeypatch):
 def test_empty_iptables_ruleset_is_warning(monkeypatch):
     responses = {
         ("iptables", "-S"): (
-            _result(
-                stdout=(
-                    "-P INPUT ACCEPT\n"
-                    "-P FORWARD ACCEPT\n"
-                    "-P OUTPUT ACCEPT\n"
-                )
-            ),
+            _result(stdout=("-P INPUT ACCEPT\n-P FORWARD ACCEPT\n-P OUTPUT ACCEPT\n")),
             None,
         ),
     }
@@ -157,11 +151,7 @@ def test_iptables_meaningful_rules_are_detected(output):
 
 
 def test_default_accept_policies_are_not_meaningful_rules():
-    output = (
-        "-P INPUT ACCEPT\n"
-        "-P FORWARD ACCEPT\n"
-        "-P OUTPUT ACCEPT\n"
-    )
+    output = "-P INPUT ACCEPT\n-P FORWARD ACCEPT\n-P OUTPUT ACCEPT\n"
 
     assert firewall._iptables_has_rules(output) is False
 
@@ -177,6 +167,7 @@ table inet filter {
 """
 
     assert firewall._nftables_has_rules(output) is True
+
 
 def test_detect_firewall_backend_prefers_active_ufw(monkeypatch):
     responses = {
@@ -241,9 +232,7 @@ table inet filter {
 def test_detect_firewall_backend_detects_iptables(monkeypatch):
     responses = {
         ("iptables", "-S"): (
-            _result(
-                stdout="-A OUTPUT -p tcp --dport 443 -j ACCEPT\n"
-            ),
+            _result(stdout="-A OUTPUT -p tcp --dport 443 -j ACCEPT\n"),
             None,
         ),
     }
@@ -313,10 +302,22 @@ def test_build_nftables_block_commands_use_erislite_set():
     commands = firewall.build_ip_block_commands("203.0.113.10", "nftables")
 
     assert commands["apply"] == [
-        "nft", "add", "element", "inet", "erislite", "blocked4", "{ 203.0.113.10 }",
+        "nft",
+        "add",
+        "element",
+        "inet",
+        "erislite",
+        "blocked4",
+        "{ 203.0.113.10 }",
     ]
     assert commands["undo"] == [
-        "nft", "delete", "element", "inet", "erislite", "blocked4", "{ 203.0.113.10 }",
+        "nft",
+        "delete",
+        "element",
+        "inet",
+        "erislite",
+        "blocked4",
+        "{ 203.0.113.10 }",
     ]
     assert ["nft", "flush", "chain", "inet", "erislite", "output"] in commands["setup"]
 

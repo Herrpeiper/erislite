@@ -74,17 +74,11 @@ def launch_cli(profile: dict) -> None:
         ]
 
         if analyst_id:
-            metadata_parts.append(
-                f"[dim]Analyst:[/] [white]{analyst_id}[/]"
-            )
+            metadata_parts.append(f"[dim]Analyst:[/] [white]{analyst_id}[/]")
 
-        metadata_parts.append(
-            f"[dim]Session:[/] {get_privilege_label()}"
-        )
+        metadata_parts.append(f"[dim]Session:[/] {get_privilege_label()}")
 
-        metadata = Text.from_markup(
-            "   ".join(metadata_parts)
-        )
+        metadata = Text.from_markup("   ".join(metadata_parts))
 
         header = Panel(
             metadata,
@@ -118,9 +112,7 @@ def launch_cli(profile: dict) -> None:
         elif choice == "8":
             help_menu.show_help()
         elif choice == "9":
-            console.print(
-                f"\n[bold yellow]Exiting {APP_NAME}. Stay frosty.[/]\n"
-            )
+            console.print(f"\n[bold yellow]Exiting {APP_NAME}. Stay frosty.[/]\n")
             break
         else:
             console.print("[red]Invalid option.[/]")

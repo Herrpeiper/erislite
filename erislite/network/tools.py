@@ -93,9 +93,7 @@ def show_ips() -> None:
 
             table.add_row(iface, family, addr.address)
 
-    console.print(
-        table if table.row_count else "[yellow]No active IP addresses found.[/]"
-    )
+    console.print(table if table.row_count else "[yellow]No active IP addresses found.[/]")
     pause_return()
 
 
@@ -359,11 +357,7 @@ def whois_lookup() -> None:
             value = (match.group(1) or match.group(2)).strip()
 
             if label == "DNSSEC":
-                value = (
-                    f"[green]{value}[/]"
-                    if value.lower() == "signed"
-                    else f"[red]{value}[/]"
-                )
+                value = f"[green]{value}[/]" if value.lower() == "signed" else f"[red]{value}[/]"
 
             elif label == "Expires":
                 try:
@@ -380,9 +374,7 @@ def whois_lookup() -> None:
             parsed_summary[label] = value
 
         if parsed_summary:
-            lines = [
-                f"[cyan]{key}:[/] {value}" for key, value in parsed_summary.items()
-            ]
+            lines = [f"[cyan]{key}:[/] {value}" for key, value in parsed_summary.items()]
             console.print(
                 Panel(
                     "\n".join(lines),

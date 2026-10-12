@@ -27,9 +27,7 @@ def _header() -> None:
 
     console.print(
         Panel(
-            Text.from_markup(
-                "[dim]Deception and early-warning monitoring[/]"
-            ),
+            Text.from_markup("[dim]Deception and early-warning monitoring[/]"),
             title="[bold cyan]ODYSSEY LITE[/]",
             subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
             border_style="cyan",
@@ -55,9 +53,7 @@ def _status_panel(manager: OdysseyManager) -> None:
     ]
 
     if manager.suppressed_events:
-        lines.append(
-            f"[dim]Suppressed repeats:[/] [white]{manager.suppressed_events}[/]"
-        )
+        lines.append(f"[dim]Suppressed repeats:[/] [white]{manager.suppressed_events}[/]")
 
     if manager.failed_ports:
         ports = ", ".join(str(port) for port in manager.failed_ports)
@@ -65,14 +61,11 @@ def _status_panel(manager: OdysseyManager) -> None:
 
     if manager.persistence_error:
         lines.append(
-            "[dim]Event log:[/] [bold red]FAILING[/] "
-            f"[dim]{escape(manager.persistence_error)}[/]"
+            f"[dim]Event log:[/] [bold red]FAILING[/] [dim]{escape(manager.persistence_error)}[/]"
         )
 
     if manager.callback_errors:
-        lines.append(
-            f"[dim]Event handling errors:[/] [bold red]{manager.callback_errors}[/]"
-        )
+        lines.append(f"[dim]Event handling errors:[/] [bold red]{manager.callback_errors}[/]")
 
     body = Text.from_markup("\n".join(lines))
 
@@ -168,11 +161,7 @@ def _show_listener_status(manager: OdysseyManager) -> None:
     table.add_column("Enabled")
     table.add_column("State")
 
-    active_ports = {
-        listener.config.port
-        for listener in manager.listeners
-        if listener.running
-    }
+    active_ports = {listener.config.port for listener in manager.listeners if listener.running}
 
     for config in manager.configs:
         if config.severity == "high":
@@ -182,11 +171,7 @@ def _show_listener_status(manager: OdysseyManager) -> None:
         else:
             severity = f"[white]{config.severity.upper()}[/]"
 
-        enabled = (
-            "[green]YES[/]"
-            if config.enabled
-            else "[dim]NO[/]"
-        )
+        enabled = "[green]YES[/]" if config.enabled else "[dim]NO[/]"
 
         if config.port in active_ports:
             state = "[bold green]LISTENING[/]"
@@ -254,9 +239,7 @@ def _show_recent_events(manager: OdysseyManager) -> None:
         else:
             severity = f"[white]{event.severity.upper()}[/]"
 
-        timestamp = event.timestamp.astimezone().strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+        timestamp = event.timestamp.astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
         source = f"{event.source_ip}:{event.source_port}"
 
@@ -272,6 +255,7 @@ def _show_recent_events(manager: OdysseyManager) -> None:
     console.print()
 
     pause_return()
+
 
 def _report_start_result(manager: OdysseyManager) -> None:
     """Tell the analyst which canaries failed to bind after a start attempt."""

@@ -17,6 +17,7 @@ from erislite.security.safe_io import private_text_writer
 
 LOG_DIR = SECURITY_LOG_DIR
 
+
 def write_audit_log(profile: dict, results: List[str]) -> str:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     hostname = profile.get("hostname", "unknown-host")

@@ -31,9 +31,6 @@ def test_default_listener_ports_are_unique():
 
 
 def test_expected_default_ports_exist():
-    ports = {
-        listener.port
-        for listener in get_default_listeners()
-    }
+    ports = {listener.port for listener in get_default_listeners()}
 
     assert ports == {2121, 2323, 2222, 3389, 8080}

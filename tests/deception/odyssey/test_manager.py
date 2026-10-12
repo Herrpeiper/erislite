@@ -50,7 +50,7 @@ def test_manager_records_events(monkeypatch):
         "append_event",
         lambda event: None,
     )
-        
+
     port = _get_free_port()
 
     manager = OdysseyManager(
@@ -211,15 +211,13 @@ def test_manager_reports_failed_ports_without_stopping_other_listeners():
         manager.start()
 
         assert manager.running is True
-        assert working_port in {
-            listener.config.port
-            for listener in manager.listeners
-        }
+        assert working_port in {listener.config.port for listener in manager.listeners}
         assert blocked_port in manager.failed_ports
 
     finally:
         manager.stop()
         blocker.close()
+
 
 def test_manager_persists_recorded_event(monkeypatch):
     persisted = []
@@ -269,6 +267,7 @@ def test_manager_keeps_event_when_persistence_fails(monkeypatch):
     manager._record_event(event)
 
     assert manager.events == (event,)
+
 
 def test_manager_bounds_in_memory_events(monkeypatch):
     monkeypatch.setattr(
@@ -396,6 +395,7 @@ def test_manager_records_duplicate_after_window(monkeypatch):
     assert persisted == [first, later]
     assert manager.suppressed_events == 0
 
+
 def test_manager_does_not_suppress_different_canary(monkeypatch):
     persisted = []
 
@@ -440,6 +440,7 @@ def test_manager_does_not_suppress_different_canary(monkeypatch):
     assert manager.events == (telnet_event, rdp_event)
     assert persisted == [telnet_event, rdp_event]
     assert manager.suppressed_events == 0
+
 
 def test_manager_clear_events_resets_suppression_state(monkeypatch):
     monkeypatch.setattr(
@@ -491,6 +492,7 @@ def test_manager_clear_events_resets_suppression_state(monkeypatch):
 
     assert manager.events == (duplicate,)
 
+
 def test_manager_suppresses_concurrent_duplicates(monkeypatch):
     persisted = []
 
@@ -541,6 +543,7 @@ def test_manager_suppresses_concurrent_duplicates(monkeypatch):
     assert len(persisted) == 1
     assert manager.suppressed_events == 9
 
+
 def test_manager_continues_when_one_port_is_occupied():
     open_port = _get_free_port()
 
@@ -575,11 +578,7 @@ def test_manager_continues_when_one_port_is_occupied():
                 listener._thread,
             )
 
-        running_ports = {
-            listener.config.port
-            for listener in manager.listeners
-            if listener.running
-        }
+        running_ports = {listener.config.port for listener in manager.listeners if listener.running}
 
         assert open_port in running_ports
         assert blocked_port not in running_ports

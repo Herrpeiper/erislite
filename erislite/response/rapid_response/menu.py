@@ -108,9 +108,7 @@ def _show_actions(actions) -> None:
     table.add_column("Recovery", no_wrap=True)
 
     for index, action in enumerate(actions, start=1):
-        recovery = (
-            "[green]Reversible[/]" if action["undo"] else "[yellow]Irreversible[/]"
-        )
+        recovery = "[green]Reversible[/]" if action["undo"] else "[yellow]Irreversible[/]"
         table.add_row(str(index), action["label"], recovery)
 
     console.print(table)
@@ -157,8 +155,7 @@ def _select_actions(actions: Sequence[Dict]) -> List[Dict]:
 
     while True:
         raw = Prompt.ask(
-            "[bold red]Actions to execute[/] "
-            "[dim](e.g. 1,3-5, 'all', or Enter for none)[/]",
+            "[bold red]Actions to execute[/] [dim](e.g. 1,3-5, 'all', or Enter for none)[/]",
             default="",
             show_default=False,
         )
@@ -213,8 +210,7 @@ def run_rapid_response(dry_run: bool = False) -> None:
     else:
         console.print(
             Panel.fit(
-                "[bold red]LIVE MODE[/]   "
-                "[white]Containment actions will modify this system.[/]",
+                "[bold red]LIVE MODE[/]   [white]Containment actions will modify this system.[/]",
                 border_style="red",
                 box=box.ROUNDED,
             )
@@ -249,14 +245,10 @@ def run_rapid_response(dry_run: bool = False) -> None:
 
     if total == 0:
         if collection_errors:
-            console.print(
-                "[yellow]Triage completed with collection errors.[/]"
-            )
+            console.print("[yellow]Triage completed with collection errors.[/]")
 
             for error in collection_errors:
-                console.print(
-                    f"  [yellow]•[/] {error}"
-                )
+                console.print(f"  [yellow]•[/] {error}")
 
             console.print()
             console.print(
@@ -265,12 +257,8 @@ def run_rapid_response(dry_run: bool = False) -> None:
             )
 
         else:
-            console.print(
-                "[green]Triage complete — no immediate threats detected.[/]"
-            )
-            console.print(
-                "[dim]Consider running a full Threat Sweep for deeper analysis.[/]"
-            )
+            console.print("[green]Triage complete — no immediate threats detected.[/]")
+            console.print("[dim]Consider running a full Threat Sweep for deeper analysis.[/]")
 
         pause_return()
         return
@@ -292,18 +280,14 @@ def run_rapid_response(dry_run: bool = False) -> None:
         for path in crons:
             console.print(f"  [yellow]{path}[/]")
         console.print()
-    
+
     if collection_errors:
         console.print("[yellow]Collection Issues[/]")
 
         for error in collection_errors:
-            console.print(
-                f"  [yellow]•[/] {error}"
-            )
+            console.print(f"  [yellow]•[/] {error}")
 
-        console.print(
-            "[dim]Triage results may be incomplete.[/]"
-        )
+        console.print("[dim]Triage results may be incomplete.[/]")
         console.print()
 
     actions = build_action_plan(procs, conns, users, crons)
@@ -352,15 +336,12 @@ def run_rapid_response(dry_run: bool = False) -> None:
             console.print(f"[bold red]Could not write response log {path}: {exc}[/]")
 
     console.print()
-    console.print(
-        f"[bold]Complete.[/] [green]{success} succeeded[/], [red]{failed} failed[/]."
-    )
+    console.print(f"[bold]Complete.[/] [green]{success} succeeded[/], [red]{failed} failed[/].")
     console.print(f"[dim]Log saved:[/] [white]{path}[/]")
 
     if any(action.get("undo") for action in action_log):
         console.print(
-            "\n[dim]Reversible actions can be restored from "
-            "Rapid Response → Undo Previous Run.[/]"
+            "\n[dim]Reversible actions can be restored from Rapid Response → Undo Previous Run.[/]"
         )
 
     pause_return()

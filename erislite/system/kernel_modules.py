@@ -38,6 +38,7 @@ KNOWN_BAD_MODULES = {
     "mushroom",
 }
 
+
 def _header() -> None:
     console.print(
         Panel(
@@ -52,6 +53,7 @@ def _header() -> None:
         )
     )
     console.print()
+
 
 def _kernel_release() -> str:
     try:
@@ -69,6 +71,7 @@ def _kernel_release() -> str:
     ):
         return ""
 
+
 def get_module_path(modname: str):
     try:
         result = run_command(
@@ -77,10 +80,7 @@ def get_module_path(modname: str):
         )
 
         if result.returncode != 0:
-            return None, (
-                result.stderr.strip()
-                or f"modinfo exited with code {result.returncode}"
-            )
+            return None, (result.stderr.strip() or f"modinfo exited with code {result.returncode}")
 
         path = result.stdout.strip()
 
@@ -98,6 +98,7 @@ def get_module_path(modname: str):
     except OSError as exc:
         return None, str(exc)
 
+
 def get_loaded_modules():
     try:
         result = run_command(
@@ -106,10 +107,7 @@ def get_loaded_modules():
         )
 
         if result.returncode != 0:
-            return [], (
-                result.stderr.strip()
-                or f"lsmod exited with code {result.returncode}"
-            )
+            return [], (result.stderr.strip() or f"lsmod exited with code {result.returncode}")
 
         lines = result.stdout.strip().splitlines()
 
@@ -122,9 +120,7 @@ def get_loaded_modules():
             parts = line.split()
 
             if len(parts) >= 3:
-                modules.append(
-                    (parts[0], parts[1], parts[2])
-                )
+                modules.append((parts[0], parts[1], parts[2]))
 
         return modules, None
 
@@ -136,6 +132,7 @@ def get_loaded_modules():
 
     except OSError as exc:
         return [], str(exc)
+
 
 def _status_text(flags) -> str:
     if "KnownBadName" in flags:
@@ -151,6 +148,7 @@ def _status_text(flags) -> str:
         return "[dim]INFO[/]"
 
     return "[green]OK[/]"
+
 
 def run_kernel_module_check(
     silent: bool = False,
@@ -174,11 +172,7 @@ def run_kernel_module_check(
         return make_result("unsupported")
 
     krel = _kernel_release()
-    expected_prefix = (
-        f"/lib/modules/{krel}/"
-        if krel
-        else "/lib/modules/"
-    )
+    expected_prefix = f"/lib/modules/{krel}/" if krel else "/lib/modules/"
 
     modules, collection_error = get_loaded_modules()
 
@@ -196,8 +190,7 @@ def run_kernel_module_check(
 
         console.print(
             Panel.fit(
-                f"[yellow]Kernel module inspection is unavailable.[/]\n"
-                f"[dim]{collection_error}[/]",
+                f"[yellow]Kernel module inspection is unavailable.[/]\n[dim]{collection_error}[/]",
                 title="[bold yellow]UNAVAILABLE[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
@@ -221,19 +214,13 @@ def run_kernel_module_check(
             flags.append("KnownBadName")
             bad_named.append(name)
 
-        is_legit = (
-            path is not None
-            and path.startswith(expected_prefix)
-        )
+        is_legit = path is not None and path.startswith(expected_prefix)
 
         if not is_legit:
             flags.append("Rogue/Untracked")
             rogue.append(name)
 
-            if (
-                path is not None
-                and not path.startswith(expected_prefix)
-            ):
+            if path is not None and not path.startswith(expected_prefix):
                 flags.append("UnusualPath")
                 path_flags.append((name, path))
 
@@ -241,33 +228,29 @@ def run_kernel_module_check(
             flags.append("Unused")
             info_unused.append(name)
 
-        module_log.append({
-            "name": name,
-            "size": size,
-            "used_by": used_by,
-            "status": flags or ["OK"],
-            "path": path,
-        })
+        module_log.append(
+            {
+                "name": name,
+                "size": size,
+                "used_by": used_by,
+                "status": flags or ["OK"],
+                "path": path,
+            }
+        )
 
     issues = []
     tags = set()
 
     if bad_named:
-        issues.append(
-            f"{len(bad_named)} known-bad module name(s) loaded"
-        )
+        issues.append(f"{len(bad_named)} known-bad module name(s) loaded")
         tags.add("rogue_kernel_mod")
 
     if rogue:
-        issues.append(
-            f"{len(rogue)} rogue/untracked module(s) loaded"
-        )
+        issues.append(f"{len(rogue)} rogue/untracked module(s) loaded")
         tags.add("rogue_kernel_mod")
 
     if path_flags:
-        issues.append(
-            f"{len(path_flags)} module(s) loaded from unusual paths"
-        )
+        issues.append(f"{len(path_flags)} module(s) loaded from unusual paths")
         tags.add("kernel_mod_path")
 
     warn_state = bool(issues)
@@ -300,9 +283,7 @@ def run_kernel_module_check(
 
     except OSError as exc:
         if not silent:
-            console.print(
-                f"[yellow]Warning: could not save kernel module log: {exc}[/]"
-            )
+            console.print(f"[yellow]Warning: could not save kernel module log: {exc}[/]")
 
     if silent:
         return make_result(
@@ -375,15 +356,11 @@ def run_kernel_module_check(
     console.print()
 
     if warn_state:
-        body = "\n".join(
-            f"[yellow]{issue}[/]"
-            for issue in issues
-        )
+        body = "\n".join(f"[yellow]{issue}[/]" for issue in issues)
 
         console.print(
             Panel.fit(
-                body
-                + "\n[dim]Validate module origin, path, and expected system role.[/]",
+                body + "\n[dim]Validate module origin, path, and expected system role.[/]",
                 title="[bold yellow]REVIEW REQUIRED[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
