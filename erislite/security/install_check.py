@@ -20,7 +20,9 @@ third-party import.
 
 from __future__ import annotations
 
+import grp
 import os
+import pwd
 import stat
 from pathlib import Path
 from typing import List, Optional
@@ -33,6 +35,38 @@ RUNTIME_PATHS = ("main.py", "erislite", "data")
 MAX_REPORTED = 15
 
 
+def _group_has_untrusted_members(gid: int, trusted_uids) -> bool:
+    """Return True when an account outside trusted_uids belongs to the group.
+
+    Debian ships /usr/local/lib/pythonX.Y/dist-packages group-writable by
+    staff. That is only a risk if someone is actually in the group.
+    """
+
+    trusted_names = set()
+
+    for uid in trusted_uids:
+        try:
+            trusted_names.add(pwd.getpwuid(uid).pw_name)
+        except KeyError:
+            continue
+
+    try:
+        members = set(grp.getgrgid(gid).gr_mem)
+    except KeyError:
+        # An unnamed group cannot be audited, so treat it as unsafe.
+        return True
+
+    if members - trusted_names:
+        return True
+
+    try:
+        accounts = pwd.getpwall()
+    except Exception:
+        return True
+
+    return any(account.pw_gid == gid and account.pw_uid not in trusted_uids for account in accounts)
+
+
 def _describe(path: Path, info: os.stat_result, trusted_uids) -> Optional[str]:
     if info.st_uid not in trusted_uids:
         return f"{path} is owned by uid {info.st_uid}"
@@ -40,9 +74,12 @@ def _describe(path: Path, info: os.stat_result, trusted_uids) -> Optional[str]:
     if stat.S_ISLNK(info.st_mode):
         return None
 
-    writable = info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+    other_writable = info.st_mode & stat.S_IWOTH
+    group_writable = info.st_mode & stat.S_IWGRP and _group_has_untrusted_members(
+        info.st_gid, trusted_uids
+    )
 
-    if not writable:
+    if not (other_writable or group_writable):
         return None
 
     if stat.S_ISDIR(info.st_mode) and info.st_mode & stat.S_ISVTX:
