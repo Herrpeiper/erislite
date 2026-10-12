@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: viewer.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-12
 # Description: Threat sweep log viewer for browsing and inspecting saved sweep results.
 
 import json
@@ -143,12 +143,14 @@ def _get_changes(data: dict) -> dict:
     if isinstance(changes, dict):
         return {
             "new": list(changes.get("new", [])),
+            "changed": list(changes.get("changed", [])),
             "persisting": list(changes.get("persisting", [])),
             "resolved": list(changes.get("resolved", [])),
         }
 
     return {
         "new": [],
+        "changed": [],
         "persisting": [],
         "resolved": [],
     }
@@ -418,6 +420,10 @@ def view_full_report():
             (
                 "[red]NEW[/]",
                 changes["new"],
+            ),
+            (
+                "[magenta]CHANGED[/]",
+                changes["changed"],
             ),
             (
                 "[yellow]PERSISTING[/]",
