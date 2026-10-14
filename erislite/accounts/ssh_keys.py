@@ -1,13 +1,14 @@
 # Project: ErisLITE
 # Module: ssh_keys.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: SSH authorized_keys enumeration across user home directories.
 
 import base64
+import binascii
 import hashlib
 import os
 import pwd
@@ -18,6 +19,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -54,7 +56,7 @@ def _fingerprint(key_data: str) -> str:
         digest = hashlib.sha256(raw).digest()
         encoded = base64.b64encode(digest).decode().rstrip("=")
         return f"SHA256:{encoded[:20]}..."
-    except Exception:
+    except (binascii.Error, ValueError):
         return "Unavailable"
 
 
@@ -73,7 +75,7 @@ def _parse_key(line: str) -> dict:
                 key_data = parts[index + 1]
 
             if len(parts) > index + 2:
-                comment = " ".join(parts[index + 2:])
+                comment = " ".join(parts[index + 2 :])
 
             break
 
@@ -91,7 +93,7 @@ def find_authorized_keys():
     try:
         users = pwd.getpwall()
 
-    except Exception as exc:
+    except OSError as exc:
         errors.append(
             {
                 "path": "/etc/passwd",
@@ -200,11 +202,7 @@ def run_ssh_key_check(silent: bool = False):
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     entries, errors = find_authorized_keys()
 
@@ -224,23 +222,15 @@ def run_ssh_key_check(silent: bool = False):
 
             tags.update(local_tags)
 
-    users = {
-        entry["user"]
-        for entry in entries
-    }
+    users = {entry["user"] for entry in entries}
 
     details = []
 
     if findings:
-        details.append(
-            f"{len(findings)} SSH authorized key(s) require review"
-        )
+        details.append(f"{len(findings)} SSH authorized key(s) require review")
 
     if errors:
-        details.extend(
-            f"{error['path']} — {error['reason']}"
-            for error in errors
-        )
+        details.extend(f"{error['path']} — {error['reason']}" for error in errors)
 
     if findings:
         status = "warning"
@@ -252,14 +242,19 @@ def run_ssh_key_check(silent: bool = False):
     if errors:
         tags.add("ssh_keys_scan_incomplete")
 
-    result = {
-        "status": status,
-        "details": details,
-        "tags": sorted(tags),
-        "flagged": bool(findings),
-        "key_count": len(entries),
-        "user_count": len(users),
-    }
+    result = make_result(
+        status,
+        details=details,
+        tags=sorted(tags),
+    )
+
+    result.update(
+        {
+            "flagged": bool(findings),
+            "key_count": len(entries),
+            "user_count": len(users),
+        }
+    )
     if silent:
         return result
 
@@ -314,10 +309,7 @@ def run_ssh_key_check(silent: bool = False):
             style="dim",
         )
 
-        finding_paths = {
-            (entry["path"], entry["line"])
-            for entry in findings
-        }
+        finding_paths = {(entry["path"], entry["line"]) for entry in findings}
 
         for entry in entries:
             is_finding = (
@@ -325,11 +317,7 @@ def run_ssh_key_check(silent: bool = False):
                 entry["line"],
             ) in finding_paths
 
-            status = (
-                "[yellow]REVIEW[/]"
-                if is_finding
-                else "[green]KNOWN[/]"
-            )
+            status = "[yellow]REVIEW[/]" if is_finding else "[green]KNOWN[/]"
 
             table.add_row(
                 entry["user"],

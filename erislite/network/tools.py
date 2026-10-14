@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: tools.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: Network utilities: addressing, DNS, diagnostics, WHOIS, and connections.
 
 import os
@@ -21,12 +21,12 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT, NETWORK_LOG_DIR
-from erislite.security.command_resolver import resolve_command
+from erislite.config.settings import APP_NAME, APP_VERSION, NETWORK_LOG_DIR
+from erislite.security.command_runner import run_command
+from erislite.security.safe_io import write_private_text
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
-timeout = DEFAULT_COMMAND_TIMEOUT
 COMMON_PORTS = {
     22: "SSH",
     23: "Telnet",
@@ -93,9 +93,7 @@ def show_ips() -> None:
 
             table.add_row(iface, family, addr.address)
 
-    console.print(
-        table if table.row_count else "[yellow]No active IP addresses found.[/]"
-    )
+    console.print(table if table.row_count else "[yellow]No active IP addresses found.[/]")
     pause_return()
 
 
@@ -109,11 +107,8 @@ def show_gateway() -> None:
             pause_return()
             return
 
-        result = subprocess.run(
-            [resolve_command("ip"), "route"],
-            capture_output=True,
-            text=True,
-            timeout=DEFAULT_COMMAND_TIMEOUT,
+        result = run_command(
+            ["ip", "route"],
         )
 
         for line in result.stdout.splitlines():
@@ -168,17 +163,15 @@ def ping_host() -> None:
     target = Prompt.ask("[cyan]Target[/]", default="8.8.8.8")
 
     try:
-        ping_cmd = resolve_command("ping")
-
         cmd = (
-            [ping_cmd, "-n", "4", target]
+            ["ping", "-n", "4", target]
             if platform.system() == "Windows"
-            else [ping_cmd, "-c", "4", target]
+            else ["ping", "-c", "4", target]
         )
 
         console.print(f"\n[cyan]Pinging[/] [white]{target}[/]\n")
 
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=DEFAULT_COMMAND_TIMEOUT)
+        result = run_command(cmd)
 
         if result.returncode == 0:
             console.print(result.stdout)
@@ -199,15 +192,8 @@ def show_active_connections() -> None:
     show_network_header("ACTIVE CONNECTIONS")
 
     try:
-        result = subprocess.run(
-            [
-                resolve_command("curl"),
-                "-s",
-                "https://ifconfig.me",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=DEFAULT_COMMAND_TIMEOUT,
+        result = run_command(
+            ["ss", "-tunap"],
         )
         lines = result.stdout.strip().splitlines()
 
@@ -282,14 +268,10 @@ def show_active_connections() -> None:
         )
 
         if save == "y":
-            log_dir = NETWORK_LOG_DIR
-            os.makedirs(log_dir, exist_ok=True)
-
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(log_dir, f"network_connections_{timestamp}.log")
+            filename = os.path.join(NETWORK_LOG_DIR, f"network_connections_{timestamp}.log")
 
-            with open(filename, "w", encoding="utf-8") as file:
-                file.write(result.stdout)
+            write_private_text(filename, result.stdout)
 
             console.print(f"[green]Snapshot saved:[/] {filename}")
 
@@ -304,11 +286,8 @@ def show_external_ip() -> None:
     show_network_header("EXTERNAL IP ADDRESS")
 
     try:
-        result = subprocess.run(
+        result = run_command(
             ["curl", "-s", "https://ifconfig.me"],
-            capture_output=True,
-            text=True,
-            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
 
         ip = result.stdout.strip()
@@ -332,11 +311,8 @@ def trace_route() -> None:
     console.print(f"\n[cyan]Tracing route to[/] [white]{host}[/]\n")
 
     try:
-        result = subprocess.run(
-            [resolve_command("tracepath"), host],
-            capture_output=True,
-            text=True,
-            timeout=DEFAULT_COMMAND_TIMEOUT,
+        result = run_command(
+            ["tracepath", host],
         )
         console.print(result.stdout)
 
@@ -357,11 +333,8 @@ def whois_lookup() -> None:
     target = Prompt.ask("[cyan]Domain or IP[/]", default="example.com")
 
     try:
-        result = subprocess.run(
-            [resolve_command("whois"), target],
-            capture_output=True,
-            text=True,
-            timeout=DEFAULT_COMMAND_TIMEOUT,
+        result = run_command(
+            ["whois", target],
         )
         output = result.stdout
 
@@ -384,11 +357,7 @@ def whois_lookup() -> None:
             value = (match.group(1) or match.group(2)).strip()
 
             if label == "DNSSEC":
-                value = (
-                    f"[green]{value}[/]"
-                    if value.lower() == "signed"
-                    else f"[red]{value}[/]"
-                )
+                value = f"[green]{value}[/]" if value.lower() == "signed" else f"[red]{value}[/]"
 
             elif label == "Expires":
                 try:
@@ -405,9 +374,7 @@ def whois_lookup() -> None:
             parsed_summary[label] = value
 
         if parsed_summary:
-            lines = [
-                f"[cyan]{key}:[/] {value}" for key, value in parsed_summary.items()
-            ]
+            lines = [f"[cyan]{key}:[/] {value}" for key, value in parsed_summary.items()]
             console.print(
                 Panel(
                     "\n".join(lines),

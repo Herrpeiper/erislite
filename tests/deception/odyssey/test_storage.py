@@ -115,7 +115,7 @@ def test_append_event_repairs_existing_log_permissions(tmp_path):
     mode = path.stat().st_mode & 0o777
 
     assert mode == 0o600
-    
+
 
 def test_append_event_rejects_symlink_directory(tmp_path):
     real_dir = tmp_path / "real_odyssey"
@@ -154,6 +154,7 @@ def test_append_event_rejects_non_directory_parent(tmp_path):
 
     with pytest.raises(OSError):
         append_event(_make_event(), path)
+
 
 def test_append_event_rotates_full_log(tmp_path):
     path = tmp_path / "odyssey" / "events.jsonl"
@@ -218,18 +219,15 @@ def test_rotation_shifts_existing_backups(tmp_path):
         max_bytes=1,
     )
 
-    assert path.with_name(f"{path.name}.1").read_text(
-        encoding="utf-8"
-    ) == "current\n"
+    assert path.with_name(f"{path.name}.1").read_text(encoding="utf-8") == "current\n"
 
     for index in range(2, MAX_LOG_BACKUPS + 1):
-        assert path.with_name(f"{path.name}.{index}").read_text(
-            encoding="utf-8"
-        ) == f"backup-{index - 1}\n"
+        assert (
+            path.with_name(f"{path.name}.{index}").read_text(encoding="utf-8")
+            == f"backup-{index - 1}\n"
+        )
 
-    assert not path.with_name(
-        f"{path.name}.{MAX_LOG_BACKUPS + 1}"
-    ).exists()
+    assert not path.with_name(f"{path.name}.{MAX_LOG_BACKUPS + 1}").exists()
 
 
 def test_rotation_rejects_symlinked_backup(tmp_path):
@@ -296,7 +294,7 @@ def test_rotation_swap_does_not_chmod_symlink_target(monkeypatch, tmp_path):
         return real_replace(src, dst, *args, **kwargs)
 
     monkeypatch.setattr(storage.os, "replace", attacker_replace)
-    
+
     try:
         append_event(_make_event(), path, max_bytes=1)
     except OSError:

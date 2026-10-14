@@ -215,9 +215,7 @@ def test_duplicate_non_loopback_mapping_is_flagged(
     flagged, _, _ = hosts.scan_hosts()
 
     duplicate_findings = [
-        finding
-        for finding in flagged
-        if "hosts_duplicate_mapping" in finding["tags"]
+        finding for finding in flagged if "hosts_duplicate_mapping" in finding["tags"]
     ]
 
     assert len(duplicate_findings) == 1
@@ -240,10 +238,7 @@ def test_loopback_variants_do_not_trigger_duplicate_mapping(
 
     flagged, _, _ = hosts.scan_hosts()
 
-    assert not any(
-        "hosts_duplicate_mapping" in finding["tags"]
-        for finding in flagged
-    )
+    assert not any("hosts_duplicate_mapping" in finding["tags"] for finding in flagged)
 
 
 def test_base64_like_hostname_is_flagged(tmp_path, monkeypatch):

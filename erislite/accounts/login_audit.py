@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: login_audit.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: Login and authentication audit: failed logins, root shells, and recent login history.
 
 import re
@@ -16,15 +16,13 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
-from erislite.security.command_resolver import (
-    CommandResolutionError,
-    resolve_command,
-)
+from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
+from erislite.security.command_resolver import CommandResolutionError
+from erislite.security.command_runner import run_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
-timeout = DEFAULT_COMMAND_TIMEOUT
 FAILED_LOGIN_THRESHOLD = 3
 
 ROOT_SHELLS = {
@@ -58,11 +56,8 @@ def get_failed_logins() -> Tuple[list[str], Optional[str]]:
     output = ""
 
     try:
-        result = subprocess.run(
-            [resolve_command("journalctl"), "-u", "ssh", "-n", "100"],
-            capture_output=True,
-            text=True,
-            timeout=DEFAULT_COMMAND_TIMEOUT,
+        result = run_command(
+            ["journalctl", "-u", "ssh", "-n", "100"],
         )
 
         if result.returncode == 0:
@@ -98,11 +93,8 @@ def get_failed_logins() -> Tuple[list[str], Optional[str]]:
 
 def get_recent_logins() -> Tuple[list[str], Optional[str]]:
     try:
-        result = subprocess.run(
-            [resolve_command("last"), "-n", "10"],
-            capture_output=True,
-            text=True,
-            timeout=DEFAULT_COMMAND_TIMEOUT,
+        result = run_command(
+            ["last", "-n", "10"],
         )
 
         if result.returncode != 0:
@@ -128,15 +120,12 @@ def get_recent_logins() -> Tuple[list[str], Optional[str]]:
 
 def get_uid0_shells() -> Tuple[list[str], Optional[str]]:
     try:
-        result = subprocess.run(
+        result = run_command(
             [
-                resolve_command("ps"),
+                "ps",
                 "-eo",
                 "uid=,pid=,tty=,comm=,args=",
             ],
-            capture_output=True,
-            text=True,
-            timeout=DEFAULT_COMMAND_TIMEOUT,
         )
 
         if result.returncode != 0:
@@ -161,9 +150,7 @@ def get_uid0_shells() -> Tuple[list[str], Optional[str]]:
             command = args.split()[0] if args else ""
 
             if command in ROOT_SHELLS:
-                shells.append(
-                    f"PID {pid} — {tty} — {comm} — {args}"
-                )
+                shells.append(f"PID {pid} — {tty} — {comm} — {args}")
 
         return shells, None
 
@@ -175,6 +162,7 @@ def get_uid0_shells() -> Tuple[list[str], Optional[str]]:
 
     except OSError as exc:
         return [], f"Process inspection failed: {exc}"
+
 
 def run_login_audit(silent: bool = False) -> dict:
     if get_os() != "Linux":
@@ -192,11 +180,7 @@ def run_login_audit(silent: bool = False) -> dict:
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     failed_logins, failed_error = get_failed_logins()
     recent_logins, recent_error = get_recent_logins()
@@ -212,30 +196,27 @@ def run_login_audit(silent: bool = False) -> dict:
         if error
     ]
 
-    results = {
-        "failed_logins": failed_logins,
-        "recent_logins": recent_logins,
-        "uid0_shells": uid0_shells,
-        "collection_errors": collection_errors,
-        "flagged": False,
-        "issues": [],
-        "status": "ok",
-        "details": [],
-        "tags": [],
-    }
+    results = make_result("ok")
+
+    results.update(
+        {
+            "failed_logins": failed_logins,
+            "recent_logins": recent_logins,
+            "uid0_shells": uid0_shells,
+            "collection_errors": collection_errors,
+            "flagged": False,
+            "issues": [],
+        }
+    )
 
     if len(results["failed_logins"]) > FAILED_LOGIN_THRESHOLD:
         results["flagged"] = True
-        results["issues"].append(
-            f"{len(results['failed_logins'])} failed login attempts detected"
-        )
+        results["issues"].append(f"{len(results['failed_logins'])} failed login attempts detected")
         results["tags"].append("auth_failures")
 
     if results["uid0_shells"]:
         results["flagged"] = True
-        results["issues"].append(
-            f"{len(results['uid0_shells'])} root shell session(s) detected"
-        )
+        results["issues"].append(f"{len(results['uid0_shells'])} root shell session(s) detected")
         results["tags"].append("uid0_shells")
 
     if collection_errors:
@@ -248,7 +229,7 @@ def run_login_audit(silent: bool = False) -> dict:
         results["details"] = results["issues"]
     else:
         results["details"] = ["No login anomalies detected."]
-        
+
     if silent:
         return results
 
@@ -288,9 +269,7 @@ def run_login_audit(silent: bool = False) -> dict:
         console.print()
 
     else:
-        console.print(
-            "[dim]No recent login entries found.[/]"
-        )
+        console.print("[dim]No recent login entries found.[/]")
         console.print()
 
     if results["failed_logins"]:
@@ -328,10 +307,7 @@ def run_login_audit(silent: bool = False) -> dict:
     if results["collection_errors"]:
         console.print(
             Panel.fit(
-                "\n".join(
-                    f"[yellow]{error}[/]"
-                    for error in results["collection_errors"]
-                ),
+                "\n".join(f"[yellow]{error}[/]" for error in results["collection_errors"]),
                 title="[bold yellow]COLLECTION WARNING[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
@@ -342,10 +318,7 @@ def run_login_audit(silent: bool = False) -> dict:
     if results["flagged"]:
         console.print(
             Panel.fit(
-                "\n".join(
-                    f"[yellow]{issue}[/]"
-                    for issue in results["issues"]
-                )
+                "\n".join(f"[yellow]{issue}[/]" for issue in results["issues"])
                 + "\n[dim]Review authentication activity and validate privileged sessions.[/]",
                 title="[bold yellow]REVIEW REQUIRED[/]",
                 border_style="yellow",

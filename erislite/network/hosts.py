@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: hosts.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: /etc/hosts inspection for suspicious redirects and tampering.
 
 import ipaddress
@@ -16,6 +16,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -72,13 +73,9 @@ WHITELIST_ENTRIES = {
 }
 
 
-BASE64_HOSTNAME = re.compile(
-    r"^[A-Za-z0-9+/]{24,}={0,2}$"
-)
+BASE64_HOSTNAME = re.compile(r"^[A-Za-z0-9+/]{24,}={0,2}$")
 
-VERY_LONG_HOSTNAME = re.compile(
-    r"^\S{80,}$"
-)
+VERY_LONG_HOSTNAME = re.compile(r"^\S{80,}$")
 
 
 def _header() -> None:
@@ -158,11 +155,7 @@ def parse_hosts():
 
 
 def _is_critical_domain(hostname: str) -> bool:
-    return any(
-        hostname == domain
-        or hostname.endswith("." + domain)
-        for domain in CRITICAL_DOMAINS
-    )
+    return any(hostname == domain or hostname.endswith("." + domain) for domain in CRITICAL_DOMAINS)
 
 
 def _looks_external(hostname: str) -> bool:
@@ -215,33 +208,21 @@ def scan_hosts():
 
         # High-confidence: security/update infrastructure redirected.
         if critical:
-            reasons.append(
-                f"Critical domain redirected to {ip}"
-            )
+            reasons.append(f"Critical domain redirected to {ip}")
             tags.add("hosts_critical_redirect")
 
         # Loopback redirects are only interesting for external-looking names.
         # Local aliases are common and should not automatically trigger.
-        if (
-            ip in LOOPBACK_IPS
-            and _looks_external(hostname)
-            and not critical
-        ):
-            reasons.append(
-                "External-looking hostname redirected to loopback"
-            )
+        if ip in LOOPBACK_IPS and _looks_external(hostname) and not critical:
+            reasons.append("External-looking hostname redirected to loopback")
             tags.add("hosts_loopback_redirect")
 
         if VERY_LONG_HOSTNAME.search(hostname):
-            reasons.append(
-                "Unusually long hostname"
-            )
+            reasons.append("Unusually long hostname")
             tags.add("hosts_suspicious_entry")
 
         if BASE64_HOSTNAME.fullmatch(hostname):
-            reasons.append(
-                "Hostname resembles encoded data"
-            )
+            reasons.append("Hostname resembles encoded data")
             tags.add("hosts_suspicious_entry")
 
         # A public-looking hostname forced to RFC1918 space may warrant review.
@@ -250,9 +231,7 @@ def scan_hosts():
             and _looks_external(hostname)
             and not ipaddress.ip_address(ip).is_loopback
         ):
-            reasons.append(
-                "External-looking hostname mapped to private address"
-            )
+            reasons.append("External-looking hostname mapped to private address")
             tags.add("hosts_private_redirect")
 
         if reasons:
@@ -281,18 +260,13 @@ def scan_hosts():
         if len(addresses) <= 1:
             continue
 
-        non_loopback = {
-            ip
-            for ip in addresses
-            if not ipaddress.ip_address(ip).is_loopback
-        }
+        non_loopback = {ip for ip in addresses if not ipaddress.ip_address(ip).is_loopback}
 
         if len(non_loopback) <= 1:
             continue
 
         already_flagged = any(
-            finding["hostname"] == hostname
-            and "hosts_duplicate_mapping" in finding["tags"]
+            finding["hostname"] == hostname and "hosts_duplicate_mapping" in finding["tags"]
             for finding in flagged
         )
 
@@ -305,9 +279,7 @@ def scan_hosts():
                 "ip": ", ".join(sorted(addresses)),
                 "hostname": hostname,
                 "raw": "",
-                "reasons": [
-                    "Hostname maps to multiple distinct addresses"
-                ],
+                "reasons": ["Hostname maps to multiple distinct addresses"],
                 "tags": ["hosts_duplicate_mapping"],
             }
         )
@@ -331,20 +303,16 @@ def run_hosts_check(silent: bool = False) -> dict:
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     flagged, errors, error_tags = scan_hosts()
 
     if errors:
-        result = {
-            "status": "error",
-            "details": errors,
-            "tags": error_tags,
-        }
+        result = make_result(
+            "error",
+            details=errors,
+            tags=error_tags,
+        )
 
         if silent:
             return result
@@ -354,10 +322,7 @@ def run_hosts_check(silent: bool = False) -> dict:
 
         console.print(
             Panel.fit(
-                "\n".join(
-                    f"[yellow]{error}[/]"
-                    for error in errors
-                ),
+                "\n".join(f"[yellow]{error}[/]" for error in errors),
                 title="[bold yellow]UNAVAILABLE[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
@@ -376,16 +341,13 @@ def run_hosts_check(silent: bool = False) -> dict:
 
     for finding in flagged:
         for reason in finding["reasons"]:
-            details.append(
-                f"[line {finding['lineno']}] "
-                f"{finding['hostname']} — {reason}"
-            )
+            details.append(f"[line {finding['lineno']}] {finding['hostname']} — {reason}")
 
-    result = {
-        "status": "warning" if flagged else "ok",
-        "details": details[:10] if silent else details,
-        "tags": sorted(all_tags),
-    }
+    result = make_result(
+        "warning" if flagged else "ok",
+        details=details[:10] if silent else details,
+        tags=sorted(all_tags),
+    )
 
     if silent:
         return result

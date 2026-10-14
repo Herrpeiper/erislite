@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: security_menu.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: Security tools menu with threat sweep and posture workflows.
 
 import json
@@ -31,9 +31,7 @@ from erislite.vulnerability import cve_checker
 
 def get_last_sweep_summary():
     try:
-        with open(
-            LAST_SWEEP_FILE, "r", encoding="utf-8"
-        ) as file:
+        with open(LAST_SWEEP_FILE, "r", encoding="utf-8") as file:
             return json.load(file)
     except Exception:
         return None
@@ -108,13 +106,9 @@ def _render_header(profile: dict) -> None:
     ]
 
     if analyst_id:
-        metadata_parts.append(
-            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
-        )
+        metadata_parts.append(f"[dim]Analyst:[/] [white]{analyst_id}[/]")
 
-    metadata = Text.from_markup(
-        "   ".join(metadata_parts)
-    )
+    metadata = Text.from_markup("   ".join(metadata_parts))
 
     console.print(
         Panel(
@@ -238,9 +232,7 @@ def _run_sweep_menu(profile: dict) -> None:
 
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_row("[cyan][1][/]", "Quick", "[dim]Listeners, users, login[/]")
-    table.add_row(
-        "[cyan][2][/]", "Standard", "[dim]Integrity, listeners, users, login, CVE[/]"
-    )
+    table.add_row("[cyan][2][/]", "Standard", "[dim]Integrity, listeners, users, login, CVE[/]")
     table.add_row("[cyan][3][/]", "Full", "[dim]All security checks[/]")
     table.add_row("[cyan][0][/]", "Back", "")
 

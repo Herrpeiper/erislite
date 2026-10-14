@@ -1,18 +1,19 @@
 # Project: ErisLITE
 # Module: profile.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: Manages user profile creation, locking, and migration.
 
 import json
-import os
 import socket
 from pathlib import Path
 
 from rich.console import Console
+
+from erislite.security.safe_io import write_private_json
 
 console = Console()
 
@@ -35,18 +36,13 @@ PROFILE_DEFAULTS = {
 }
 
 
-def _unlock(path: Path) -> None:
-    try:
-        os.chmod(path, 0o644)
-    except Exception:
-        pass
+# The profile is written read-only (0444) to discourage casual edits.
+# Writes replace the file through a rename, so no unlock step is needed.
+_PROFILE_MODE = 0o444
 
 
-def _lock(path: Path) -> None:
-    try:
-        os.chmod(path, 0o444)
-    except Exception:
-        pass
+def _save(profile: dict) -> None:
+    write_private_json(PROFILE_PATH, profile, mode=_PROFILE_MODE, indent=4)
 
 
 def _migrate(profile: dict) -> tuple:
@@ -67,9 +63,6 @@ def _migrate(profile: dict) -> tuple:
 
 
 def load_or_create_profile() -> dict:
-    # Ensure data/ exists before trying to read or write
-    PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-
     if PROFILE_PATH.exists():
         try:
             with open(PROFILE_PATH) as f:
@@ -90,24 +83,21 @@ def load_or_create_profile() -> dict:
 
         if changed:
             console.print("[yellow]User profile updated with current system information.[/]")
-            _unlock(PROFILE_PATH)
             try:
-                with open(PROFILE_PATH, "w") as f:
-                    json.dump(profile, f, indent=4)
-            finally:
-                _lock(PROFILE_PATH)
+                _save(profile)
+            except OSError as exc:
+                console.print(f"[red]Warning: could not save user profile ({exc}).[/]")
 
         return profile
 
     else:
         profile = {**PROFILE_DEFAULTS, "hostname": socket.gethostname()}
 
-        with open(PROFILE_PATH, "w") as f:
-            json.dump(profile, f, indent=4)
+        try:
+            _save(profile)
+        except OSError as exc:
+            console.print(f"[red]Warning: could not save user profile ({exc}).[/]")
+            return profile
 
-        _lock(PROFILE_PATH)
-
-        console.print(
-            "[yellow]User profile created at data/user_profile.json and locked (read-only).[/]"
-        )
+        console.print(f"[yellow]User profile created at {PROFILE_PATH} (read-only).[/]")
         return profile

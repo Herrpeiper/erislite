@@ -24,14 +24,8 @@ def _parsed_state(**overrides):
 
 
 def test_current_sudo_session_is_discounted():
-    current = (
-        "sudo: analyst : TTY=pts/0 ; PWD=/tmp ; USER=root ; "
-        "COMMAND=/usr/bin/python3 main.py"
-    )
-    session = (
-        "sudo: pam_unix(sudo:session): session opened for user root "
-        "by analyst(uid=1000)"
-    )
+    current = "sudo: analyst : TTY=pts/0 ; PWD=/tmp ; USER=root ; COMMAND=/usr/bin/python3 main.py"
+    session = "sudo: pam_unix(sudo:session): session opened for user root by analyst(uid=1000)"
 
     parsed = _parsed_state(
         sudo_events=1,
@@ -64,13 +58,9 @@ def test_current_sudo_session_is_discounted():
 
 
 def test_additional_sudo_activity_remains_visible():
-    current = (
-        "sudo: analyst : TTY=pts/0 ; PWD=/tmp ; USER=root ; "
-        "COMMAND=/usr/bin/python3 main.py"
-    )
+    current = "sudo: analyst : TTY=pts/0 ; PWD=/tmp ; USER=root ; COMMAND=/usr/bin/python3 main.py"
     other = (
-        "sudo: alice : TTY=pts/1 ; PWD=/tmp ; USER=root ; "
-        "COMMAND=/usr/bin/systemctl restart ssh"
+        "sudo: alice : TTY=pts/1 ; PWD=/tmp ; USER=root ; COMMAND=/usr/bin/systemctl restart ssh"
     )
 
     parsed = _parsed_state(
@@ -146,14 +136,8 @@ def test_discount_never_creates_negative_counts():
 
 
 def test_sudo_discount_removes_current_invocation_and_details():
-    current = (
-        "sudo: mar : TTY=pts/0 ; PWD=/tmp ; USER=root ; "
-        "COMMAND=/usr/bin/python3 main.py"
-    )
-    session = (
-        "sudo: pam_unix(sudo:session): session opened for user root "
-        "by mar(uid=1000)"
-    )
+    current = "sudo: mar : TTY=pts/0 ; PWD=/tmp ; USER=root ; COMMAND=/usr/bin/python3 main.py"
+    session = "sudo: pam_unix(sudo:session): session opened for user root by mar(uid=1000)"
 
     parsed = {
         "sudo_events": 1,
@@ -184,8 +168,7 @@ def test_sudo_discount_removes_current_invocation_and_details():
 
 def test_sudo_discount_does_nothing_when_current_command_not_in_window():
     other = (
-        "sudo: alice : TTY=pts/1 ; PWD=/tmp ; USER=root ; "
-        "COMMAND=/usr/bin/systemctl restart ssh"
+        "sudo: alice : TTY=pts/1 ; PWD=/tmp ; USER=root ; COMMAND=/usr/bin/systemctl restart ssh"
     )
 
     parsed = {
@@ -212,13 +195,9 @@ def test_sudo_discount_does_nothing_when_current_command_not_in_window():
 
 
 def test_sudo_discount_preserves_unrelated_activity():
-    current = (
-        "sudo: mar : TTY=pts/0 ; PWD=/tmp ; USER=root ; "
-        "COMMAND=/usr/bin/python3 main.py"
-    )
+    current = "sudo: mar : TTY=pts/0 ; PWD=/tmp ; USER=root ; COMMAND=/usr/bin/python3 main.py"
     other = (
-        "sudo: alice : TTY=pts/1 ; PWD=/tmp ; USER=root ; "
-        "COMMAND=/usr/bin/systemctl restart ssh"
+        "sudo: alice : TTY=pts/1 ; PWD=/tmp ; USER=root ; COMMAND=/usr/bin/systemctl restart ssh"
     )
 
     parsed = {

@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: world_writable.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: World-writable file and directory inspection in critical filesystem paths.
 
 import os
@@ -17,6 +17,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -67,6 +68,7 @@ RISKY_EXTENSIONS = (
 # If you want a small preview list for logs, cap it
 MAX_PREVIEW = 50
 
+
 def _header(full_scan: bool = False) -> None:
     mode = "Full Filesystem" if full_scan else "Critical Paths"
 
@@ -83,6 +85,7 @@ def _header(full_scan: bool = False) -> None:
         )
     )
     console.print()
+
 
 def _should_skip(path: str) -> bool:
     return path.startswith(SKIP_PREFIXES)
@@ -221,7 +224,9 @@ def _walk_full_filesystem() -> tuple[Set[str], List[str]]:
     return suspicious, errors
 
 
-def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, full_scan: bool = False) -> Dict:
+def run_world_writable_check(
+    silent: bool = False, filter_by_type: bool = True, full_scan: bool = False
+) -> Dict:
     os_type = get_os()
 
     if os_type != "Linux":
@@ -230,16 +235,16 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
             _header(full_scan)
 
             console.print(
-                Panel.fit("[yellow]World-Writable Check is only supported on Linux.[/]", border_style="yellow", box=box.ROUNDED, )
+                Panel.fit(
+                    "[yellow]World-Writable Check is only supported on Linux.[/]",
+                    border_style="yellow",
+                    box=box.ROUNDED,
+                )
             )
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     # Decide scan scope
     if full_scan:
@@ -321,11 +326,7 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
                         risk = "[yellow]DROP LOCATION[/]"
                     else:
                         item_type = "File"
-                        risk = (
-                            "[red]EXECUTABLE[/]"
-                            if is_exec
-                            else "[yellow]WRITABLE FILE[/]"
-                        )
+                        risk = "[red]EXECUTABLE[/]" if is_exec else "[yellow]WRITABLE FILE[/]"
 
                     table.add_row(
                         item,
@@ -391,10 +392,7 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
         tags.append("world_writable")
 
     if scan_errors:
-        details.extend(
-            f"Traversal error: {error}"
-            for error in scan_errors[:10]
-        )
+        details.extend(f"Traversal error: {error}" for error in scan_errors[:10])
         tags.append("world_writable_scan_incomplete")
 
     if suspicious:
@@ -404,11 +402,11 @@ def run_world_writable_check(silent: bool = False, filter_by_type: bool = True, 
     else:
         status = "ok"
 
-    result = {
-        "status": status,
-        "details": details,
-        "tags": tags,
-    }
+    result = make_result(
+        status,
+        details=details,
+        tags=tags,
+    )
 
     if suspicious:
         result["preview"] = sorted(suspicious)[:MAX_PREVIEW]

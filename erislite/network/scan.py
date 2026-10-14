@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: scan.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: Network listener scan and structured network discovery.
 
 from __future__ import annotations
@@ -15,10 +15,8 @@ import subprocess
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from erislite.security.command_resolver import (
-    CommandResolutionError,
-    resolve_command,
-)
+from erislite.security.command_resolver import CommandResolutionError
+from erislite.security.command_runner import run_command
 
 # A mapping of common ports to their typical services. This is used for basic risk classification of listeners based on the port they are using. If a listener is on a well-known port, it may be considered lower risk than an unknown service on a non-standard port.
 KNOWN_PORTS = {
@@ -202,25 +200,20 @@ def get_network_listeners_data() -> Dict[str, Any]:
         response["errors"].append(f"Unsupported OS for this module: {system}")
         return response
 
+    cmd = ["ss", "-lntup"]
+    response["command"] = " ".join(cmd)
+
     try:
-        ss = resolve_command("ss")
+        proc = run_command(
+            cmd,
+            timeout=15,
+        )
+
     except CommandResolutionError:
         response["status"] = "error"
         response["errors"].append("The 'ss' utility was not found on this system.")
         return response
 
-    cmd = [ss, "-lntup"]
-    response["command"] = " ".join(cmd)
-
-    try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=15,
-        )
-        
     except subprocess.TimeoutExpired:
         response["status"] = "error"
         response["errors"].append("Listener scan timed out after 15 seconds.")

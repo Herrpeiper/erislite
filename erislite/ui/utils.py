@@ -1,17 +1,15 @@
 # Project: ErisLITE
 # Module: utils.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: Shared UI utilities for screen control, headers, prompts, and platform detection.
 
-import json
 import os
 import platform
 import subprocess
-from datetime import datetime
 from typing import Optional
 
 from rich import box
@@ -19,14 +17,17 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
+from erislite.config.settings import (
+    APP_NAME,
+    APP_VERSION,
+    DEFAULT_COMMAND_TIMEOUT,
+)
 from erislite.security.command_resolver import (
     CommandResolutionError,
     resolve_command,
 )
 from erislite.ui.console import console
 
-timeout = DEFAULT_COMMAND_TIMEOUT
 
 def get_os() -> str:
     """
@@ -56,7 +57,7 @@ def clear_screen() -> None:
         )
     except (CommandResolutionError, OSError):
         # Best-effort fallback if clear is unavailable.
-        print("\033[2J\033[H]", end="")
+        print("\033[2J\033[H", end="")
 
 
 def show_header(
@@ -69,11 +70,7 @@ def show_header(
     Newer modules may define their own page-specific header,
     but older modules can continue calling show_header().
     """
-    body = (
-        Text.from_markup(f"[dim]{description}[/]")
-        if description
-        else Text("")
-    )
+    body = Text.from_markup(f"[dim]{description}[/]") if description else Text("")
 
     console.print(
         Panel(
@@ -96,46 +93,7 @@ def pause_return(centered: bool = False) -> None:
     `centered` is retained for compatibility with older callers,
     but the prompt now uses the standard ErisLITE layout.
     """
-    console.input(
-        "\n[dim cyan][ENTER] Return to menu[/]"
-    )
-
-
-def export_json_log(
-    data,
-    prefix: str = "log",
-    folder: str = "logs",
-) -> str:
-    """
-    Export structured data to a timestamped JSON file.
-    """
-    timestamp = datetime.now().strftime(
-        "%Y%m%d_%H%M%S"
-    )
-
-    os.makedirs(
-        folder,
-        exist_ok=True,
-    )
-
-    filename = f"{prefix}_{timestamp}.json"
-    filepath = os.path.join(
-        folder,
-        filename,
-    )
-
-    with open(
-        filepath,
-        "w",
-        encoding="utf-8",
-    ) as file:
-        json.dump(
-            data,
-            file,
-            indent=2,
-        )
-
-    return filepath
+    console.input("\n[dim cyan][ENTER] Return to menu[/]")
 
 
 def get_analyst_id(profile: dict) -> Optional[str]:
@@ -150,6 +108,7 @@ def get_analyst_id(profile: dict) -> Optional[str]:
         return None
 
     return analyst_id
+
 
 def prompt_option(message: str = "Select an option") -> str:
     """Display the standard ErisLITE cyan menu prompt."""

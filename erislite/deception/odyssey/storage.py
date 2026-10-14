@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: storage.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.0
+# Version: 1.5.0
 # License: MIT
 # Created: 2026-09-26
-# Last Updated: 2026-09-30
+# Last Updated: 2026-10-14
 # Description: Persistent event storage for Odyssey Lite.
 
 from __future__ import annotations
@@ -59,6 +59,7 @@ def _open_log_directory(path: Path) -> int:
 
         os.fchmod(dir_fd, _DIRECTORY_MODE)
     except BaseException:
+        # Close the descriptor on any failure before ownership is transferred.
         os.close(dir_fd)
         raise
 
@@ -90,13 +91,12 @@ def _open_event_log(dir_fd: int, name: str):
             raise OSError(f"Refusing to write hard-linked Odyssey event log: {name}")
 
         if info.st_uid != os.geteuid():
-            raise OSError(
-                f"Refusing to write Odyssey event log owned by uid {info.st_uid}: {name}"
-            )
+            raise OSError(f"Refusing to write Odyssey event log owned by uid {info.st_uid}: {name}")
 
         os.fchmod(fd, _FILE_MODE)
         return os.fdopen(fd, "a", encoding="utf-8")
     except BaseException:
+        # fdopen() takes ownership only after successful validation.
         os.close(fd)
         raise
 

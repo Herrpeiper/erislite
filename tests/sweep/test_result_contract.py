@@ -2,17 +2,18 @@ import pytest
 
 from erislite.results import make_result, validate_result
 
+VALID_RESULT_STATUSES = [
+    "ok",
+    "info",
+    "review",
+    "warning",
+    "issue",
+    "error",
+    "unsupported",
+]
 
-@pytest.mark.parametrize(
-    "status",
-    [
-        "ok",
-        "warning",
-        "issue",
-        "error",
-        "unsupported",
-    ],
-)
+
+@pytest.mark.parametrize("status", VALID_RESULT_STATUSES)
 def test_make_result_accepts_valid_statuses(status):
     result = make_result(status)
 
@@ -45,9 +46,10 @@ def test_make_result_rejects_invalid_status():
         make_result("banana")
 
 
-def test_validate_result_accepts_valid_result():
+@pytest.mark.parametrize("status", VALID_RESULT_STATUSES)
+def test_validate_result_accepts_valid_statuses(status):
     result = {
-        "status": "ok",
+        "status": status,
         "details": [],
         "tags": [],
     }

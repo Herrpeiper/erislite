@@ -18,10 +18,7 @@ def test_pythonpath_set_is_flagged(monkeypatch):
     issues = import_guard.check_pythonpath()
 
     assert issues
-    assert any(
-        "PYTHONPATH is set" in issue
-        for issue in issues
-    )
+    assert any("PYTHONPATH is set" in issue for issue in issues)
 
 
 def test_sys_path_tmp_is_flagged(monkeypatch):
@@ -37,10 +34,7 @@ def test_sys_path_tmp_is_flagged(monkeypatch):
     issues = import_guard.check_sys_path()
 
     assert issues
-    assert any(
-        "/tmp/evil" in issue
-        for issue in issues
-    )
+    assert any("/tmp/evil" in issue for issue in issues)
 
 
 def test_sys_path_dev_shm_is_flagged(monkeypatch):
@@ -56,10 +50,7 @@ def test_sys_path_dev_shm_is_flagged(monkeypatch):
     issues = import_guard.check_sys_path()
 
     assert issues
-    assert any(
-        "/dev/shm/py" in issue
-        for issue in issues
-    )
+    assert any("/dev/shm/py" in issue for issue in issues)
 
 
 def test_sys_path_normal_location_is_clean(monkeypatch):
@@ -82,19 +73,14 @@ def test_shadow_file_is_detected(
     tmp_path,
 ):
     fake_module = tmp_path / "psutil.py"
-    fake_module.write_text(
-        "# fake psutil module\n"
-    )
+    fake_module.write_text("# fake psutil module\n")
 
     monkeypatch.chdir(tmp_path)
 
     issues = import_guard.check_shadow_files()
 
     assert issues
-    assert any(
-        "psutil.py" in issue
-        for issue in issues
-    )
+    assert any("psutil.py" in issue for issue in issues)
 
 
 def test_shadow_package_is_detected(
@@ -109,10 +95,7 @@ def test_shadow_package_is_detected(
     issues = import_guard.check_shadow_files()
 
     assert issues
-    assert any(
-        "rich" in issue
-        for issue in issues
-    )
+    assert any("rich" in issue for issue in issues)
 
 
 def test_clean_cwd_has_no_shadow_files(
@@ -127,9 +110,7 @@ def test_clean_cwd_has_no_shadow_files(
 
 
 def test_project_root_skips_shadow_check(monkeypatch):
-    monkeypatch.chdir(
-        import_guard.PROJECT_ROOT
-    )
+    monkeypatch.chdir(import_guard.PROJECT_ROOT)
 
     issues = import_guard.check_shadow_files()
 
@@ -164,9 +145,7 @@ def test_import_environment_suspicious(
     tmp_path,
 ):
     fake_module = tmp_path / "psutil.py"
-    fake_module.write_text(
-        "# fake psutil module\n"
-    )
+    fake_module.write_text("# fake psutil module\n")
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv(
@@ -184,11 +163,9 @@ def test_import_environment_suspicious(
     result = import_guard.check_import_environment()
 
     assert result["status"] == "warning"
-    assert (
-        "import_environment_suspicious"
-        in result["tags"]
-    )
+    assert "import_environment_suspicious" in result["tags"]
     assert result["details"]
+
 
 def test_sys_path_var_tmp_is_flagged(monkeypatch):
     monkeypatch.setattr(
@@ -202,7 +179,4 @@ def test_sys_path_var_tmp_is_flagged(monkeypatch):
     issues = import_guard.check_sys_path()
 
     assert issues
-    assert any(
-        "/var/tmp/evil" in issue
-        for issue in issues
-    )
+    assert any("/var/tmp/evil" in issue for issue in issues)

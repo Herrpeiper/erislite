@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: docker.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: Docker security check: privileged containers and risky host exposure.
 
 import json
@@ -16,10 +16,9 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
-from erislite.security.command_resolver import (
-    CommandResolutionError,
-    resolve_command,
-)
+from erislite.results import make_result
+from erislite.security.command_resolver import CommandResolutionError
+from erislite.security.command_runner import run_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -48,53 +47,33 @@ def _header() -> None:
     console.print()
 
 
-def _docker_available() -> bool:
-    try:
-        resolve_command("docker")
-    except CommandResolutionError:
-        return False
-
-    return True
-
-
 def get_running_containers():
     try:
-        docker = resolve_command("docker")
-    except CommandResolutionError:
-        return [], "Docker CLI is not available"
-
-    try:
-        result = subprocess.run(
-            [docker, "ps", "-q"],
-            capture_output=True,
-            text=True,
+        result = run_command(
+            ["docker", "ps", "-q"],
             timeout=10,
         )
 
         if result.returncode != 0:
-            error = (
-                result.stderr.strip()
-                or f"docker ps exited with code {result.returncode}"
-            )
+            error = result.stderr.strip() or f"docker ps exited with code {result.returncode}"
             return [], error
 
         return result.stdout.strip().splitlines(), None
 
+    except CommandResolutionError:
+        return [], "Docker CLI is not available"
+
     except subprocess.TimeoutExpired:
         return [], "docker ps timed out"
 
-    except Exception as exc:
+    except OSError as exc:
         return [], str(exc)
 
 
 def inspect_container(container_id: str):
     try:
-        docker = resolve_command("docker")
-
-        result = subprocess.run(
-            [docker, "inspect", container_id],
-            capture_output=True,
-            text=True,
+        result = run_command(
+            ["docker", "inspect", container_id],
             timeout=10,
         )
 
@@ -108,7 +87,13 @@ def inspect_container(container_id: str):
 
         return payload[0]
 
-    except Exception:
+    except (
+        CommandResolutionError,
+        subprocess.TimeoutExpired,
+        OSError,
+        json.JSONDecodeError,
+        IndexError,
+    ):
         return None
 
 
@@ -130,9 +115,7 @@ def _analyze_container(container_id: str, data: dict) -> dict:
         destination = mount.get("Destination", "")
 
         if destination in RISKY_MOUNT_DESTINATIONS:
-            flags.append(
-                RISKY_MOUNT_DESTINATIONS[destination]
-            )
+            flags.append(RISKY_MOUNT_DESTINATIONS[destination])
 
             if destination == "/":
                 tags.add("docker_mount_root")
@@ -141,10 +124,7 @@ def _analyze_container(container_id: str, data: dict) -> dict:
             elif destination == "/root":
                 tags.add("docker_mount_root_home")
 
-        if (
-            source == DOCKER_SOCKET
-            or destination == DOCKER_SOCKET
-        ):
+        if source == DOCKER_SOCKET or destination == DOCKER_SOCKET:
             flags.append("Docker Socket")
             tags.add("docker_sock_exposed")
 
@@ -177,20 +157,15 @@ def run_docker_scan(silent: bool = False):
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     containers, collection_error = get_running_containers()
 
     if collection_error:
-        result = {
-            "status": "unsupported",
-            "details": [collection_error],
-            "tags": [],
-        }
+        result = make_result(
+            "unsupported",
+            details=[collection_error],
+        )
 
         if silent:
             return result
@@ -200,8 +175,7 @@ def run_docker_scan(silent: bool = False):
 
         console.print(
             Panel.fit(
-                f"[yellow]Docker inspection is unavailable.[/]\n"
-                f"[dim]{collection_error}[/]",
+                f"[yellow]Docker inspection is unavailable.[/]\n[dim]{collection_error}[/]",
                 title="[bold yellow]UNAVAILABLE[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
@@ -237,26 +211,18 @@ def run_docker_scan(silent: bool = False):
     details = []
 
     if flagged:
-        details.append(
-            f"{len(flagged)} container(s) with risky configuration"
-        )
+        details.append(f"{len(flagged)} container(s) with risky configuration")
 
     if failed_inspections:
-        details.append(
-            f"{failed_inspections} container inspection(s) failed"
-        )
+        details.append(f"{failed_inspections} container inspection(s) failed")
 
-    status = (
-        "warning"
-        if flagged or failed_inspections
-        else "ok"
+    status = "warning" if flagged or failed_inspections else "ok"
+
+    result = make_result(
+        status,
+        details=details,
+        tags=sorted(tags),
     )
-
-    result = {
-        "status": status,
-        "details": details,
-        "tags": sorted(tags),
-    }
 
     if silent:
         return result
@@ -325,16 +291,8 @@ def run_docker_scan(silent: bool = False):
             table.add_row(
                 container["name"],
                 container["id"][:12],
-                (
-                    "[yellow]REVIEW[/]"
-                    if is_flagged
-                    else "[green]OK[/]"
-                ),
-                (
-                    ", ".join(container["flags"])
-                    if container["flags"]
-                    else "-"
-                ),
+                ("[yellow]REVIEW[/]" if is_flagged else "[green]OK[/]"),
+                (", ".join(container["flags"]) if container["flags"] else "-"),
             )
 
         console.print(table)

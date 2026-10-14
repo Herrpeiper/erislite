@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: viewer.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: Threat sweep log viewer for browsing and inspecting saved sweep results.
 
 import json
@@ -39,6 +39,7 @@ def _format_risk(data: dict) -> str:
 
     return str(score)
 
+
 def _header(title: str) -> None:
     console.print(
         Panel(
@@ -51,6 +52,7 @@ def _header(title: str) -> None:
         )
     )
     console.print()
+
 
 MODULE_LABELS = {
     "integrity": "Integrity",
@@ -86,6 +88,7 @@ def _guidance_for_result(result: dict) -> list:
 
     return guidance_items
 
+
 def _render_guidance(result: dict) -> None:
     severity_colors = {
         "critical": "red",
@@ -106,8 +109,7 @@ def _render_guidance(result: dict) -> None:
         ]
 
         content.extend(
-            Text(f"• {command}", style="white")
-            for command in guidance.get("investigate", [])
+            Text(f"• {command}", style="white") for command in guidance.get("investigate", [])
         )
 
         content.extend(
@@ -121,15 +123,13 @@ def _render_guidance(result: dict) -> None:
         console.print(
             Panel.fit(
                 Group(*content),
-                title=(
-                    f"[bold {border_color}]Response Guidance — "
-                    f"{tag} [{severity.upper()}][/]"
-                ),
+                title=(f"[bold {border_color}]Response Guidance — {tag} [{severity.upper()}][/]"),
                 border_style=border_color,
                 box=box.ROUNDED,
             )
         )
         console.print()
+
 
 def _module_label(module: str) -> str:
     return MODULE_LABELS.get(
@@ -137,21 +137,25 @@ def _module_label(module: str) -> str:
         module.replace("_", " ").title(),
     )
 
+
 def _get_changes(data: dict) -> dict:
     changes = data.get("changes")
 
     if isinstance(changes, dict):
         return {
             "new": list(changes.get("new", [])),
+            "changed": list(changes.get("changed", [])),
             "persisting": list(changes.get("persisting", [])),
             "resolved": list(changes.get("resolved", [])),
         }
 
     return {
         "new": [],
+        "changed": [],
         "persisting": [],
         "resolved": [],
     }
+
 
 def _get_priorities(data: dict) -> list:
     priorities = data.get("priorities")
@@ -159,9 +163,8 @@ def _get_priorities(data: dict) -> list:
     if isinstance(priorities, list):
         return priorities
 
-    return prioritize_findings(
-        data.get("results", {})
-    )
+    return prioritize_findings(data.get("results", {}))
+
 
 def _get_profile(data: dict) -> str:
     return str(
@@ -170,6 +173,7 @@ def _get_profile(data: dict) -> str:
             data.get("sweep_profile", "unknown"),
         )
     ).capitalize()
+
 
 def load_sweep_logs(limit=5):
     if not SWEEP_LOG_DIR.exists():
@@ -186,16 +190,23 @@ def load_sweep_logs(limit=5):
             ) as file:
                 data = json.load(file)
 
-            logs.append(
-                (
-                    data.get("timestamp", "Unknown"),
-                    data,
-                    path.name,
-                )
-            )
-
-        except Exception:
+        except (
+            OSError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+        ):
             continue
+
+        if not isinstance(data, dict):
+            continue
+
+        logs.append(
+            (
+                data.get("timestamp", "Unknown"),
+                data,
+                path.name,
+            )
+        )
 
     logs.sort(
         key=lambda item: item[0],
@@ -254,7 +265,6 @@ def show_recent_sweeps(limit=5):
 def view_full_report():
     logs = load_sweep_logs(limit=5)
 
-
     if not logs:
         console.print("[yellow]No recent sweep logs found.[/]")
         pause_return()
@@ -302,8 +312,7 @@ def view_full_report():
 
     console.print(
         Panel.fit(
-            f"[dim]Profile:[/] [white]{profile}[/]   "
-            f"[dim]Risk:[/] [white]{risk}[/]",
+            f"[dim]Profile:[/] [white]{profile}[/]   [dim]Risk:[/] [white]{risk}[/]",
             title="[bold cyan]Sweep Metadata[/]",
             border_style="cyan",
             box=box.ROUNDED,
@@ -361,11 +370,7 @@ def view_full_report():
         ):
             details = finding.get("details", [])
 
-            primary_signal = (
-                details[0]
-                if details
-                else "Review module findings"
-            )
+            primary_signal = details[0] if details else "Review module findings"
 
             status = finding.get(
                 "status",
@@ -413,6 +418,10 @@ def view_full_report():
                 changes["new"],
             ),
             (
+                "[magenta]CHANGED[/]",
+                changes["changed"],
+            ),
+            (
                 "[yellow]PERSISTING[/]",
                 changes["persisting"],
             ),
@@ -423,16 +432,10 @@ def view_full_report():
         )
 
         for label, signals in change_rows:
-            display_signals = (
-                ", ".join(signals[:5])
-                if signals
-                else "None"
-            )
+            display_signals = ", ".join(signals[:5]) if signals else "None"
 
             if len(signals) > 5:
-                display_signals += (
-                    f" (+{len(signals) - 5} more)"
-                )
+                display_signals += f" (+{len(signals) - 5} more)"
 
             change_table.add_row(
                 label,

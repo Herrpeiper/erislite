@@ -40,7 +40,7 @@ ErisLITE is designed primarily for CCDC-style competition environments, cybersec
 | Process Anomaly Scan | Suspicious execution paths, deleted binaries, and process indicators |
 | Docker Security | Privileged containers, sensitive mounts, and Docker socket exposure |
 | Firewall Status | UFW, firewalld, nftables, and iptables state |
-| CVE Version Check | Offline software-version matching against the local CVE cache |
+| CVE Version Check | Built-in version rules for Dirty Pipe, Baron Samedit, and Looney Tunables. Matches are reported as REVIEW and never scored |
 | Backdoor Detection | Shell init, profile, and `LD_PRELOAD` persistence indicators |
 
 ### Threat Sweep
@@ -55,13 +55,10 @@ Threat Sweep combines selected modules into structured security profiles:
 
 Threat Sweep provides:
 
-- weighted risk scoring relative to the selected profile
+- weighted risk scoring relative to the checks that ran (unsupported modules and the informational CVE check are excluded)
 - per-module status and findings
-- threat tags with analyst-oriented explanations
-- top risk contributors
-- historical JSON logging
-- full report viewing from previous sweeps
-- analyst response guidance with investigation commands and recommendations
+- NEW, CHANGED, PERSISTING and RESOLVED findings compared with the previous sweep of the same profile
+- per-module failure isolation, so one crashing check cannot lose the sweep
 
 Risk is displayed relative to the checks that actually ran. For example:
 
@@ -106,9 +103,9 @@ Odyssey Lite provides:
 | Snapshot Log Viewer | Reviews previously captured system snapshots |
 | Sweep Log Viewer | Browses recent Threat Sweeps and full per-module reports |
 | SOC Mode | Repeated host posture collection for short-duration monitoring |
-| Rapid Response | Triage, dry-run containment, live response actions, firewall-aware IP blocking, and rollback support |
+| Rapid Response | Triage, dry-run containment, per-action selection, firewall-aware IP blocking, cron quarantine, and rollback support |
 | Shell Console | Restricted analyst console with hardened command resolution and execution controls |
-| CVE Tools | Offline CVE search against the local cache |
+| CVE Tools | Offline search of a CVE cache file you supply |
 
 ### CLI
 
@@ -140,18 +137,19 @@ pip install -r requirements.txt
 
 ## Installation
 
+Install ErisLITE in a location controlled by root when you plan to run it with elevated privileges.
+
 ```bash
-git clone https://github.com/herrpeiper/ErisLITE.git
-cd ErisLITE
-pip install -r requirements.txt
-```
+sudo git clone https://github.com/herrpeiper/ErisLITE.git /opt/erislite
+sudo python3 -m venv /opt/erislite/.venv
+sudo /opt/erislite/.venv/bin/pip install -r /opt/erislite/requirements.txt
 
 ---
 
 ## Usage
 
 ```bash
-sudo python3 main.py
+sudo /opt/erislite/.venv/bin/python /opt/erislite/main.py
 ```
 
 Typical workflow:
@@ -179,8 +177,7 @@ ErisLITE/
 │   │
 │   ├── config/
 │   │   ├── settings.py
-│   │   ├── theme.py
-│   │   └── logging.py
+│   │   └── theme.py
 │   │
 │   ├── containers/
 │   │   └── docker.py
@@ -220,7 +217,10 @@ ErisLITE/
 │   │
 │   ├── security/
 │   │   ├── command_resolver.py
-│   │   └── import_guard.py
+│   │   ├── command_runner.py
+│   │   ├── import_guard.py
+│   │   ├── install_check.py
+│   │   └── safe_io.py
 │   │
 │   ├── sweep/
 │   │   ├── threat_sweep.py
@@ -256,17 +256,18 @@ ErisLITE/
 │   ├── results.py
 │   └── version.py
 │
-├── data/
+├── data/                      # created at runtime
+│   ├── cve/                   # optional CVE cache you supply
 │   ├── integrity/
+│   ├── quarantine/
+│   │   └── rapid_response/
 │   └── logs/
 │       ├── threat_sweeps/
 │       ├── soc_mode/
 │       ├── network_connections/
-│       └── odyssey/
+│       ├── kernel_check/
+│       └── rapid_response/
 │
-├── infra/
-│   └── systemd/
-│       └── erislite-agent.service
 │
 ├── assets/
 ├── main.py
@@ -284,11 +285,13 @@ ErisLITE/
 
 ErisLITE v1.4 keeps separate baselines per profile, records files that were expected to be absent when the baseline was created, distinguishes changed files from incomplete inspection, and reports collection/read failures instead of treating them as clean results. Protected files may require root privileges for complete coverage.
 
-**User profile** — ErisLITE maintains user and host profile information used by portions of the CLI and snapshot tooling. Runtime user data is stored under `~/.erislite/`.
+**User profile** — ErisLITE maintains user and host profile information used by portions of the CLI and snapshot tooling. The profile is stored at `erislite/data/user_profile.json`. The last sweep summary is stored under `~/.erislite/` of the effective user, which is `/root/.erislite/` under sudo.
 
 **Root access** — some checks require elevated privileges for complete results, including authentication logs, kernel modules, SUID/SGID inspection, protected integrity targets, process inspection, and portions of persistence scanning. Run with `sudo` when full host coverage is required.
 
-**CVE version checker** — performs offline version matching against the local CVE cache. A version match does not confirm a vulnerability. Vendors frequently backport fixes without changing the upstream version string. Always verify findings against vendor advisories.
+**CVE version checker** — compares the running kernel, sudo, and glibc versions against built-in rules for CVE-2022-0847 (Dirty Pipe), CVE-2021-3156 (Baron Samedit), and CVE-2023-4911 (Looney Tunables). It does not use a CVE database. A version match does not confirm a vulnerability. Vendors frequently backport fixes without changing the upstream version string, so matches are reported as REVIEW and do not affect the risk score. Always verify findings against vendor advisories.
+
+**CVE Tools search** — searches `data/cve/cve_cache.json`. ErisLITE does not ship or download this file. Supply a JSON list of records with `cve_id`, `description`, `severity`, and optional `tags`.
 
 **Threat Sweep history** — historical sweeps are stored under `data/logs/threat_sweeps/`. The latest sweep summary is also stored at `~/.erislite/last_sweep.json`.
 
@@ -300,18 +303,16 @@ ErisLITE v1.4 keeps separate baselines per profile, records files that were expe
 
 ## Development
 
-ErisLITE uses a domain-oriented package structure. New modules should be placed in the appropriate package under `erislite/`.
-
-A security check should support structured non-interactive results:
+A security check should support structured non-interactive results built with `erislite.results.make_result()`:
 
 ```python
+from erislite.results import make_result
+
+
 def run_my_check(silent: bool = False) -> dict:
-    return {
-        "status": "ok",
-        "details": [],
-        "tags": [],
-    }
+    return make_result("ok", details=[], tags=[])
 ```
+
 ---
 
 ## License

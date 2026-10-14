@@ -1,15 +1,15 @@
 # Project: ErisLITE
 # Module: snapshot.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: Captures a system snapshot to a timestamped ErisLITE log.
 
-import os
 import platform
 import socket
+import subprocess
 from datetime import datetime, timedelta
 
 import psutil
@@ -18,9 +18,13 @@ from rich.panel import Panel
 
 from erislite.config.settings import SNAPSHOT_LOG_DIR
 from erislite.network.firewall import run_firewall_check
+from erislite.security.command_resolver import CommandResolutionError
+from erislite.security.command_runner import run_command
+from erislite.security.safe_io import private_text_writer
 from erislite.ui.utils import clear_screen, get_analyst_id, pause_return, show_header
 
 console = Console()
+
 
 # Capture a system snapshot and save it to a timestamped file in the logs directory
 def capture(profile: dict):
@@ -43,11 +47,10 @@ def capture(profile: dict):
         whitelist = set()
 
     log_dir = SNAPSHOT_LOG_DIR
-    os.makedirs(log_dir, exist_ok=True)
     filename = f"{log_dir}/{hostname}_snapshot_{timestamp}.txt"
 
     try:
-        with open(filename, "w") as f:
+        with private_text_writer(filename) as f:
             # Session Header
             f.write(f"Timestamp: {timestamp}\n")
             f.write(f"Hostname: {hostname}\n")
@@ -117,25 +120,64 @@ def capture(profile: dict):
 
             # Default Gateway
             f.write("\n[Routing Info]\n")
+
             if os_type == "Linux":
-                result = os.popen("ip route").read()
-                for line in result.splitlines():
-                    if line.startswith("default"):
-                        parts = line.split()
-                        if len(parts) > 4:
-                            f.write(f"Default Gateway: {parts[2]} via {parts[4]}\n")
-                        break
+                try:
+                    result = run_command(
+                        ["ip", "route"],
+                        timeout=5,
+                    )
+
+                    gateway_found = False
+
+                    if result.returncode == 0:
+                        for line in result.stdout.splitlines():
+                            if line.startswith("default"):
+                                parts = line.split()
+
+                                if len(parts) > 4:
+                                    f.write(f"Default Gateway: {parts[2]} via {parts[4]}\n")
+                                    gateway_found = True
+
+                                break
+
+                    if not gateway_found:
+                        f.write("Default Gateway: not detected\n")
+
+                except (
+                    CommandResolutionError,
+                    subprocess.TimeoutExpired,
+                    OSError,
+                ):
+                    f.write("Default Gateway: not detected\n")
+
             elif os_type == "Windows":
-                result = os.popen("route print").read()
-                gateway_found = False
-                for line in result.splitlines():
-                    if "0.0.0.0" in line:
-                        parts = line.split()
-                        if len(parts) >= 4:
-                            f.write(f"Default Gateway: {parts[2]}\n")
-                            gateway_found = True
-                            break
-                if not gateway_found:
+                try:
+                    result = run_command(
+                        ["route", "print"],
+                        timeout=5,
+                    )
+
+                    gateway_found = False
+
+                    if result.returncode == 0:
+                        for line in result.stdout.splitlines():
+                            if "0.0.0.0" in line:
+                                parts = line.split()
+
+                                if len(parts) >= 4:
+                                    f.write(f"Default Gateway: {parts[2]}\n")
+                                    gateway_found = True
+                                    break
+
+                    if not gateway_found:
+                        f.write("Default Gateway: not detected\n")
+
+                except (
+                    CommandResolutionError,
+                    subprocess.TimeoutExpired,
+                    OSError,
+                ):
                     f.write("Default Gateway: not detected\n")
 
         console.print(Panel.fit(f"[green]Snapshot saved to:[/] {filename}"))

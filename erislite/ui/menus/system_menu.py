@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: system_menu.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: System information menu.
 
 from rich import box
@@ -31,14 +31,10 @@ def run(profile: dict) -> None:
     ]
 
     if analyst_id:
-        metadata_parts.append(
-            f"[dim]Analyst:[/] [white]{analyst_id}[/]"
-        )
+        metadata_parts.append(f"[dim]Analyst:[/] [white]{analyst_id}[/]")
 
     header = Panel(
-        Text.from_markup(
-            "   ".join(metadata_parts)
-        ),
+        Text.from_markup("   ".join(metadata_parts)),
         title="[bold cyan]SYSTEM INFO[/]",
         subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
         border_style="cyan",

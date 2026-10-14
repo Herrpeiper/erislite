@@ -1,14 +1,13 @@
 # Project: ErisLITE
 # Module: kernel_modules.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: Kernel module inspection for known-bad names, untracked modules, and unusual paths.
 
 import json
-import os
 import subprocess
 from datetime import datetime
 
@@ -17,13 +16,15 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION
-from erislite.security.command_resolver import (
-    CommandResolutionError,
-    resolve_command,
-)
+from erislite.config.settings import APP_NAME, APP_VERSION, LOG_DIR
+from erislite.results import make_result
+from erislite.security.command_resolver import CommandResolutionError
+from erislite.security.command_runner import run_command
+from erislite.security.safe_io import private_text_writer
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
+
+KERNEL_LOG_DIR = LOG_DIR / "kernel_check"
 
 KNOWN_BAD_MODULES = {
     "adore",
@@ -36,6 +37,7 @@ KNOWN_BAD_MODULES = {
     "reptile",
     "mushroom",
 }
+
 
 def _header() -> None:
     console.print(
@@ -52,32 +54,33 @@ def _header() -> None:
     )
     console.print()
 
+
 def _kernel_release() -> str:
     try:
-        result = subprocess.run(
-            [resolve_command("uname"), "-r"],
-            capture_output=True,
-            text=True,
+        result = run_command(
+            ["uname", "-r"],
             timeout=5,
         )
+
         return result.stdout.strip() if result.returncode == 0 else ""
-    except Exception:
+
+    except (
+        CommandResolutionError,
+        subprocess.TimeoutExpired,
+        OSError,
+    ):
         return ""
+
 
 def get_module_path(modname: str):
     try:
-        result = subprocess.run(
-            [resolve_command("modinfo"), "-n", modname],
-            capture_output=True,
-            text=True,
+        result = run_command(
+            ["modinfo", "-n", modname],
             timeout=5,
         )
 
         if result.returncode != 0:
-            return None, (
-                result.stderr.strip()
-                or f"modinfo exited with code {result.returncode}"
-            )
+            return None, (result.stderr.strip() or f"modinfo exited with code {result.returncode}")
 
         path = result.stdout.strip()
 
@@ -95,25 +98,16 @@ def get_module_path(modname: str):
     except OSError as exc:
         return None, str(exc)
 
+
 def get_loaded_modules():
     try:
-        lsmod = resolve_command("lsmod")
-    except CommandResolutionError:
-        return [], "lsmod is not available on this system"
-
-    try:
-        result = subprocess.run(
-            [lsmod],
-            capture_output=True,
-            text=True,
+        result = run_command(
+            ["lsmod"],
             timeout=10,
         )
 
         if result.returncode != 0:
-            return [], (
-                result.stderr.strip()
-                or f"lsmod exited with code {result.returncode}"
-            )
+            return [], (result.stderr.strip() or f"lsmod exited with code {result.returncode}")
 
         lines = result.stdout.strip().splitlines()
 
@@ -126,17 +120,19 @@ def get_loaded_modules():
             parts = line.split()
 
             if len(parts) >= 3:
-                modules.append(
-                    (parts[0], parts[1], parts[2])
-                )
+                modules.append((parts[0], parts[1], parts[2]))
 
         return modules, None
+
+    except CommandResolutionError:
+        return [], "lsmod is not available on this system"
 
     except subprocess.TimeoutExpired:
         return [], "lsmod timed out"
 
-    except Exception as exc:
+    except OSError as exc:
         return [], str(exc)
+
 
 def _status_text(flags) -> str:
     if "KnownBadName" in flags:
@@ -152,6 +148,7 @@ def _status_text(flags) -> str:
         return "[dim]INFO[/]"
 
     return "[green]OK[/]"
+
 
 def run_kernel_module_check(
     silent: bool = False,
@@ -172,27 +169,18 @@ def run_kernel_module_check(
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     krel = _kernel_release()
-    expected_prefix = (
-        f"/lib/modules/{krel}/"
-        if krel
-        else "/lib/modules/"
-    )
+    expected_prefix = f"/lib/modules/{krel}/" if krel else "/lib/modules/"
 
     modules, collection_error = get_loaded_modules()
 
     if collection_error:
-        result = {
-            "status": "unsupported",
-            "details": [collection_error],
-            "tags": [],
-        }
+        result = make_result(
+            "unsupported",
+            details=[collection_error],
+        )
 
         if silent:
             return result
@@ -202,8 +190,7 @@ def run_kernel_module_check(
 
         console.print(
             Panel.fit(
-                f"[yellow]Kernel module inspection is unavailable.[/]\n"
-                f"[dim]{collection_error}[/]",
+                f"[yellow]Kernel module inspection is unavailable.[/]\n[dim]{collection_error}[/]",
                 title="[bold yellow]UNAVAILABLE[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
@@ -227,19 +214,13 @@ def run_kernel_module_check(
             flags.append("KnownBadName")
             bad_named.append(name)
 
-        is_legit = (
-            path is not None
-            and path.startswith(expected_prefix)
-        )
+        is_legit = path is not None and path.startswith(expected_prefix)
 
         if not is_legit:
             flags.append("Rogue/Untracked")
             rogue.append(name)
 
-            if (
-                path != "Unknown"
-                and not path.startswith(expected_prefix)
-            ):
+            if path is not None and not path.startswith(expected_prefix):
                 flags.append("UnusualPath")
                 path_flags.append((name, path))
 
@@ -247,57 +228,40 @@ def run_kernel_module_check(
             flags.append("Unused")
             info_unused.append(name)
 
-        module_log.append({
-            "name": name,
-            "size": size,
-            "used_by": used_by,
-            "status": flags or ["OK"],
-            "path": path,
-        })
+        module_log.append(
+            {
+                "name": name,
+                "size": size,
+                "used_by": used_by,
+                "status": flags or ["OK"],
+                "path": path,
+            }
+        )
 
     issues = []
     tags = set()
 
     if bad_named:
-        issues.append(
-            f"{len(bad_named)} known-bad module name(s) loaded"
-        )
+        issues.append(f"{len(bad_named)} known-bad module name(s) loaded")
         tags.add("rogue_kernel_mod")
 
     if rogue:
-        issues.append(
-            f"{len(rogue)} rogue/untracked module(s) loaded"
-        )
+        issues.append(f"{len(rogue)} rogue/untracked module(s) loaded")
         tags.add("rogue_kernel_mod")
 
     if path_flags:
-        issues.append(
-            f"{len(path_flags)} module(s) loaded from unusual paths"
-        )
+        issues.append(f"{len(path_flags)} module(s) loaded from unusual paths")
         tags.add("kernel_mod_path")
 
     warn_state = bool(issues)
 
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_dir = os.path.join(
-            "data",
-            "logs",
-            "kernel_check",
-        )
+        # This was relative to the working directory, so logs landed
+        # wherever ErisLITE happened to be launched from.
+        export_path = KERNEL_LOG_DIR / f"kernel_check_{timestamp}.json"
 
-        os.makedirs(log_dir, exist_ok=True)
-
-        export_path = os.path.join(
-            log_dir,
-            f"kernel_check_{timestamp}.json",
-        )
-
-        with open(
-            export_path,
-            "w",
-            encoding="utf-8",
-        ) as file:
+        with private_text_writer(export_path) as file:
             json.dump(
                 {
                     "timestamp": datetime.now().isoformat(),
@@ -319,16 +283,14 @@ def run_kernel_module_check(
 
     except OSError as exc:
         if not silent:
-            console.print(
-                f"[yellow]Warning: could not save kernel module log: {exc}[/]"
-            )
+            console.print(f"[yellow]Warning: could not save kernel module log: {exc}[/]")
 
     if silent:
-        return {
-            "status": "warning" if warn_state else "ok",
-            "details": issues,
-            "tags": sorted(tags),
-        }
+        return make_result(
+            "warning" if warn_state else "ok",
+            details=issues,
+            tags=sorted(tags),
+        )
 
     clear_screen()
     _header()
@@ -394,15 +356,11 @@ def run_kernel_module_check(
     console.print()
 
     if warn_state:
-        body = "\n".join(
-            f"[yellow]{issue}[/]"
-            for issue in issues
-        )
+        body = "\n".join(f"[yellow]{issue}[/]" for issue in issues)
 
         console.print(
             Panel.fit(
-                body
-                + "\n[dim]Validate module origin, path, and expected system role.[/]",
+                body + "\n[dim]Validate module origin, path, and expected system role.[/]",
                 title="[bold yellow]REVIEW REQUIRED[/]",
                 border_style="yellow",
                 box=box.ROUNDED,
@@ -422,8 +380,8 @@ def run_kernel_module_check(
 
     pause_return()
 
-    return {
-        "status": "warning" if warn_state else "ok",
-        "details": issues,
-        "tags": sorted(tags),
-    }
+    return make_result(
+        "warning" if warn_state else "ok",
+        details=issues,
+        tags=sorted(tags),
+    )

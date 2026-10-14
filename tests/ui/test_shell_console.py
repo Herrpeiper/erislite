@@ -42,9 +42,7 @@ def test_resolve_falls_back_to_trusted_sh(monkeypatch):
 
 def test_resolve_returns_none_when_no_trusted_shell_exists(monkeypatch):
     def fake_resolve(command):
-        raise shell_console.CommandResolutionError(
-            f"{command} unavailable"
-        )
+        raise shell_console.CommandResolutionError(f"{command} unavailable")
 
     monkeypatch.setattr(
         shell_console,

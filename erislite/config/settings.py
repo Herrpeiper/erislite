@@ -1,16 +1,18 @@
 # Project: ErisLITE
 # Module: settings.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: Application-wide settings, runtime defaults, and path definitions.
 
 """
 ErisLITE application-wide settings and paths.
 """
 
+import os
+import pwd
 from pathlib import Path
 
 from erislite.version import VERSION
@@ -44,7 +46,17 @@ SECURITY_LOG_DIR = LOG_DIR
 INTEGRITY_DIR = DATA_DIR / "integrity"
 INTEGRITY_BASELINE_FILE = INTEGRITY_DIR / "baseline.json"
 
-USER_DATA_DIR = Path.home() / ".erislite"
+
+def _effective_home() -> Path:
+    # Path.home() reads $HOME, which some sudo configurations keep as the
+    # invoking user's home. Root would then write into a user-owned directory.
+    try:
+        return Path(pwd.getpwuid(os.geteuid()).pw_dir)
+    except KeyError:
+        return Path.home()
+
+
+USER_DATA_DIR = _effective_home() / ".erislite"
 LAST_SWEEP_FILE = USER_DATA_DIR / "last_sweep.json"
 # ---------------------------------------------------------------------------
 # Runtime defaults

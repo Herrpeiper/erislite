@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: ssh_config.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: sshd_config audit against the ErisLITE hardening baseline.
 
 import os
@@ -15,6 +15,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -80,7 +81,7 @@ def parse_sshd_config(path: str = SSH_CONFIG_PATH):
                 if key in SECURE_DEFAULTS:
                     found[key] = value
 
-    except Exception:
+    except OSError:
         return None
 
     return found
@@ -102,23 +103,17 @@ def run_ssh_config_check(silent: bool = False):
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     config = parse_sshd_config()
 
     if config is None:
-        result = {
-            "status": "error",
-            "details": [
-                f"Unable to read {SSH_CONFIG_PATH}"
-            ],
-            "tags": ["ssh_config_unreadable"],
-            "findings": [],
-        }
+        result = make_result(
+            "error",
+            details=[f"Unable to read {SSH_CONFIG_PATH}"],
+            tags=["ssh_config_unreadable"],
+        )
+        result["findings"] = []
 
         if silent:
             return result
@@ -157,10 +152,7 @@ def run_ssh_config_check(silent: bool = False):
             continue
 
         if actual != expected:
-            issues.append(
-                f"{key} is '{actual}' "
-                f"(recommended: '{expected}')"
-            )
+            issues.append(f"{key} is '{actual}' (recommended: '{expected}')")
 
             findings.append(
                 {
@@ -181,30 +173,18 @@ def run_ssh_config_check(silent: bool = False):
                 }
             )
 
-    secure_count = sum(
-        1
-        for finding in findings
-        if finding["status"] == "secure"
-    )
+    secure_count = sum(1 for finding in findings if finding["status"] == "secure")
 
-    insecure_count = sum(
-        1
-        for finding in findings
-        if finding["status"] == "insecure"
-    )
+    insecure_count = sum(1 for finding in findings if finding["status"] == "insecure")
 
-    unset_count = sum(
-        1
-        for finding in findings
-        if finding["status"] == "unset"
-    )
+    unset_count = sum(1 for finding in findings if finding["status"] == "unset")
 
-    result = {
-        "status": "warning" if issues else "ok",
-        "details": issues,
-        "tags": ["weak_ssh_config"] if issues else [],
-        "findings": findings,
-    }
+    result = make_result(
+        "warning" if issues else "ok",
+        details=issues,
+        tags=["weak_ssh_config"] if issues else [],
+    )
+    result["findings"] = findings
 
     if silent:
         return result

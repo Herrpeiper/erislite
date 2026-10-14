@@ -1,30 +1,29 @@
 # Project: ErisLITE
 # Module: listeners.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: Heuristic network listener inspection and suspicious bind detection.
 
 from __future__ import annotations
 
 import os
 import re
-import subprocess
 
 from rich import box
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from erislite.config.settings import APP_NAME, APP_VERSION, DEFAULT_COMMAND_TIMEOUT
+from erislite.config.settings import APP_NAME, APP_VERSION
 from erislite.deception.odyssey.manager import active_canary_ports
-from erislite.security.command_resolver import resolve_command
+from erislite.results import make_result
+from erislite.security.command_runner import run_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
-timeout = DEFAULT_COMMAND_TIMEOUT
 WHITELISTED_PROCS = {
     "sshd",
     "cupsd",
@@ -40,9 +39,7 @@ UNCOMMON_PORT_THRESHOLD = 1024
 def _header() -> None:
     console.print(
         Panel(
-            Text.from_markup(
-                "[dim]Review listening services, exposure, and suspicious binds[/]"
-            ),
+            Text.from_markup("[dim]Review listening services, exposure, and suspicious binds[/]"),
             title="[bold cyan]LISTENER CHECK[/]",
             subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
             border_style="cyan",
@@ -92,11 +89,7 @@ def _is_loopback(local_address: str) -> bool:
 
 
 def _is_external_bind(local_address: str) -> bool:
-    return (
-        "0.0.0.0" in local_address
-        or "[::]" in local_address
-        or local_address.startswith("::")
-    )
+    return "0.0.0.0" in local_address or "[::]" in local_address or local_address.startswith("::")
 
 
 def parse_listeners():
@@ -105,12 +98,9 @@ def parse_listeners():
         (proto, local_address, proc_name, flags, is_whitelisted)
     """
     try:
-        result = subprocess.run(
-        [resolve_command("ss"), "-tulnp"],
-        capture_output=True,
-        text=True,
-        timeout=DEFAULT_COMMAND_TIMEOUT,
-    )
+        result = run_command(
+            ["ss", "-tulnp"],
+        )
 
         flagged = []
         canary_ports = active_canary_ports()
@@ -129,7 +119,7 @@ def parse_listeners():
             port = _parse_port(local_address)
             is_whitelisted = proc_name in WHITELISTED_PROCS
             flags = []
-            
+
             if _is_own_canary(port, pid_info, canary_ports):
                 is_whitelisted = True
                 flags.append("ErisLITE Canary")
@@ -184,11 +174,7 @@ def _is_suspicious(flags, is_whitelisted: bool) -> bool:
 
 
 def _severity(flags, is_whitelisted: bool) -> str:
-    return (
-        "[yellow]WARNING[/]"
-        if _is_suspicious(flags, is_whitelisted)
-        else "[green]INFO[/]"
-    )
+    return "[yellow]WARNING[/]" if _is_suspicious(flags, is_whitelisted) else "[green]INFO[/]"
 
 
 def run_listener_scan(silent: bool = False):
@@ -207,43 +193,32 @@ def run_listener_scan(silent: bool = False):
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     flagged = parse_listeners()
 
     suspicious = sum(
-        1
-        for _, _, _, flags, is_whitelisted in flagged
-        if _is_suspicious(flags, is_whitelisted)
+        1 for _, _, _, flags, is_whitelisted in flagged if _is_suspicious(flags, is_whitelisted)
     )
 
     if silent:
         if not flagged:
-            return {
-                "status": "ok",
-                "details": [],
-                "tags": [],
-            }
+            return make_result("ok")
 
         if suspicious == 0:
-            return {
-                "status": "ok",
-                "details": [f"{len(flagged)} listener(s) detected (expected/exposure)"],
-                "tags": ["listener_exposure"],
-            }
+            return make_result(
+                "ok",
+                details=[f"{len(flagged)} listener(s) detected (expected/exposure)"],
+                tags=["listener_exposure"],
+            )
 
-        return {
-            "status": "warning",
-            "details": [
-                f"{suspicious} suspicious listener(s) detected "
-                f"({len(flagged)} total notable)"
+        return make_result(
+            "warning",
+            details=[
+                f"{suspicious} suspicious listener(s) detected ({len(flagged)} total notable)"
             ],
-            "tags": ["suspicious_listener"],
-        }
+            tags=["suspicious_listener"],
+        )
 
     clear_screen()
     _header()
@@ -261,11 +236,7 @@ def run_listener_scan(silent: bool = False):
 
         pause_return()
 
-        return {
-            "status": "ok",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("ok")
 
     console.print(
         Panel.fit(
@@ -320,17 +291,14 @@ def run_listener_scan(silent: bool = False):
     pause_return()
 
     if suspicious == 0:
-        return {
-            "status": "ok",
-            "details": [f"{len(flagged)} listener(s) detected (expected/exposure)"],
-            "tags": ["listener_exposure"],
-        }
+        return make_result(
+            "ok",
+            details=[f"{len(flagged)} listener(s) detected (expected/exposure)"],
+            tags=["listener_exposure"],
+        )
 
-    return {
-        "status": "warning",
-        "details": [
-            f"{suspicious} suspicious listener(s) detected "
-            f"({len(flagged)} total notable)"
-        ],
-        "tags": ["suspicious_listener"],
-    }
+    return make_result(
+        "warning",
+        details=[f"{suspicious} suspicious listener(s) detected ({len(flagged)} total notable)"],
+        tags=["suspicious_listener"],
+    )

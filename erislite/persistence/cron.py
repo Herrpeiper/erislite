@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: cron.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: Cron job and systemd timer inspection for suspicious scheduled tasks.
 
 import os
@@ -19,10 +19,9 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
-from erislite.security.command_resolver import (
-    CommandResolutionError,
-    resolve_command,
-)
+from erislite.results import make_result
+from erislite.security.command_resolver import CommandResolutionError
+from erislite.security.command_runner import run_command
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -74,6 +73,7 @@ PERIODIC_CRON_DIRS = (
     "/etc/cron.monthly",
 )
 
+
 def _collection_error(source: str, reason: str) -> Dict:
     return {
         "type": "Collection Error",
@@ -84,6 +84,7 @@ def _collection_error(source: str, reason: str) -> Dict:
         "tags": ["cron_scan_incomplete"],
         "kind": "error",
     }
+
 
 def _header() -> None:
     console.print(
@@ -100,6 +101,7 @@ def _header() -> None:
     )
     console.print()
 
+
 def tag_command(command: str) -> List[str]:
     tags = []
     command_lower = command.lower()
@@ -115,12 +117,14 @@ def tag_command(command: str) -> List[str]:
 
     return tags
 
+
 def _file_owner(path: str) -> str:
     try:
         uid = os.stat(path).st_uid
         return pwd.getpwuid(uid).pw_name
-    except Exception:
+    except (OSError, KeyError):
         return "unknown"
+
 
 def _parse_system_crontab(path: str) -> List[Dict]:
     """
@@ -192,6 +196,7 @@ def _parse_system_crontab(path: str) -> List[Dict]:
 
     return flagged
 
+
 def _inspect_periodic_scripts() -> List[Dict]:
     flagged = []
 
@@ -252,6 +257,7 @@ def _inspect_periodic_scripts() -> List[Dict]:
 
     return flagged
 
+
 def _first_interesting_line(content: str) -> str:
     for raw_line in content.splitlines():
         line = raw_line.strip()
@@ -264,13 +270,12 @@ def _first_interesting_line(content: str) -> str:
 
     return "Suspicious pattern detected in script"
 
+
 def check_cron_jobs() -> List[Dict]:
     flagged = []
 
     if os.path.isfile("/etc/crontab"):
-        flagged.extend(
-            _parse_system_crontab("/etc/crontab")
-        )
+        flagged.extend(_parse_system_crontab("/etc/crontab"))
 
     if os.path.isdir("/etc/cron.d"):
         try:
@@ -278,9 +283,7 @@ def check_cron_jobs() -> List[Dict]:
                 path = os.path.join("/etc/cron.d", name)
 
                 if os.path.isfile(path):
-                    flagged.extend(
-                        _parse_system_crontab(path)
-                    )
+                    flagged.extend(_parse_system_crontab(path))
         except OSError as exc:
             flagged.append(
                 _collection_error(
@@ -293,24 +296,14 @@ def check_cron_jobs() -> List[Dict]:
 
     return flagged
 
+
 def check_user_crontabs() -> List[Dict]:
     flagged = []
 
     try:
-        crontab = resolve_command("crontab")
-
-    except CommandResolutionError:
-        return [
-            _collection_error(
-                "user crontabs",
-                "crontab command is unavailable",
-            )
-        ]
-
-    try:
         users = pwd.getpwall()
 
-    except Exception as exc:
+    except OSError as exc:
         return [
             _collection_error(
                 "/etc/passwd",
@@ -323,15 +316,13 @@ def check_user_crontabs() -> List[Dict]:
             continue
 
         try:
-            result = subprocess.run(
+            result = run_command(
                 [
-                    crontab,
+                    "crontab",
                     "-l",
                     "-u",
                     user.pw_name,
                 ],
-                capture_output=True,
-                text=True,
                 timeout=5,
             )
 
@@ -383,6 +374,14 @@ def check_user_crontabs() -> List[Dict]:
                         }
                     )
 
+        except CommandResolutionError:
+            return [
+                _collection_error(
+                    "user crontabs",
+                    "crontab command is unavailable",
+                )
+            ]
+
         except subprocess.TimeoutExpired:
             flagged.append(
                 _collection_error(
@@ -391,34 +390,27 @@ def check_user_crontabs() -> List[Dict]:
                 )
             )
 
-        except Exception:
-            continue
+        except OSError as exc:
+            flagged.append(
+                _collection_error(
+                    f"crontab -u {user.pw_name}",
+                    f"Could not inspect user crontab: {exc}",
+                )
+            )
 
     return flagged
 
 
 def check_systemd_timers() -> List[Dict]:
     try:
-        systemctl = resolve_command("systemctl")
-    except CommandResolutionError:
-        return [
-            _collection_error(
-                "systemd timers",
-                "systemctl is unavailable",
-            )
-        ]
-
-    try:
-        result = subprocess.run(
+        result = run_command(
             [
-                systemctl,
+                "systemctl",
                 "list-timers",
                 "--all",
                 "--no-pager",
                 "--no-legend",
             ],
-            capture_output=True,
-            text=True,
             timeout=10,
         )
 
@@ -430,6 +422,14 @@ def check_systemd_timers() -> List[Dict]:
                     or f"systemctl list-timers exited with code {result.returncode}",
                 )
             ]
+
+    except CommandResolutionError:
+        return [
+            _collection_error(
+                "systemd timers",
+                "systemctl is unavailable",
+            )
+        ]
 
     except subprocess.TimeoutExpired:
         return [
@@ -456,18 +456,14 @@ def check_systemd_timers() -> List[Dict]:
             continue
 
         timer_match = re.search(
-            r"(\S+\.timer)\s+\S*\.service",
+            r"(\S+\.timer)\s+\S+\.service",
             line,
         )
 
         if timer_match:
             timer = timer_match.group(1)
         else:
-            candidates = [
-                part
-                for part in line.split()
-                if part.endswith(".timer")
-            ]
+            candidates = [part for part in line.split() if part.endswith(".timer")]
 
             if not candidates:
                 continue
@@ -475,9 +471,9 @@ def check_systemd_timers() -> List[Dict]:
             timer = candidates[0]
 
         try:
-            show = subprocess.run(
+            show = run_command(
                 [
-                    systemctl,
+                    "systemctl",
                     "show",
                     timer,
                     "-p",
@@ -485,8 +481,6 @@ def check_systemd_timers() -> List[Dict]:
                     "-p",
                     "Triggers",
                 ],
-                capture_output=True,
-                text=True,
                 timeout=5,
             )
 
@@ -514,9 +508,9 @@ def check_systemd_timers() -> List[Dict]:
                 if not service.endswith(".service"):
                     continue
 
-                service_result = subprocess.run(
+                service_result = run_command(
                     [
-                        systemctl,
+                        "systemctl",
                         "show",
                         service,
                         "-p",
@@ -524,8 +518,6 @@ def check_systemd_timers() -> List[Dict]:
                         "-p",
                         "ExecStart",
                     ],
-                    capture_output=True,
-                    text=True,
                     timeout=5,
                 )
 
@@ -566,7 +558,7 @@ def check_systemd_timers() -> List[Dict]:
                         uid = os.stat(service_path).st_uid
                         owner = pwd.getpwuid(uid).pw_name
                         user_owned = uid >= 1000
-                    except Exception:
+                    except (OSError, KeyError):
                         pass
 
                 if nonstandard_path:
@@ -587,35 +579,28 @@ def check_systemd_timers() -> List[Dict]:
                         }
                     )
 
-        except Exception:
+        except (
+            CommandResolutionError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ):
             continue
 
     return flagged
+
 
 def check_windows_scheduled_tasks() -> List[Dict]:
     flagged = []
 
     try:
-        schtasks = resolve_command("schtasks")
-    except CommandResolutionError:
-        return [
-            _collection_error(
-                "Windows scheduled tasks",
-                "schtasks is unavailable",
-            )
-        ]
-
-    try:
-        result = subprocess.run(
+        result = run_command(
             [
-                schtasks,
+                "schtasks",
                 "/query",
                 "/fo",
                 "LIST",
                 "/v",
             ],
-            capture_output=True,
-            text=True,
             timeout=15,
         )
 
@@ -623,8 +608,7 @@ def check_windows_scheduled_tasks() -> List[Dict]:
             return [
                 _collection_error(
                     "Windows scheduled tasks",
-                    result.stderr.strip()
-                    or f"schtasks exited with code {result.returncode}",
+                    result.stderr.strip() or f"schtasks exited with code {result.returncode}",
                 )
             ]
 
@@ -668,6 +652,14 @@ def check_windows_scheduled_tasks() -> List[Dict]:
                     }
                 )
 
+    except CommandResolutionError:
+        flagged.append(
+            _collection_error(
+                "Windows scheduled tasks",
+                "schtasks is unavailable",
+            )
+        )
+
     except subprocess.TimeoutExpired:
         flagged.append(
             _collection_error(
@@ -686,6 +678,7 @@ def check_windows_scheduled_tasks() -> List[Dict]:
 
     return flagged
 
+
 def run_cron_timer_scan(silent: bool = False):
     os_type = get_os()
 
@@ -697,9 +690,7 @@ def run_cron_timer_scan(silent: bool = False):
         findings.extend(check_systemd_timers())
 
     elif os_type == "Windows":
-        findings.extend(
-            check_windows_scheduled_tasks()
-        )
+        findings.extend(check_windows_scheduled_tasks())
 
     else:
         if not silent:
@@ -716,23 +707,11 @@ def run_cron_timer_scan(silent: bool = False):
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
-    errors = [
-        entry
-        for entry in findings
-        if entry.get("kind") == "error"
-    ]
+    errors = [entry for entry in findings if entry.get("kind") == "error"]
 
-    scheduled_findings = [
-        entry
-        for entry in findings
-        if entry.get("kind") != "error"
-    ]
+    scheduled_findings = [entry for entry in findings if entry.get("kind") != "error"]
 
     total = len(scheduled_findings)
 
@@ -746,15 +725,10 @@ def run_cron_timer_scan(silent: bool = False):
     details = []
 
     if scheduled_findings:
-        details.append(
-            f"{total} suspicious scheduled task(s) flagged"
-        )
+        details.append(f"{total} suspicious scheduled task(s) flagged")
 
     if errors:
-        details.extend(
-            f"{entry['path']} — {entry['command']}"
-            for entry in errors
-        )
+        details.extend(f"{entry['path']} — {entry['command']}" for entry in errors)
 
     tags = []
 
@@ -764,11 +738,11 @@ def run_cron_timer_scan(silent: bool = False):
     if errors:
         tags.append("cron_scan_incomplete")
 
-    result = {
-        "status": status,
-        "details": details,
-        "tags": tags,
-    }
+    result = make_result(
+        status,
+        details=details,
+        tags=tags,
+    )
 
     if silent:
         return result

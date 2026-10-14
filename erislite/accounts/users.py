@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: users.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.2
+# Version: 1.5.0
 # License: MIT
 # Created: 2025-06-01
-# Last Updated: 2026-10-01
+# Last Updated: 2026-10-14
 # Description: Suspicious user account scan: UID anomalies, shells, and account configuration.
 
 import pwd
@@ -16,6 +16,7 @@ from rich.table import Table
 from rich.text import Text
 
 from erislite.config.settings import APP_NAME, APP_VERSION
+from erislite.results import make_result
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
@@ -90,9 +91,7 @@ KNOWN_SERVICE_USERS = {
 def _header() -> None:
     console.print(
         Panel(
-            Text.from_markup(
-                "[dim]Review local accounts for privilege and shell anomalies[/]"
-            ),
+            Text.from_markup("[dim]Review local accounts for privilege and shell anomalies[/]"),
             title="[bold cyan]USER ACCOUNT SCAN[/]",
             subtitle=f"[dim cyan]{APP_NAME} v{APP_VERSION}[/]",
             border_style="cyan",
@@ -106,11 +105,7 @@ def _header() -> None:
 def _load_valid_shells() -> set[str]:
     try:
         with open("/etc/shells", "r", encoding="utf-8") as file:
-            return {
-                line.strip()
-                for line in file
-                if line.strip() and not line.startswith("#")
-            }
+            return {line.strip() for line in file if line.strip() and not line.startswith("#")}
     except OSError:
         return set()
 
@@ -153,11 +148,7 @@ def run_user_scan(silent: bool = False):
 
             pause_return()
 
-        return {
-            "status": "unsupported",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("unsupported")
 
     flagged = []
     valid_shells = _load_valid_shells()
@@ -208,20 +199,13 @@ def run_user_scan(silent: bool = False):
 
     if silent:
         if not flagged:
-            return {
-                "status": "ok",
-                "details": [],
-                "tags": [],
-            }
+            return make_result("ok")
 
-        return {
-            "status": "warning",
-            "details": [
-                f"{len(flagged)} account finding(s) across "
-                f"{len(unique_accounts)} account(s)"
-            ],
-            "tags": sorted(tags),
-        }
+        return make_result(
+            "warning",
+            details=[f"{len(flagged)} account finding(s) across {len(unique_accounts)} account(s)"],
+            tags=sorted(tags),
+        )
 
     clear_screen()
     _header()
@@ -239,11 +223,7 @@ def run_user_scan(silent: bool = False):
 
         pause_return()
 
-        return {
-            "status": "ok",
-            "details": [],
-            "tags": [],
-        }
+        return make_result("ok")
 
     console.print(
         Panel.fit(
@@ -291,11 +271,8 @@ def run_user_scan(silent: bool = False):
 
     pause_return()
 
-    return {
-        "status": "warning",
-        "details": [
-            f"{len(flagged)} account finding(s) across "
-            f"{len(unique_accounts)} account(s)"
-        ],
-        "tags": sorted(tags),
-    }
+    return make_result(
+        "warning",
+        details=[f"{len(flagged)} account finding(s) across {len(unique_accounts)} account(s)"],
+        tags=sorted(tags),
+    )
