@@ -129,7 +129,7 @@ Odyssey Lite provides:
 - Linux (all security modules are Linux-only — Windows and macOS are not supported)
 - `sudo` / root access recommended for full scan coverage
 
-```bash
+```
 pip install -r requirements.txt
 ```
 
@@ -139,16 +139,16 @@ pip install -r requirements.txt
 
 Install ErisLITE in a location controlled by root when you plan to run it with elevated privileges.
 
-```bash
+```
 sudo git clone https://github.com/herrpeiper/ErisLITE.git /opt/erislite
 sudo python3 -m venv /opt/erislite/.venv
 sudo /opt/erislite/.venv/bin/pip install -r /opt/erislite/requirements.txt
-
+```
 ---
 
 ## Usage
 
-```bash
+```
 sudo /opt/erislite/.venv/bin/python /opt/erislite/main.py
 ```
 
