@@ -6,6 +6,60 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [1.5.0] - 2026-10-14
+
+### Added
+
+- Shared command execution layer for hardened external command handling
+- Shared result helpers and standardized module result contracts across Threat Sweep
+- Privileged install-tree validation before root execution
+- Symlink-safe private file I/O for logs, quarantine data, and other root-written runtime files
+- Rapid Response per-action selection for live containment
+- Rapid Response quarantine and restoration workflow for world-writable cron files
+- Reverse-shell-aware Python connection detection while preserving normal Python network traffic
+- Threat Sweep module isolation so individual collection failures no longer abort the full sweep
+- CI coverage enforcement with a minimum project coverage threshold
+- CI pull-request coverage for development branches
+
+### Changed
+
+- Rapid Response now validates process identity before termination to reduce PID reuse risk
+- Rapid Response protects ErisLITE, init, ancestor processes, the current operator, and the operator's SSH source from unsafe containment actions
+- Rapid Response firewall blocking now uses backend-specific outbound rules for UFW, firewalld, nftables, iptables, and ip6tables
+- nftables containment uses dedicated ErisLITE IPv4 and IPv6 block sets and supports repeat executions against an existing ErisLITE ruleset
+- Cron containment now moves suspicious files into a private quarantine outside cron execution paths
+- Cron rollback restores the original file while removing world-write permission
+- Threat Sweep scoring now reflects only checks that successfully ran
+- Threat Sweep change tracking more accurately distinguishes NEW, CHANGED, PERSISTING, and RESOLVED findings
+- CVE data handling now uses an operator-supplied local cache instead of implying automatic downloads
+- Root-written runtime directories and files now use restrictive ownership and permissions
+- README installation guidance now documents the recommended root-controlled virtual environment deployment
+- Repository headers and release metadata updated for v1.5.0
+
+### Fixed
+
+- Corrected Baron Samedit vulnerable version boundaries for sudo 1.8.x and 1.9.x
+- Prevented normal Python processes with ordinary private-network connections from being misclassified as reverse shells
+- Prevented Rapid Response from blocking the source address of the active SSH operator session
+- Prevented UID 0 clone containment from terminating every process sharing UID 0
+- Corrected nftables repeat-run failures caused by existing ErisLITE tables, chains, and sets
+- Prevented unsafe cron restore paths and untrusted rollback metadata from being executed
+- Corrected Threat Sweep change detection when findings are replaced by unrelated tags
+- Improved handling of partial collection failures so unavailable inspection is not reported as a clean result
+- Corrected install ownership tests so results do not depend on the user running the test suite
+
+### Security
+
+- Added symlink-safe path traversal and atomic private writes using `O_NOFOLLOW`
+- Root-written files are created privately before final permissions and ownership are applied
+- Rapid Response rollback only executes commands that match actions ErisLITE itself generated
+- Rapid Response response logs must be trusted regular files and cannot be group- or world-writable
+- Cron quarantine and restore paths are constrained to approved runtime and cron directories
+- Process containment verifies process start time and executable identity before sending a kill signal
+- Privileged startup warns or refuses unsafe installation ownership and permissions unless explicitly overridden
+
+---
+
 ## [1.4.2] - 2026-10-01
 
 ### Fixed

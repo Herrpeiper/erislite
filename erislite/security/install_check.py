@@ -4,7 +4,7 @@
 # Version: 1.5.0
 # License: MIT
 # Created: 2026-10-12
-# Last Updated: 2026-10-12
+# Last Updated: 2026-10-14
 # Description: Validates install-tree ownership and permissions before privileged use.
 
 """

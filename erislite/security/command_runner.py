@@ -4,6 +4,7 @@
 # Version: 1.5.0
 # License: MIT
 # Created: 2026-10-09
+# Last Updated: 2026-10-14
 # Description: Shared command execution helper for ErisLITE modules.
 
 import subprocess

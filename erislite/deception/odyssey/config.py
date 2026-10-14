@@ -1,10 +1,10 @@
 # Project: ErisLITE
 # Module: config.py
 # Author: Liam Piper-Brandon
-# Version: 1.4.0
+# Version: 1.5.0
 # License: MIT
 # Created: 2026-09-26
-# Last Updated: 2026-09-28
+# Last Updated: 2026-10-14
 # Description: Configuration and defaults for Odyssey Lite deception listeners.
 
 from __future__ import annotations
