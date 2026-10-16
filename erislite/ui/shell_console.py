@@ -41,6 +41,15 @@ def resolve_user_shell() -> Optional[str]:
     return None
 
 
+def effective_home() -> Optional[str]:
+    """Return the home directory of the effective UID from the account database."""
+
+    try:
+        return pwd.getpwuid(os.geteuid()).pw_dir or None
+    except (KeyError, OSError):
+        return None
+
+
 def build_shell_environment() -> dict[str, str]:
     """
     Build a minimal environment for the interactive shell.
@@ -53,8 +62,16 @@ def build_shell_environment() -> dict[str, str]:
         "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
     }
 
+    # HOME comes from the account database, not the inherited environment.
+    # Under sudo -E or a sudoers env_keep, HOME is still the invoking user's
+    # home. A root bash writes .bash_history there on exit, so a symlink the
+    # user planted would turn into a root write anywhere on the system.
+    home = effective_home()
+
+    if home:
+        env["HOME"] = home
+
     for name in (
-        "HOME",
         "LANG",
         "TERM",
         "COLORTERM",
