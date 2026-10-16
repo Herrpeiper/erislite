@@ -790,3 +790,17 @@ def test_build_action_plan_adds_kill_for_shell_holding_connection(monkeypatch):
 
     assert [action["type"] for action in plan] == ["block_ip", "kill_process"]
     assert plan[1]["data"]["pid"] == 77
+
+
+def test_block_ip_refuses_operator_ssh_source_in_mapped_form(monkeypatch):
+    log = []
+    monkeypatch.setattr(actions, "operator_source_ips", lambda: {"::ffff:198.51.100.7"})
+    monkeypatch.setattr(actions, "detect_firewall_backend", lambda: "iptables")
+
+    result = actions.execute_action(
+        {"type": "block_ip", "data": {"remote_ip": "198.51.100.7"}, "undo": None},
+        log,
+    )
+
+    assert result is False
+    assert "operator's SSH session" in log[0]["result"]

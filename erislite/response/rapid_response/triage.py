@@ -18,6 +18,8 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import psutil
 
+from erislite.network.firewall import canonical_ip
+
 # Login shells that give an account an interactive session.
 INTERACTIVE_SHELLS = {
     "/bin/bash",
@@ -274,7 +276,7 @@ def operator_source_ips() -> Set[str]:
 
             for conn in connections:
                 if conn.raddr:
-                    ips.add(conn.raddr.ip)
+                    ips.add(canonical_ip(conn.raddr.ip) or conn.raddr.ip)
         except (psutil.Error, OSError):
             continue
 
@@ -321,7 +323,7 @@ def classify_connections(
     less noisy.
     """
 
-    protected_ips = protected_ips or set()
+    protected_ips = {canonical_ip(ip) or ip for ip in (protected_ips or set())}
     connections = list(connections)
 
     listening_ports = {
@@ -334,7 +336,10 @@ def classify_connections(
         if conn.status != "ESTABLISHED" or not conn.raddr:
             continue
 
-        ip, port = conn.raddr.ip, conn.raddr.port
+        # Report IPv4-mapped peers as plain IPv4 so the block rule and the
+        # operator check both see the address that is on the wire.
+        ip = canonical_ip(conn.raddr.ip) or conn.raddr.ip
+        port = conn.raddr.port
 
         if ip in protected_ips or is_loopback_address(ip):
             continue

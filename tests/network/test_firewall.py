@@ -354,3 +354,27 @@ def test_build_block_commands_rejects_invalid_ip(invalid_ip):
         )
         is None
     )
+
+
+@pytest.mark.parametrize("backend", ["nftables", "iptables", "firewalld", "ufw"])
+def test_ipv4_mapped_address_is_blocked_as_ipv4(backend):
+    # Dual-stack sockets report IPv4 peers as ::ffff:a.b.c.d. The packets
+    # are IPv4, so an IPv6 rule for the mapped address would never match.
+    commands = firewall.build_ip_block_commands("::ffff:203.0.113.5", backend)
+
+    assert "203.0.113.5" in " ".join(commands["apply"])
+    assert "::ffff" not in " ".join(commands["apply"] + commands["undo"])
+
+    if backend == "nftables":
+        assert "blocked4" in commands["apply"]
+    if backend == "iptables":
+        assert commands["apply"][0] == "iptables"
+    if backend == "firewalld":
+        assert "ipv4" in commands["apply"]
+
+
+def test_canonical_ip_handles_plain_mapped_and_invalid():
+    assert firewall.canonical_ip("::ffff:10.0.0.5") == "10.0.0.5"
+    assert firewall.canonical_ip("10.0.0.5") == "10.0.0.5"
+    assert firewall.canonical_ip("2001:db8::1") == "2001:db8::1"
+    assert firewall.canonical_ip("not-an-ip") is None

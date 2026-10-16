@@ -63,6 +63,23 @@ def detect_firewall_backend():
 NFT_TABLE = "erislite"
 
 
+def canonical_ip(ip):
+    """Return ip in the form the kernel matches on the wire, or None if invalid.
+
+    A dual-stack socket reports IPv4 peers as IPv4-mapped IPv6 addresses
+    such as ::ffff:203.0.113.5. Those packets travel as IPv4, so a rule
+    written for the mapped IPv6 address never matches them.
+    """
+
+    try:
+        address = ipaddress.ip_address(str(ip).strip())
+    except ValueError:
+        return None
+
+    mapped = getattr(address, "ipv4_mapped", None)
+    return str(mapped or address)
+
+
 def _nftables_setup_commands():
     """Idempotent commands that create the ErisLITE block table.
 
@@ -103,13 +120,12 @@ def build_ip_block_commands(ip, backend):
     attacker's live session would survive the block.
     """
 
-    try:
-        address = ipaddress.ip_address(ip)
-    except ValueError:
+    ip = canonical_ip(ip)
+
+    if ip is None:
         return None
 
-    ip = str(address)
-    v6 = address.version == 6
+    v6 = ipaddress.ip_address(ip).version == 6
 
     if backend == "ufw":
         return {
