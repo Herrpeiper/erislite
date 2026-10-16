@@ -7,10 +7,10 @@
 # Last Updated: 2026-10-14
 # Description: SHA-256 file integrity baseline creation and change detection.
 
-import glob
 import hashlib
 import json
 import os
+import stat
 from datetime import datetime
 from typing import Optional, Tuple
 
@@ -178,53 +178,126 @@ def check_baseline_integrity(profile: str = "critical") -> dict:
         )
 
 
-def scan_for_copies(baseline: dict):
-    shady_locations = [
-        "/tmp",
-        "/dev/shm",
-        "/home",
-        "/run",
-        "/var/tmp",
-    ]
+COPY_SCAN_ROOTS = (
+    "/tmp",
+    "/dev/shm",
+    "/home",
+    "/run",
+    "/var/tmp",
+)
 
-    keywords = [
-        "passwd",
-        "shadow",
-        "sudoers",
-        "sshd_config",
-        "hosts",
-    ]
+COPY_SCAN_KEYWORDS = (
+    "passwd",
+    "shadow",
+    "sudoers",
+    "sshd_config",
+    "hosts",
+)
+
+# The monitored files are small. Anything larger is not a copy of them, and
+# reading it would let a planted file stall the scan.
+MAX_COPY_BYTES = 4 * 1024 * 1024
+MAX_COPY_CANDIDATES = 2000
+
+
+def _hash_regular_file(path: str, max_bytes: int) -> Optional[str]:
+    """Hash a regular file without following symlinks or blocking on FIFOs."""
+
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None
+
+    try:
+        info = os.fstat(fd)
+
+        if not stat.S_ISREG(info.st_mode) or info.st_size > max_bytes:
+            return None
+
+        digest = hashlib.sha256()
+
+        with os.fdopen(fd, "rb") as file:
+            fd = -1
+
+            for chunk in iter(lambda: file.read(65536), b""):
+                digest.update(chunk)
+
+        return digest.hexdigest()
+    except OSError:
+        return None
+    finally:
+        if fd != -1:
+            os.close(fd)
+
+
+def scan_for_copies(
+    baseline: dict,
+    roots=COPY_SCAN_ROOTS,
+    keywords=COPY_SCAN_KEYWORDS,
+    max_candidates: int = MAX_COPY_CANDIDATES,
+):
+    """Find exact copies of monitored files in locations users can write to.
+
+    The walk never follows symlinks and stays on the filesystem of each
+    root. Any account that can write to /tmp could otherwise plant a
+    symlink loop or a link to / and stall the scan indefinitely.
+    """
+
+    wanted = {}
+
+    for base_path, base_hash in baseline.items():
+        for keyword in keywords:
+            if keyword in base_path.lower() and base_hash:
+                wanted.setdefault(keyword, set()).add(base_hash)
+
+    if not wanted:
+        return []
 
     flagged = []
+    examined = 0
 
-    for root in shady_locations:
-        if not os.path.exists(root):
+    for root in roots:
+        try:
+            root_dev = os.stat(root).st_dev
+        except OSError:
             continue
 
-        for keyword in keywords:
-            pattern = os.path.join(
-                root,
-                "**",
-                f"*{keyword}*",
-            )
+        for current, dirs, files in os.walk(root, followlinks=False):
+            # Prune mount points so /home or /run never walks another filesystem.
+            kept = []
 
-            for path in glob.glob(pattern, recursive=True):
-                if not os.path.isfile(path):
+            for name in dirs:
+                try:
+                    if os.lstat(os.path.join(current, name)).st_dev == root_dev:
+                        kept.append(name)
+                except OSError:
                     continue
 
-                copy_hash, copy_error = get_sha256(path)
+            dirs[:] = kept
 
-                if copy_error:
+            for name in files:
+                lowered = name.lower()
+                matched = [keyword for keyword in wanted if keyword in lowered]
+
+                if not matched:
                     continue
 
-                for base_path, base_hash in baseline.items():
-                    if (
-                        keyword.lower() in base_path.lower()
-                        and copy_hash
-                        and copy_hash == base_hash
-                    ):
-                        flagged.append((path, "Exact copy of monitored file"))
-                        break
+                examined += 1
+
+                if examined > max_candidates:
+                    flagged.append(
+                        (
+                            root,
+                            f"Copy scan stopped after {max_candidates} candidate files",
+                        )
+                    )
+                    return flagged
+
+                path = os.path.join(current, name)
+                copy_hash = _hash_regular_file(path, MAX_COPY_BYTES)
+
+                if copy_hash and any(copy_hash in wanted[keyword] for keyword in matched):
+                    flagged.append((path, "Exact copy of monitored file"))
 
     return flagged
 

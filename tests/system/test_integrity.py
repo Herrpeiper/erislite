@@ -1,4 +1,5 @@
 import json
+import os
 
 from erislite.system import integrity
 
@@ -585,3 +586,55 @@ def test_baseline_profile_mismatch(
     assert "baseline_tamper" in result["tags"]
 
     assert any("does not match" in detail for detail in result["details"])
+
+
+def _baseline_for(tmp_path, content=b"root:x:0:0:root:/root:/bin/bash\n"):
+    source = tmp_path / "etc_passwd"
+    source.write_bytes(content)
+    digest = integrity.get_sha256(str(source))[0]
+    return {"/etc/passwd": digest}, content
+
+
+def test_scan_for_copies_finds_exact_copy(tmp_path):
+    baseline, content = _baseline_for(tmp_path)
+    root = tmp_path / "scan"
+    (root / "stash").mkdir(parents=True)
+    (root / "stash" / "passwd.bak").write_bytes(content)
+
+    found = integrity.scan_for_copies(baseline, roots=(str(root),))
+
+    assert found == [(str(root / "stash" / "passwd.bak"), "Exact copy of monitored file")]
+
+
+def test_scan_for_copies_does_not_follow_symlink_loops(tmp_path):
+    baseline, content = _baseline_for(tmp_path)
+    root = tmp_path / "scan"
+    root.mkdir()
+    (root / "loop").symlink_to("..")
+    (root / "to_root").symlink_to("/")
+    (root / "passwd_link").symlink_to(tmp_path / "etc_passwd")
+
+    # Completes promptly and ignores symlinked files and directories.
+    assert integrity.scan_for_copies(baseline, roots=(str(root),)) == []
+
+
+def test_scan_for_copies_skips_fifos(tmp_path):
+    baseline, _ = _baseline_for(tmp_path)
+    root = tmp_path / "scan"
+    root.mkdir()
+    os.mkfifo(root / "shadow_pipe")
+
+    assert integrity.scan_for_copies(baseline, roots=(str(root),)) == []
+
+
+def test_scan_for_copies_stops_at_candidate_limit(tmp_path):
+    baseline, _ = _baseline_for(tmp_path)
+    root = tmp_path / "scan"
+    root.mkdir()
+
+    for index in range(5):
+        (root / f"passwd{index}").write_text("x")
+
+    found = integrity.scan_for_copies(baseline, roots=(str(root),), max_candidates=3)
+
+    assert found[-1][1] == "Copy scan stopped after 3 candidate files"
