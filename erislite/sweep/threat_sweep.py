@@ -24,6 +24,7 @@ from erislite.config.settings import (
     SWEEP_PROFILES,
 )
 from erislite.containers import docker
+from erislite.intelligence.adapters.listeners import adapt_listeners
 from erislite.network import firewall, hosts, listeners
 from erislite.persistence import backdoors, cron, suid, world_writable
 from erislite.results import make_result, validate_result
@@ -58,6 +59,78 @@ NON_SCORING_MODULES = {"cve"}
 
 # A module that could not run says nothing about risk on this host.
 UNSCORED_STATUSES = {"unsupported"}
+
+
+def assessment_label(
+    risk_percent: int,
+    info_present: bool,
+    coverage: dict,
+) -> tuple:
+    """Select a risk label without hiding inspection failures."""
+    if coverage["failed"] > 0:
+        return "yellow", "Incomplete Assessment"
+
+    if coverage["complete"] == 0:
+        return "yellow", "Not Assessed"
+
+    if risk_percent == 0:
+        return (
+            "grey37",
+            "Secure / Informational" if info_present else "Secure",
+        )
+
+    if risk_percent <= 30:
+        return "green", "Low"
+
+    if risk_percent <= 70:
+        return "yellow", "Moderate"
+
+    return "red", "High"
+
+
+def inspection_coverage(module: str, result: dict) -> str:
+    """Classify module inspection coverage independently of risk."""
+    status = result.get("status", "").lower()
+    tags = result.get("tags", [])
+
+    if status == "unsupported":
+        return "unsupported"
+
+    if (
+        module == "listeners"
+        and status == "error"
+        and isinstance(tags, list)
+        and "listener_check_failed" in tags
+    ):
+        return "failed"
+
+    return "complete"
+
+
+def summarize_inspection_coverage(results: dict) -> dict:
+    """Summarize assessment coverage for scoring modules."""
+    summary = {
+        "complete": 0,
+        "failed": 0,
+        "unsupported": 0,
+        "total": 0,
+        "failed_modules": [],
+    }
+
+    for module, result in results.items():
+        if module not in RISK_WEIGHTS:
+            continue
+
+        coverage = inspection_coverage(module, result)
+        summary["total"] += 1
+        summary[coverage] += 1
+
+        if coverage == "failed":
+            summary["failed_modules"].append(module)
+
+    summary["failed_modules"].sort()
+    return summary
+
 
 # 🧠 Tag-to-Insight Mapping
 THREAT_TAG_MAP = {
@@ -117,26 +190,31 @@ THREAT_TAG_MAP = {
 
 
 def calculate_risk_score(results: dict):
+    """Calculate detected risk over successfully assessed modules."""
     total_score = 0
     breakdown = {}
     max_score = 0
 
-    for module in results:
-        if module in RISK_WEIGHTS:
-            weight = RISK_WEIGHTS[module]
-            status = results[module].get("status", "").lower()
+    for module, result in results.items():
+        if module not in RISK_WEIGHTS:
+            continue
 
-            if status in UNSCORED_STATUSES:
-                breakdown[module] = 0
-                continue
+        weight = RISK_WEIGHTS[module]
+        status = result.get("status", "").lower()
 
-            max_score += weight
+        coverage = inspection_coverage(module, result)
 
-            if status in ("warning", "error", "issue"):
-                total_score += weight
-                breakdown[module] = weight
-            else:
-                breakdown[module] = 0
+        if coverage in {"unsupported", "failed"}:
+            breakdown[module] = 0
+            continue
+
+        max_score += weight
+
+        if status in ("warning", "error", "issue"):
+            total_score += weight
+            breakdown[module] = weight
+        else:
+            breakdown[module] = 0
 
     return total_score, breakdown, max_score
 
@@ -224,6 +302,58 @@ def run_module_check(module: str, check) -> dict:
     return result
 
 
+def run_listener_intelligence_check(hostname: str):
+    """Collect listeners once, preserving the legacy result.
+
+    Returns:
+        (module_result, intelligence_findings, conversion_error)
+    """
+    if listeners.get_os() != "Linux":
+        return make_result("unsupported"), [], None
+
+    try:
+        collection = listeners.collect_listeners()
+
+        result = listeners.run_listener_scan(
+            silent=True,
+            collection=collection,
+        )
+    except Exception:
+        return (
+            make_result(
+                "error",
+                details=["Listener inspection failed"],
+                tags=["listener_check_failed"],
+            ),
+            [],
+            None,
+        )
+
+    if not validate_result(result):
+        return (
+            make_result(
+                "error",
+                details=["Listener check returned an invalid result"],
+                tags=["listener_check_failed"],
+            ),
+            [],
+            None,
+        )
+
+    if collection.error is not None:
+        return result, [], None
+
+    try:
+        findings = adapt_listeners(
+            collection.observations,
+            hostname=hostname,
+        )
+    except (ValueError, TypeError):
+        return result, [], "Listener intelligence conversion failed"
+
+    return result, findings, None
+
+
 def run_sweep(user_profile, sweep_profile="standard"):
     clear_screen()
     _render_header(user_profile, sweep_profile)
@@ -233,8 +363,30 @@ def run_sweep(user_profile, sweep_profile="standard"):
     profiles = SWEEP_PROFILES
 
     results = {}
+    intelligence_findings = None
+    intelligence_errors = []
+
+    hostname = user_profile.get(
+        "hostname",
+        "unknown",
+    )
 
     for module in profiles[sweep_profile]:
+        if module == "listeners":
+            (
+                listener_result,
+                listener_findings,
+                conversion_error,
+            ) = run_listener_intelligence_check(hostname)
+
+            results[module] = listener_result
+            intelligence_findings = listener_findings
+
+            if conversion_error:
+                intelligence_errors.append(conversion_error)
+
+            continue
+
         check = SWEEP_CHECKS.get(module)
 
         if check is not None:
@@ -274,6 +426,8 @@ def run_sweep(user_profile, sweep_profile="standard"):
         user_profile,
         changes,
         comparison_available=previous is not None,
+        intelligence_findings=intelligence_findings,
+        intelligence_errors=intelligence_errors,
     )
 
     _save_sweep(
@@ -310,24 +464,88 @@ def _finding_signals(results: dict) -> set:
     return signals
 
 
+def _comparison_unavailable(
+    module: str,
+    current_results: dict,
+    previous_results: dict,
+) -> bool:
+    """Identify modules whose historical state cannot be compared."""
+    if module not in current_results or module not in previous_results:
+        return True
+
+    if module in current_results:
+        coverage = inspection_coverage(
+            module,
+            current_results[module],
+        )
+        if coverage != "complete":
+            return True
+
+    if module in previous_results:
+        coverage = inspection_coverage(
+            module,
+            previous_results[module],
+        )
+        if coverage != "complete":
+            return True
+
+    return False
+
+
 def compare_sweep_results(
     current_results: dict,
     previous_results: dict,
 ) -> dict:
-    """
-    Compare two comparable sweeps.
+    """Compare sweeps without treating unavailable data as resolution."""
+    comparable_current = {}
+    comparable_previous = {}
+    unverified = set()
 
-    Returns NEW, PERSISTING, and RESOLVED finding signals.
-    """
-    current = _finding_signals(current_results)
-    previous = _finding_signals(previous_results)
+    modules = set(current_results) | set(previous_results)
 
-    return {
+    for module in modules:
+        if _comparison_unavailable(
+            module,
+            current_results,
+            previous_results,
+        ):
+            # Retain actionable signals from whichever side
+            # actually completed its inspection.
+            if module in current_results:
+                current = current_results[module]
+                if inspection_coverage(module, current) == "complete":
+                    unverified.update(_finding_signals({module: current}))
+
+            if module in previous_results:
+                previous = previous_results[module]
+                if inspection_coverage(module, previous) == "complete":
+                    unverified.update(_finding_signals({module: previous}))
+
+            continue
+
+        if module in current_results:
+            comparable_current[module] = current_results[module]
+
+        if module in previous_results:
+            comparable_previous[module] = previous_results[module]
+
+    current = _finding_signals(comparable_current)
+    previous = _finding_signals(comparable_previous)
+
+    changes = {
         "new": sorted(current - previous),
         "persisting": sorted(current & previous),
         "resolved": sorted(previous - current),
-        "changed": _changed_findings(current_results, previous_results),
+        "changed": _changed_findings(
+            comparable_current,
+            comparable_previous,
+        ),
     }
+
+    if unverified:
+        changes["unverified"] = sorted(unverified)
+
+    return changes
 
 
 def _changed_findings(current_results: dict, previous_results: dict) -> list:
@@ -410,7 +628,15 @@ def _load_previous_comparable_sweep(
     return None
 
 
-def _display_results(results, sweep_profile, user_profile, changes, comparison_available=False):
+def _display_results(
+    results,
+    sweep_profile,
+    user_profile,
+    changes,
+    comparison_available=False,
+    intelligence_findings=None,
+    intelligence_errors=None,
+):
     label_map = {
         "integrity": "Integrity",
         "firewall": "Firewall Status",
@@ -461,7 +687,14 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
 
     for module, result in results.items():
         details = result.get("details", [])
-        detail = details[0] if details else "No issues detected"
+        if details:
+            detail = details[0]
+        elif result.get("status") == "unsupported":
+            detail = "Inspection not supported"
+        elif result.get("status") == "error":
+            detail = "Inspection failed"
+        else:
+            detail = "No issues detected"
 
         table.add_row(
             label_map.get(module, module.title()),
@@ -480,23 +713,25 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
         for r in results.values()
     )
 
-    if percent == 0:
-        color = "grey37"
-        risk_label = "Secure / Informational" if info_present else "Secure"
-    elif percent <= 30:
-        color = "green"
-        risk_label = "Low"
-    elif percent <= 70:
-        color = "yellow"
-        risk_label = "Moderate"
-    else:
-        color = "red"
-        risk_label = "High"
+    coverage = summarize_inspection_coverage(results)
+
+    color, risk_label = assessment_label(
+        percent,
+        info_present,
+        coverage,
+    )
 
     risk_body = (
-        f"[dim]Risk Level:[/] [bold {color}]{risk_label}[/]   "
-        f"[dim]Score:[/] [bold {color}]{score}/{max_possible}[/]   "
-        f"[dim]Rating:[/] [bold {color}]{percent}%[/]"
+        f"[dim]Assessment:[/] [bold {color}]{risk_label}[/]   "
+        f"[dim]Detected Risk:[/] [bold {color}]"
+        f"{score}/{max_possible}[/]   "
+        f"[dim]Rating:[/] [bold {color}]{percent}%[/]\n"
+        f"[dim]Coverage:[/] "
+        f"[white]{coverage['complete']}/{coverage['total']}[/] "
+        f"assessed   "
+        f"[dim]Failed:[/] [white]{coverage['failed']}[/]   "
+        f"[dim]Unsupported:[/] "
+        f"[white]{coverage['unsupported']}[/]"
     )
 
     console.print(
@@ -507,6 +742,21 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
             box=box.ROUNDED,
         )
     )
+
+    if coverage["failed"]:
+        console.print()
+        console.print(
+            Panel.fit(
+                "[yellow]One or more security inspections failed.[/]\n"
+                "[dim]Failed modules:[/] "
+                + ", ".join(coverage["failed_modules"])
+                + "\n[dim]These modules were excluded from "
+                "risk scoring. Their security state is unknown.[/]",
+                title="[bold yellow]INCOMPLETE COVERAGE[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
 
     contributors = [(module, points) for module, points in breakdown.items() if points > 0]
 
@@ -540,6 +790,12 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
             )
 
         console.print(breakdown_table)
+
+    if intelligence_findings is not None:
+        _display_intelligence_findings(
+            intelligence_findings,
+            intelligence_errors,
+        )
 
     priorities = prioritize_findings(results)
 
@@ -637,6 +893,14 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
             ),
         )
 
+        if changes.get("unverified"):
+            change_rows += (
+                (
+                    "[yellow]UNVERIFIED[/]",
+                    changes["unverified"],
+                ),
+            )
+
         for label, signals in change_rows:
             display_signals = ", ".join(signals[:4]) if signals else "None"
 
@@ -680,6 +944,75 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
 
     console.print()
     pause_return()
+
+
+def _display_intelligence_findings(findings, errors=None):
+    """Render structured findings without changing legacy results."""
+    errors = errors or []
+
+    console.print()
+
+    table = Table(
+        title="[bold cyan]Intelligence Findings[/]",
+        box=box.SIMPLE_HEAVY,
+        header_style="bold cyan",
+        show_edge=False,
+        padding=(0, 1),
+    )
+
+    table.add_column("Severity", no_wrap=True)
+    table.add_column("Confidence", no_wrap=True)
+    table.add_column("Finding")
+    table.add_column("Affected Asset")
+    table.add_column("Evidence", justify="right")
+
+    severity_colors = {
+        "CRITICAL": "red",
+        "HIGH": "red",
+        "MEDIUM": "yellow",
+        "LOW": "green",
+        "INFO": "cyan",
+    }
+
+    for finding in findings[:20]:
+        severity = finding.severity.value
+
+        table.add_row(
+            Text(
+                severity,
+                style=severity_colors.get(severity, "white"),
+            ),
+            Text(finding.confidence.value),
+            Text(finding.title),
+            Text(finding.asset),
+            Text(str(len(finding.evidence))),
+        )
+
+    if findings:
+        console.print(table)
+
+        if len(findings) > 20:
+            console.print(f"[dim]Showing 20 of {len(findings)} intelligence findings.[/]")
+    elif not errors:
+        console.print(
+            Panel.fit(
+                "[green]No structured intelligence findings "
+                "were generated by the enabled adapters.[/]",
+                title="[bold cyan]Intelligence Findings[/]",
+                border_style="cyan",
+                box=box.ROUNDED,
+            )
+        )
+
+    for error in errors:
+        console.print(
+            Panel.fit(
+                Text(error),
+                title="[bold yellow]INTELLIGENCE INCOMPLETE[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
 
 
 def _save_sweep(results, sweep_profile, user_profile, changes):
