@@ -67,16 +67,16 @@ def test_unsupported_listener_is_excluded():
     assert maximum == 0
 
 
-def test_other_module_error_behavior_is_preserved():
+def test_firewall_inspection_failure_is_excluded():
     score, breakdown, maximum = calculate_risk_score(
         {
             "firewall": result("error", ["firewall_check_failed"]),
         }
     )
 
-    assert score == 15
-    assert breakdown["firewall"] == 15
-    assert maximum == 15
+    assert score == 0
+    assert breakdown["firewall"] == 0
+    assert maximum == 0
 
 
 def test_listener_unclassified_error_unchanged():

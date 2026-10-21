@@ -40,6 +40,30 @@ def get_baseline_path(profile: str) -> str:
     )
 
 
+def _baseline_unavailable_paths(metadata: dict) -> set:
+    """Recover paths explicitly marked unavailable at baseline creation."""
+    monitored = metadata.get("monitored", [])
+    entries = metadata.get("unavailable", [])
+
+    if not isinstance(monitored, list) or not isinstance(entries, list):
+        return set()
+
+    paths = set()
+
+    for path in monitored:
+        if not isinstance(path, str):
+            continue
+
+        # Existing baselines store entries as:
+        # "/path/to/file: permission denied: ..."
+        prefix = f"{path}: "
+
+        if any(isinstance(entry, str) and entry.startswith(prefix) for entry in entries):
+            paths.add(path)
+
+    return paths
+
+
 MONITORED_FILES = [
     "/etc/passwd",
     "/etc/shadow",
@@ -494,6 +518,7 @@ def scan_integrity(
         baseline = baseline_data.get("hashes", {})
         metadata = baseline_data.get("_metadata", {})
         expected_absent = set(metadata.get("expected_absent", []))
+        baseline_unavailable = _baseline_unavailable_paths(metadata)
 
     except Exception as e:
         return make_result(
@@ -551,14 +576,24 @@ def scan_integrity(
         old_hash = baseline.get(path)
 
         if old_hash is None:
-            if os.path.islink(path) and not os.path.exists(path):
-                rows.append((path, "UNAVAILABLE"))
-                scan_errors.append(f"{path} is a broken symbolic link")
-            else:
-                rows.append((path, "UNAVAILABLE"))
-                scan_errors.append(f"{path} is not represented in the active baseline")
+            if path in baseline_unavailable and path not in baseline:
+                current_hash, hash_error = get_sha256(path)
 
-            continue
+                rows.append((path, "UNAVAILABLE"))
+
+                if current_hash is not None:
+                    scan_errors.append(
+                        f"{path} was unavailable during baseline creation "
+                        "but is now readable; recreate the baseline "
+                        "to establish a trusted comparison"
+                    )
+                else:
+                    scan_errors.append(
+                        f"{path} was unavailable during baseline creation "
+                        f"and remains unverified: {hash_error or 'unknown error'}"
+                    )
+
+                continue
 
         new_hash, hash_error = get_sha256(path)
 

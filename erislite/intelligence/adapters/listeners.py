@@ -71,12 +71,28 @@ def adapt_listeners(
             process,
         )
 
+        attribution_unknown = process.strip().lower() == "unknown"
+
         severity = Severity.HIGH if has_lolbin else Severity.MEDIUM
+        confidence = Confidence.LOW if attribution_unknown else Confidence.MEDIUM
+
+        if attribution_unknown:
+            evidence_summary = (
+                "External network listener observed; process ownership could not be determined."
+            )
+        elif has_lolbin:
+            evidence_summary = (
+                "Listener process matches a potentially suspicious listener-capable utility."
+            )
+        else:
+            evidence_summary = (
+                "Identified non-whitelisted process has an externally bound listener."
+            )
 
         evidence = Evidence(
             source="listeners",
             evidence_type=EvidenceType.LISTENER,
-            summary="Suspicious listener observation",
+            summary=evidence_summary,
             reference=None,
             sensitivity=EvidenceSensitivity.INTERNAL,
         )
@@ -90,7 +106,7 @@ def adapt_listeners(
                 "Listener requires analyst review based on process or bind characteristics."
             ),
             severity=severity,
-            confidence=Confidence.MEDIUM,
+            confidence=confidence,
             tags=["suspicious_listener"],
             evidence=[evidence],
         )
