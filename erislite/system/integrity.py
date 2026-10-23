@@ -430,6 +430,44 @@ def _collect_targets(profile: str) -> Tuple[list[str], list[str]]:
     return targets, errors
 
 
+def summarize_integrity_rows(rows: list) -> dict:
+    """Summarize observed integrity states from the current scan."""
+    statuses = [status for _, status in rows]
+
+    return {
+        "targets": len(rows),
+        "verified": sum(status in {"UNCHANGED", "MODIFIED"} for status in statuses),
+        "unavailable": statuses.count("UNAVAILABLE"),
+        "changes": sum(
+            status in {"MODIFIED", "MISSING", "CREATED", "BROKEN LINK"} for status in statuses
+        ),
+    }
+
+
+MAX_DISPLAY_ROWS = 60
+
+
+def select_integrity_display_rows(rows: list) -> tuple:
+    """Bound TUI output and identify hidden important results."""
+    priority_statuses = {
+        "MODIFIED",
+        "MISSING",
+        "CREATED",
+        "BROKEN LINK",
+        "UNAVAILABLE",
+    }
+
+    important = [row for row in rows if row[1] in priority_statuses]
+    routine = [row for row in rows if row[1] not in priority_statuses]
+
+    selected = (important + routine)[:MAX_DISPLAY_ROWS]
+
+    hidden_important = max(0, len(important) - MAX_DISPLAY_ROWS)
+    hidden_routine = len(rows) - len(selected) - hidden_important
+
+    return selected, hidden_important, hidden_routine
+
+
 def scan_integrity(
     profile: str = "critical",
     silent: bool = False,
@@ -576,7 +614,7 @@ def scan_integrity(
         old_hash = baseline.get(path)
 
         if old_hash is None:
-            if path in baseline_unavailable and path not in baseline:
+            if path in baseline_unavailable:
                 current_hash, hash_error = get_sha256(path)
 
                 rows.append((path, "UNAVAILABLE"))
@@ -593,7 +631,11 @@ def scan_integrity(
                         f"and remains unverified: {hash_error or 'unknown error'}"
                     )
 
-                continue
+            else:
+                rows.append((path, "UNAVAILABLE"))
+                scan_errors.append(f"{path} is not represented in the active baseline")
+
+            continue
 
         new_hash, hash_error = get_sha256(path)
 
@@ -642,12 +684,17 @@ def scan_integrity(
         f"Validate files against the baseline • Profile: {profile.capitalize()}",
     )
 
+    coverage = summarize_integrity_rows(rows)
+
     console.print(
         Panel.fit(
-            f"[dim]Profile:[/] [white]{profile.capitalize()}[/]   "
-            f"[dim]Checked:[/] [white]{len(rows)}[/]   "
-            f"[dim]Issues:[/] "
-            f"[{'yellow' if issues else 'green'}]{len(issues)}[/]",
+            f"[dim]Profile:[/] [white]{profile.capitalize()}[/]\n"
+            f"[dim]Targets:[/] [white]{coverage['targets']}[/]   "
+            f"[dim]Verified:[/] [green]{coverage['verified']}[/]   "
+            f"[dim]Unavailable:[/] [yellow]{coverage['unavailable']}[/]   "
+            f"[dim]Changes:[/] "
+            f"[{'yellow' if coverage['changes'] else 'green'}]"
+            f"{coverage['changes']}[/]",
             title="[bold cyan]SUMMARY[/]",
             border_style="cyan",
             box=box.ROUNDED,
@@ -665,7 +712,9 @@ def scan_integrity(
     table.add_column("File", style="white")
     table.add_column("Status", no_wrap=True)
 
-    for path, row_status in rows:
+    display_rows, hidden_important, hidden_routine = select_integrity_display_rows(rows)
+
+    for path, row_status in display_rows:
         if row_status == "UNCHANGED":
             rendered = "[green]UNCHANGED[/]"
 
@@ -690,6 +739,31 @@ def scan_integrity(
         table.add_row(path, rendered)
 
     console.print(table)
+
+    omitted = hidden_important + hidden_routine
+
+    if omitted:
+        console.print(
+            f"[dim]Showing {len(display_rows)} of {len(rows)} "
+            f"file results. Hidden: {hidden_important} requiring review, "
+            f"{hidden_routine} routine. "
+            "Summary counts include all inspected targets.[/]"
+        )
+
+    if hidden_important:
+        console.print(
+            Panel.fit(
+                f"[yellow]{hidden_important} important file result(s) "
+                "were omitted from the terminal display.[/]\n"
+                "[dim]The scan evaluated these files, but their "
+                "individual results are not shown. Additional "
+                "review is required.[/]",
+                title="[bold yellow]HIDDEN FINDINGS[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+
     console.print()
 
     copies = scan_for_copies(baseline)

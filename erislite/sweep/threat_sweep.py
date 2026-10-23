@@ -1239,6 +1239,7 @@ def _display_intelligence_evidence(findings):
     )
 
     details.add_column("#", justify="right", no_wrap=True)
+    details.add_column("Finding", max_width=36)
     details.add_column("Evidence Summary")
     details.add_column("Sensitivity", no_wrap=True)
 
@@ -1247,10 +1248,12 @@ def _display_intelligence_evidence(findings):
 
     for finding_index, finding in enumerate(findings[:20], start=1):
         evidence_records = finding.evidence
+        finding_title = Text(finding.title[:60])
 
         if not evidence_records:
             details.add_row(
                 str(finding_index),
+                finding_title,
                 Text("No evidence attached", style="dim"),
                 "-",
             )
@@ -1280,6 +1283,7 @@ def _display_intelligence_evidence(findings):
 
             details.add_row(
                 str(finding_index),
+                finding_title,
                 display_summary,
                 sensitivity_label,
             )
@@ -1289,6 +1293,7 @@ def _display_intelligence_evidence(findings):
         if omitted > 0:
             details.add_row(
                 str(finding_index),
+                finding_title,
                 Text(
                     f"{omitted} additional evidence record(s) not shown",
                     style="dim",
@@ -1313,6 +1318,13 @@ def _display_intelligence_findings(findings, errors=None):
         padding=(0, 1),
     )
 
+    table.add_column(
+        "#",
+        style="cyan",
+        justify="right",
+        no_wrap=True,
+    )
+
     table.add_column("Severity", no_wrap=True)
     table.add_column("Confidence", no_wrap=True)
     table.add_column("Finding")
@@ -1327,10 +1339,11 @@ def _display_intelligence_findings(findings, errors=None):
         "INFO": "cyan",
     }
 
-    for finding in findings[:20]:
+    for index, finding in enumerate(findings[:20], start=1):
         severity = finding.severity.value
 
         table.add_row(
+            str(index),
             Text(
                 severity,
                 style=severity_colors.get(severity, "white"),
