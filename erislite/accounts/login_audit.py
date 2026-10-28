@@ -222,7 +222,11 @@ def run_login_audit(silent: bool = False) -> dict:
     if collection_errors:
         results["flagged"] = True
         results["issues"].extend(collection_errors)
-        results["tags"].append("auth_audit_incomplete")
+
+        if all(error is not None for error in (failed_error, recent_error, shell_error)):
+            results["tags"].append("auth_audit_failed")
+        else:
+            results["tags"].append("auth_audit_incomplete")
 
     if results["flagged"]:
         results["status"] = "warning"

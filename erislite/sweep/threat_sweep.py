@@ -9,6 +9,7 @@
 
 import json
 from datetime import datetime
+from uuid import uuid4
 
 from rich import box
 from rich.panel import Panel
@@ -113,6 +114,13 @@ def inspection_coverage(module: str, result: dict) -> str:
         if "integrity_scan_incomplete" in tags:
             return "partial"
 
+    if module == "login":
+        if "auth_audit_failed" in tags:
+            return "failed"
+
+        if "auth_audit_incomplete" in tags:
+            return "partial"
+
     if module == "firewall":
         if "firewall_permission_denied" in tags:
             return "partial"
@@ -142,9 +150,15 @@ def contributes_detected_risk(module: str, result: dict) -> bool:
     if coverage == "partial":
         tags = set(result.get("tags", []))
 
-        # A partial integrity scan may still establish
-        # genuine changes to files it could inspect.
-        return module == "integrity" and "file_integrity_issue" in tags
+        confirmed_risk_tags = {
+            "integrity": {
+                "file_integrity_issue",
+                "suspicious_file_copy",
+            },
+            "login": {"auth_failures", "uid0_shells"},
+        }
+
+        return bool(tags & confirmed_risk_tags.get(module, set()))
 
     return True
 
@@ -229,6 +243,10 @@ THREAT_TAG_MAP = {
         "Firewall state could not be fully inspected with the current privileges."
     ),
     "firewall_check_failed": "One or more firewall inspection commands failed.",
+    "suspicious_file_copy": (
+        "An exact copy of a monitored file was detected in "
+        "a scanned location; investigate whether it was authorized."
+    ),
     "auth_audit_incomplete": (
         "One or more authentication audit data sources could not be inspected."
     ),
@@ -1433,7 +1451,9 @@ def _save_sweep(results, sweep_profile, user_profile, changes):
         write_private_json(LAST_SWEEP_FILE, summary, default=str)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_path = SWEEP_LOG_DIR / f"sweep_log_{timestamp}.json"
+        unique_id = uuid4().hex
+
+        log_path = SWEEP_LOG_DIR / f"sweep_log_{timestamp}_{unique_id}.json"
 
         write_private_json(log_path, summary, default=str)
 

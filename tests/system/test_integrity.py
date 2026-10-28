@@ -1,7 +1,13 @@
+import hashlib
 import json
 import os
 
 from erislite.system import integrity
+
+
+def _test_digest(content: str) -> str:
+    """Return a deterministic SHA-256 digest for test fixtures."""
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 def _write_baseline(
@@ -41,6 +47,15 @@ def _patch_baseline_path(
     )
 
 
+def _patch_critical_profile(monkeypatch, *paths):
+    """Authorize test-specific paths in the critical scan profile."""
+    monkeypatch.setitem(
+        integrity.SCAN_PROFILES,
+        "critical",
+        [str(path) for path in paths],
+    )
+
+
 def test_get_sha256_success(tmp_path):
     test_file = tmp_path / "sample.txt"
     test_file.write_text("hello world")
@@ -65,7 +80,8 @@ def test_get_sha256_permission_error(monkeypatch):
         raise PermissionError("denied")
 
     monkeypatch.setattr(
-        "builtins.open",
+        integrity.os,
+        "open",
         fail_open,
     )
 
@@ -165,7 +181,7 @@ def test_scan_integrity_missing_file_is_warning(
         baseline_path,
         monitored=[str(monitored_file)],
         hashes={
-            str(monitored_file): "expectedhash",
+            str(monitored_file): _test_digest("expected content"),
         },
     )
 
@@ -173,6 +189,8 @@ def test_scan_integrity_missing_file_is_warning(
         monkeypatch,
         baseline_path,
     )
+
+    _patch_critical_profile(monkeypatch, monitored_file)
 
     monkeypatch.setattr(
         integrity,
@@ -211,7 +229,7 @@ def test_scan_integrity_unreadable_file_is_error(
         baseline_path,
         monitored=[str(monitored_file)],
         hashes={
-            str(monitored_file): "expectedhash",
+            str(monitored_file): _test_digest("expected content"),
         },
     )
 
@@ -219,6 +237,7 @@ def test_scan_integrity_unreadable_file_is_error(
         monkeypatch,
         baseline_path,
     )
+    _patch_critical_profile(monkeypatch, monitored_file)
 
     monkeypatch.setattr(
         integrity,
@@ -271,8 +290,8 @@ def test_scan_integrity_modified_and_incomplete(
             str(unreadable),
         ],
         hashes={
-            str(changed): "oldhash",
-            str(unreadable): "expectedhash",
+            str(changed): _test_digest("original content"),
+            str(unreadable): _test_digest("expected content"),
         },
     )
 
@@ -280,6 +299,7 @@ def test_scan_integrity_modified_and_incomplete(
         monkeypatch,
         baseline_path,
     )
+    _patch_critical_profile(monkeypatch, changed, unreadable)
 
     monkeypatch.setattr(
         integrity,
@@ -301,7 +321,7 @@ def test_scan_integrity_modified_and_incomplete(
 
     def fake_hash(path):
         if path == str(changed):
-            return "newhash", None
+            return _test_digest("modified content"), None
 
         return None, "permission denied"
 
@@ -332,7 +352,7 @@ def test_scan_integrity_target_collection_failure(
         baseline_path,
         monitored=["/etc/example"],
         hashes={
-            "/etc/example": "expectedhash",
+            "/etc/example": _test_digest("expected content"),
         },
     )
 
@@ -340,6 +360,7 @@ def test_scan_integrity_target_collection_failure(
         monkeypatch,
         baseline_path,
     )
+    _patch_critical_profile(monkeypatch, "/etc/example")
 
     monkeypatch.setattr(
         integrity,
@@ -401,6 +422,7 @@ def test_scan_integrity_expected_absent_is_ok(
         monkeypatch,
         baseline_path,
     )
+    _patch_critical_profile(monkeypatch, present, absent)
 
     monkeypatch.setattr(
         integrity,
@@ -463,6 +485,7 @@ def test_scan_integrity_expected_absent_created(
         monkeypatch,
         baseline_path,
     )
+    _patch_critical_profile(monkeypatch, present, appeared)
 
     monkeypatch.setattr(
         integrity,
@@ -528,6 +551,7 @@ def test_scan_integrity_expected_absent_broken_symlink(
         monkeypatch,
         baseline_path,
     )
+    _patch_critical_profile(monkeypatch, present, link)
 
     monkeypatch.setattr(
         integrity,
@@ -571,7 +595,7 @@ def test_baseline_profile_mismatch(
         profile="critical",
         monitored=[str(monitored)],
         hashes={
-            str(monitored): "expectedhash",
+            str(monitored): _test_digest("expected content"),
         },
     )
 
@@ -579,6 +603,7 @@ def test_baseline_profile_mismatch(
         monkeypatch,
         baseline_path,
     )
+    _patch_critical_profile(monkeypatch, monitored)
 
     result = integrity.check_baseline_integrity(profile="system")
 

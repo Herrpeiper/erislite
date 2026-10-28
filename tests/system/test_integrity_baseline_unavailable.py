@@ -4,9 +4,15 @@
 # License: MIT
 # Description: Integrity baseline unavailable-file regression tests.
 
+import hashlib
 import json
 
 from erislite.system import integrity
+
+
+def _test_digest(content: str) -> str:
+    """Return a deterministic SHA-256 digest."""
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 def prepare_baseline(monkeypatch, tmp_path, unavailable=True):
@@ -14,6 +20,7 @@ def prepare_baseline(monkeypatch, tmp_path, unavailable=True):
 
     metadata = {
         "created_at": "2026-10-21T12:00:00",
+        "algorithm": "SHA-256",
         "profile": "critical",
         "monitored": ["/etc/passwd", "/etc/shadow"],
         "expected_absent": [],
@@ -24,7 +31,9 @@ def prepare_baseline(monkeypatch, tmp_path, unavailable=True):
         json.dumps(
             {
                 "_metadata": metadata,
-                "hashes": {"/etc/passwd": "original-hash"},
+                "hashes": {
+                    "/etc/passwd": _test_digest("original passwd content"),
+                },
             }
         ),
         encoding="utf-8",
@@ -61,7 +70,7 @@ def test_unavailable_file_remains_incomplete(monkeypatch, tmp_path):
 
     def fake_hash(path):
         if path == "/etc/passwd":
-            return "original-hash", None
+            return _test_digest("original passwd content"), None
         return None, "permission denied"
 
     monkeypatch.setattr(integrity, "get_sha256", fake_hash)
@@ -79,8 +88,8 @@ def test_previously_unavailable_file_now_readable(monkeypatch, tmp_path):
 
     def fake_hash(path):
         if path == "/etc/passwd":
-            return "original-hash", None
-        return "new-readable-hash", None
+            return _test_digest("original passwd content"), None
+        return _test_digest("new readable content"), None
 
     monkeypatch.setattr(integrity, "get_sha256", fake_hash)
 
@@ -96,8 +105,8 @@ def test_unexpected_baseline_omission_still_detected(monkeypatch, tmp_path):
 
     def fake_hash(path):
         if path == "/etc/passwd":
-            return "original-hash", None
-        return "readable-but-unrecorded", None
+            return _test_digest("original passwd content"), None
+        return _test_digest("unrecorded content"), None
 
     monkeypatch.setattr(integrity, "get_sha256", fake_hash)
 
@@ -112,7 +121,7 @@ def test_existing_hash_change_remains_detected(monkeypatch, tmp_path):
 
     def fake_hash(path):
         if path == "/etc/passwd":
-            return "modified-hash", None
+            return _test_digest("modified passwd content"), None
         return None, "permission denied"
 
     monkeypatch.setattr(integrity, "get_sha256", fake_hash)
