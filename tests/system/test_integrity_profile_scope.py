@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 from erislite.system import integrity
 
 
@@ -63,3 +65,42 @@ def test_non_normalized_path_rejected():
         "/etc/ssh/../shadow",
         "system",
     )
+
+
+def test_create_baseline_rejects_unknown_profile_before_collection(monkeypatch):
+    collect = Mock()
+    write = Mock()
+    report = Mock()
+    monkeypatch.setattr(integrity, "_collect_targets", collect)
+    monkeypatch.setattr(integrity, "write_private_json", write)
+    monkeypatch.setattr(integrity, "clear_screen", lambda: None)
+    monkeypatch.setattr(integrity, "pause_return", lambda: None)
+    monkeypatch.setattr(integrity.console, "print", report)
+
+    integrity.create_baseline("nonexistent")
+
+    collect.assert_not_called()
+    write.assert_not_called()
+    report.assert_called_once()
+    assert "Unknown integrity profile" in str(report.call_args.args[0])
+
+
+def test_scan_and_validation_reject_unknown_profile_before_read(monkeypatch):
+    read = Mock(side_effect=FileNotFoundError)
+    monkeypatch.setattr(integrity, "open", read, raising=False)
+    monkeypatch.setattr(integrity, "get_os", lambda: "Linux")
+
+    monkeypatch.setattr(integrity, "clear_screen", lambda: None)
+    monkeypatch.setattr(integrity, "pause_return", lambda: None)
+    monkeypatch.setattr(integrity.console, "print", Mock())
+
+    profile = "nonexistent[/]"
+    result = integrity.check_baseline_integrity(profile)
+    scan_result = integrity.scan_integrity(profile, silent=True)
+
+    assert result["status"] == "error"
+    assert result["tags"] == ["baseline_check_error"]
+    assert result["details"] == [f"Unknown integrity profile: {profile!r}"]
+    assert scan_result == result
+    assert integrity.scan_integrity(profile) == result
+    read.assert_not_called()

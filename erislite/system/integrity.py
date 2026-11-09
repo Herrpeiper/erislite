@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Optional, Tuple
 
 from rich import box
+from rich.markup import escape
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
@@ -34,6 +35,9 @@ from erislite.ui.utils import clear_screen, get_os, pause_return, prompt_option
 
 
 def get_baseline_path(profile: str) -> str:
+    if profile not in SCAN_PROFILES:
+        raise ValueError(f"Unknown integrity profile: {profile!r}")
+
     base_dir = os.path.dirname(INTEGRITY_BASELINE_FILE)
 
     return os.path.join(
@@ -212,7 +216,12 @@ def _path_in_profile(path: str, profile: str) -> bool:
 def _load_validated_baseline(profile: str) -> Tuple[dict, Optional[dict]]:
     """Read the baseline once and return its validation result and validated data."""
     try:
-        with open(get_baseline_path(profile), "r", encoding="utf-8") as file:
+        baseline_path = get_baseline_path(profile)
+    except ValueError as exc:
+        return make_result("error", details=[str(exc)], tags=["baseline_check_error"]), None
+
+    try:
+        with open(baseline_path, "r", encoding="utf-8") as file:
             data = json.load(
                 file,
                 object_pairs_hook=_reject_duplicate_json_keys,
@@ -510,7 +519,12 @@ def scan_for_copies(
 
 
 def create_baseline(profile: str = "critical") -> None:
-    baseline_path = get_baseline_path(profile)
+    try:
+        baseline_path = get_baseline_path(profile)
+    except ValueError as exc:
+        console.print(Text(str(exc), style="yellow"))
+        pause_return()
+        return
 
     clear_screen()
     _header(
@@ -607,7 +621,7 @@ def _collect_targets(profile: str) -> Tuple[list[str], list[str]]:
     def _walk_error(exc: OSError) -> None:
         errors.append(str(exc))
 
-    for item in SCAN_PROFILES.get(profile, MONITORED_FILES):
+    for item in SCAN_PROFILES[profile]:
         if os.path.isdir(item):
             for root, _, files in os.walk(
                 item,
@@ -718,12 +732,12 @@ def scan_integrity(
             clear_screen()
             _header(
                 "FILE INTEGRITY",
-                f"Validate files against the baseline • Profile: {profile.capitalize()}",
+                f"Validate files against the baseline • Profile: {escape(profile.capitalize())}",
             )
 
             console.print(
                 Panel.fit(
-                    "\n".join(f"[yellow]{detail}[/]" for detail in baseline_check["details"]),
+                    Text("\n".join(baseline_check["details"]), style="yellow"),
                     title="[bold yellow]BASELINE WARNING[/]",
                     border_style="yellow",
                     box=box.ROUNDED,
