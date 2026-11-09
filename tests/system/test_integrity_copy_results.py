@@ -1,5 +1,7 @@
+import errno
 import hashlib
 import json
+import os
 
 from erislite.system import integrity
 
@@ -89,3 +91,44 @@ def test_clean_silent_scan_stays_ok(monkeypatch, tmp_path):
 
     assert result["status"] == "ok"
     assert "suspicious_file_copy" not in result["tags"]
+
+
+def test_copy_scan_reports_unavailable_directories_and_keeps_findings(monkeypatch, tmp_path):
+    _prepare(monkeypatch, tmp_path)
+    root = tmp_path / "scan"
+    root.mkdir()
+    denied = root / "denied"
+    denied.mkdir()
+    missing = tmp_path / "missing-root"
+    copy = root / "passwd.copy"
+    copy.write_text("original", encoding="utf-8")
+
+    original_scandir = os.scandir
+
+    def scandir_with_permission_error(path):
+        if path == str(denied):
+            raise PermissionError(errno.EACCES, "Permission denied", path)
+        return original_scandir(path)
+
+    original_scan_for_copies = integrity.scan_for_copies
+    scans = []
+
+    def scan_for_copies(baseline):
+        scans.append(baseline)
+        return original_scan_for_copies(baseline, roots=(str(missing), str(root)))
+
+    monkeypatch.setattr(integrity.os, "scandir", scandir_with_permission_error)
+    monkeypatch.setattr(integrity, "scan_for_copies", scan_for_copies)
+    monkeypatch.setattr(integrity, "clear_screen", lambda: None)
+    monkeypatch.setattr(integrity, "pause_return", lambda: None)
+    monkeypatch.setattr(integrity.console, "print", lambda *args, **kwargs: None)
+
+    result = integrity.scan_integrity()
+
+    assert result["status"] == "warning"
+    assert "integrity_scan_incomplete" in result["tags"]
+    assert "suspicious_file_copy" in result["tags"]
+    assert any(f"{missing}: Copy scan incomplete:" in detail for detail in result["details"])
+    assert any(f"{denied}: Copy scan incomplete:" in detail for detail in result["details"])
+    assert any(f"Suspicious copy detected: {copy}" in detail for detail in result["details"])
+    assert len(scans) == 1

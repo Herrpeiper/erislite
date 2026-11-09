@@ -399,6 +399,7 @@ COPY_SCAN_KEYWORDS = (
 # Bound copy scanning to avoid excessive file reads.
 MAX_COPY_BYTES = 4 * 1024 * 1024
 MAX_COPY_CANDIDATES = 2000
+COPY_SCAN_INCOMPLETE_PREFIX = "Copy scan incomplete: "
 
 
 def _hash_regular_file(path: str, max_bytes: int) -> Optional[str]:
@@ -457,22 +458,27 @@ def scan_for_copies(
     flagged = []
     examined = 0
 
+    def record_walk_error(exc: OSError) -> None:
+        flagged.append((exc.filename, f"{COPY_SCAN_INCOMPLETE_PREFIX}{exc.strerror}"))
+
     for root in roots:
         try:
             root_dev = os.stat(root).st_dev
-        except OSError:
+        except OSError as exc:
+            flagged.append((root, f"{COPY_SCAN_INCOMPLETE_PREFIX}{exc.strerror}"))
             continue
 
-        for current, dirs, files in os.walk(root, followlinks=False):
+        for current, dirs, files in os.walk(root, followlinks=False, onerror=record_walk_error):
             # Prune mount points so /home or /run never walks another filesystem.
             kept = []
 
             for name in dirs:
+                path = os.path.join(current, name)
                 try:
-                    if os.lstat(os.path.join(current, name)).st_dev == root_dev:
+                    if os.lstat(path).st_dev == root_dev:
                         kept.append(name)
-                except OSError:
-                    continue
+                except OSError as exc:
+                    flagged.append((path, f"{COPY_SCAN_INCOMPLETE_PREFIX}{exc.strerror}"))
 
             dirs[:] = kept
 
@@ -848,7 +854,7 @@ def scan_integrity(
 
     copies = []
     for path, reason in copy_results:
-        if reason.startswith("Copy scan stopped after "):
+        if reason.startswith((COPY_SCAN_INCOMPLETE_PREFIX, "Copy scan stopped after ")):
             scan_errors.append(f"{path}: {reason}")
         else:
             copies.append((path, reason))
@@ -883,8 +889,6 @@ def scan_integrity(
 
     if silent:
         return result
-
-    copies = scan_for_copies(baseline)
 
     clear_screen()
     _header(
@@ -973,8 +977,6 @@ def scan_integrity(
         )
 
     console.print()
-
-    copies = scan_for_copies(baseline)
 
     if copies:
         copy_table = Table(
