@@ -734,19 +734,18 @@ def scan_integrity(
     missing_candidates = previously_hashed - current_targets
 
     for path in sorted(missing_candidates):
-        if target_errors:
-            rows.append((path, "UNAVAILABLE"))
-            scan_errors.append(f"{path} was not rediscovered, but target collection was incomplete")
-            continue
-
-        if not os.path.lexists(path):
+        try:
+            os.lstat(path)
+        except (FileNotFoundError, NotADirectoryError):
             rows.append((path, "MISSING"))
             issues.append(f"{path} is missing")
+        except OSError as exc:
+            rows.append((path, "UNAVAILABLE"))
+            scan_errors.append(f"{path} could not be inspected: {exc}")
         else:
             rows.append((path, "UNAVAILABLE"))
             scan_errors.append(f"{path} was not rediscovered during collection")
 
-    # Separate loop — not nested in missing_candidates
     for path in targets:
         if path in expected_absent:
             if not os.path.lexists(path):

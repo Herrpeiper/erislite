@@ -348,11 +348,13 @@ def test_scan_integrity_target_collection_failure(
 ):
     baseline_path = tmp_path / "baseline.json"
 
+    inaccessible = str(tmp_path / "inaccessible.conf")
+
     _write_baseline(
         baseline_path,
-        monitored=["/etc/example"],
+        monitored=[inaccessible],
         hashes={
-            "/etc/example": _test_digest("expected content"),
+            inaccessible: _test_digest("expected content"),
         },
     )
 
@@ -360,7 +362,7 @@ def test_scan_integrity_target_collection_failure(
         monkeypatch,
         baseline_path,
     )
-    _patch_critical_profile(monkeypatch, "/etc/example")
+    _patch_critical_profile(monkeypatch, inaccessible)
 
     monkeypatch.setattr(
         integrity,
@@ -377,6 +379,15 @@ def test_scan_integrity_target_collection_failure(
         ),
     )
 
+    original_lstat = os.lstat
+
+    def lstat_with_permission_error(path, *args, **kwargs):
+        if path == inaccessible:
+            raise PermissionError("Permission denied")
+        return original_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(integrity.os, "lstat", lstat_with_permission_error)
+
     result = integrity.scan_integrity(
         profile="critical",
         silent=True,
@@ -387,6 +398,48 @@ def test_scan_integrity_target_collection_failure(
     assert "integrity_scan_incomplete" in result["tags"]
 
     assert any("target collection incomplete" in detail.lower() for detail in result["details"])
+
+
+def test_scan_integrity_reports_deletion_despite_unrelated_collection_error(
+    monkeypatch,
+    tmp_path,
+):
+    monitored_dir = tmp_path / "monitored"
+    monitored_dir.mkdir()
+    deleted = monitored_dir / "deleted.conf"
+    deleted.write_text("original content", encoding="utf-8")
+    inaccessible_dir = tmp_path / "inaccessible"
+    inaccessible_dir.mkdir()
+    baseline_path = tmp_path / "baseline.json"
+
+    _write_baseline(
+        baseline_path,
+        monitored=[str(deleted)],
+        hashes={str(deleted): _test_digest("original content")},
+    )
+    _patch_baseline_path(monkeypatch, baseline_path)
+    _patch_critical_profile(monkeypatch, f"{monitored_dir}/", f"{inaccessible_dir}/")
+    deleted.unlink()
+    monkeypatch.setattr(integrity, "get_os", lambda: "Linux")
+    monkeypatch.setattr(integrity, "scan_for_copies", lambda baseline: [])
+
+    original_walk = os.walk
+
+    def walk_with_permission_error(path, *, onerror):
+        if path == f"{inaccessible_dir}/":
+            onerror(PermissionError(13, "Permission denied", path))
+            return []
+        return original_walk(path, onerror=onerror)
+
+    monkeypatch.setattr(integrity.os, "walk", walk_with_permission_error)
+
+    result = integrity.scan_integrity(profile="critical", silent=True)
+
+    assert result["status"] == "warning"
+    assert "file_integrity_issue" in result["tags"]
+    assert "integrity_scan_incomplete" in result["tags"]
+    assert f"{deleted} is missing" in result["details"]
+    assert any(str(inaccessible_dir) in detail for detail in result["details"])
 
 
 def test_scan_integrity_expected_absent_is_ok(
