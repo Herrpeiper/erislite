@@ -832,8 +832,17 @@ def _load_previous_comparable_sweep(
     if not SWEEP_LOG_DIR.exists():
         return None
 
+    def history_sort_key(path):
+        timestamp = path.name[: len("sweep_log_YYYYMMDD_HHMMSS")]
+        try:
+            modified_ns = path.stat().st_mtime_ns
+        except OSError:
+            modified_ns = 0
+        return timestamp, modified_ns, path.name
+
     paths = sorted(
         SWEEP_LOG_DIR.glob("sweep_log_*.json"),
+        key=history_sort_key,
         reverse=True,
     )
 

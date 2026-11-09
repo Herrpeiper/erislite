@@ -1,4 +1,5 @@
 import json
+import os
 
 from erislite.sweep import threat_sweep
 
@@ -39,3 +40,22 @@ def test_historical_sweep_logs_do_not_collide(monkeypatch, tmp_path):
         assert snapshot["profile"] == "critical"
 
     assert latest_file.exists()
+
+def test_history_picks_newer_write_when_filename_timestamps_match(monkeypatch, tmp_path):
+    monkeypatch.setattr(threat_sweep, "SWEEP_LOG_DIR", tmp_path)
+    earlier = tmp_path / "sweep_log_20261109_160000_ffff.json"
+    later = tmp_path / "sweep_log_20261109_160000_0000.json"
+    previous_second = tmp_path / "sweep_log_20261109_155959_ffff.json"
+
+    for path, marker, modified in (
+        (earlier, "earlier", 1_000_000_000),
+        (later, "later", 2_000_000_000),
+        (previous_second, "previous second", 3_000_000_000),
+    ):
+        snapshot = {"hostname": "test-host", "profile": "critical", "marker": marker}
+        path.write_text(json.dumps(snapshot), encoding="utf-8")
+        os.utime(path, ns=(modified, modified))
+
+    result = threat_sweep._load_previous_comparable_sweep("test-host", "critical")
+
+    assert result["marker"] == "later"
