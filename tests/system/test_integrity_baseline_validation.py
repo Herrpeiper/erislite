@@ -507,5 +507,5 @@ def test_scan_uses_validated_baseline_after_path_replacement(
     result = integrity.scan_integrity(profile="critical", silent=True)
 
     assert result["status"] == "warning"
-    assert result["details"] == [f'{env["original"]} was modified']
+    assert result["details"] == [f"{env['original']} was modified"]
     assert baseline_reads == [str(baseline_path)]

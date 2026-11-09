@@ -41,6 +41,7 @@ def test_historical_sweep_logs_do_not_collide(monkeypatch, tmp_path):
 
     assert latest_file.exists()
 
+
 def test_history_picks_newer_write_when_filename_timestamps_match(monkeypatch, tmp_path):
     monkeypatch.setattr(threat_sweep, "SWEEP_LOG_DIR", tmp_path)
     earlier = tmp_path / "sweep_log_20261109_160000_ffff.json"
