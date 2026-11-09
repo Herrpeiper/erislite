@@ -106,6 +106,29 @@ def test_baseline_paths_are_profile_specific():
     assert user.endswith("integrity_baseline_user.json")
 
 
+def test_create_baseline_requires_at_least_one_hash(monkeypatch, tmp_path):
+    monitored = tmp_path / "monitored.conf"
+    monitored.write_text("trusted content", encoding="utf-8")
+    baseline_path = tmp_path / "baseline.json"
+    _patch_baseline_path(monkeypatch, baseline_path)
+    _patch_critical_profile(monkeypatch, monitored)
+    monkeypatch.setattr(integrity, "clear_screen", lambda: None)
+    monkeypatch.setattr(integrity, "_header", lambda *args: None)
+    monkeypatch.setattr(integrity, "pause_return", lambda: None)
+
+    integrity.create_baseline()
+    assert integrity.check_baseline_integrity()["status"] == "ok"
+    original = baseline_path.read_bytes()
+
+    monitored.unlink()
+    integrity.create_baseline()
+    assert baseline_path.read_bytes() == original
+
+    baseline_path.unlink()
+    integrity.create_baseline()
+    assert not baseline_path.exists()
+
+
 def test_collect_targets_keeps_missing_explicit_file(
     monkeypatch,
     tmp_path,

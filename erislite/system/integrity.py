@@ -531,6 +531,18 @@ def create_baseline(profile: str = "critical") -> None:
         else:
             unavailable.append(f"{path}: {hash_error or 'unavailable'}")
 
+    if not baseline:
+        console.print(
+            Panel.fit(
+                "[yellow]No readable file hashes were collected. Baseline creation cancelled.[/]",
+                title="[bold yellow]BASELINE CREATION FAILED[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+        pause_return()
+        return
+
     payload = {
         "_metadata": {
             "created_at": datetime.now().isoformat(),
