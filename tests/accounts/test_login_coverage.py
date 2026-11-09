@@ -1,5 +1,8 @@
 """Regression tests for EL-002: authentication coverage scoring."""
 
+from subprocess import CompletedProcess
+from unittest.mock import Mock, mock_open
+
 import pytest
 
 from erislite.accounts import login_audit
@@ -134,3 +137,34 @@ def test_total_authentication_collection_failure(monkeypatch):
 
     assert score == 0
     assert maximum == 0
+
+
+@pytest.mark.parametrize(
+    ("journal_output", "journal_status", "auth_error", "expected_matches", "incomplete"),
+    [
+        ("Accepted publickey for alice", 0, None, ["auth"], False),
+        ("Failed password for bob from 192.0.2.1 port 123", 0, None, ["journal"], False),
+        ("Accepted publickey for alice", 0, FileNotFoundError(), [], False),
+        ("", 0, FileNotFoundError(), [], True),
+        ("journal error", 1, None, ["auth"], False),
+    ],
+)
+def test_failed_login_source_fallback(
+    monkeypatch, journal_output, journal_status, auth_error, expected_matches, incomplete
+):
+    journal_attempt = "Failed password for bob from 192.0.2.1 port 123"
+    auth_attempt = "Failed password for alice from 192.0.2.2 port 456"
+    journal = Mock(return_value=CompletedProcess([], journal_status, stdout=journal_output))
+    read_auth = mock_open(read_data=f"sshd: {auth_attempt} ssh2")
+    read_auth.side_effect = auth_error
+
+    monkeypatch.setattr(login_audit, "run_command", journal)
+    monkeypatch.setattr(login_audit, "open", read_auth, raising=False)
+
+    matches, error = login_audit.get_failed_logins()
+
+    attempts = {"journal": journal_attempt, "auth": auth_attempt}
+    assert matches == [attempts[source] for source in expected_matches]
+    assert (error is not None) is incomplete
+    if expected_matches == ["journal"]:
+        read_auth.assert_not_called()

@@ -24,6 +24,7 @@ from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_os, pause_return
 
 FAILED_LOGIN_THRESHOLD = 3
+FAILED_LOGIN_PATTERN = re.compile(r"Failed password for.*? from .*? port \d+")
 
 ROOT_SHELLS = {
     "/bin/bash",
@@ -53,15 +54,15 @@ def _header() -> None:
 
 
 def get_failed_logins() -> Tuple[list[str], Optional[str]]:
-    output = ""
+    journal_output = ""
 
     try:
         result = run_command(
-            ["journalctl", "-u", "ssh", "-n", "100"],
+            ["journalctl", "--quiet", "-u", "ssh", "-n", "100"],
         )
 
         if result.returncode == 0:
-            output = result.stdout
+            journal_output = result.stdout
 
     except (
         CommandResolutionError,
@@ -70,25 +71,23 @@ def get_failed_logins() -> Tuple[list[str], Optional[str]]:
     ):
         pass
 
-    if not output:
-        try:
-            with open(
-                "/var/log/auth.log",
-                "r",
-                encoding="utf-8",
-                errors="ignore",
-            ) as file:
-                output = file.read()
+    matches = FAILED_LOGIN_PATTERN.findall(journal_output)
+    if matches:
+        return matches, None
 
-        except OSError as exc:
-            return [], f"Failed login data unavailable: {exc}"
+    try:
+        with open(
+            "/var/log/auth.log",
+            "r",
+            encoding="utf-8",
+            errors="ignore",
+        ) as file:
+            return FAILED_LOGIN_PATTERN.findall(file.read()), None
 
-    matches = re.findall(
-        r"Failed password for.*? from .*? port \d+",
-        output,
-    )
-
-    return matches, None
+    except OSError as exc:
+        if journal_output.strip():
+            return [], None
+        return [], f"Failed login data unavailable: {exc}"
 
 
 def get_recent_logins() -> Tuple[list[str], Optional[str]]:
