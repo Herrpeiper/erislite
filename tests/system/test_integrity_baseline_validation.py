@@ -478,3 +478,34 @@ def test_invalid_baseline_blocks_integrity_scan(
     assert result["status"] != "ok"
     assert "baseline_tamper" in result["tags"]
     assert "file_integrity_issue" not in result["tags"]
+
+
+def test_scan_uses_validated_baseline_after_path_replacement(
+    baseline_environment,
+    monkeypatch,
+):
+    env = baseline_environment
+    baseline_path = env["path"]
+    replacement = baseline_path.with_name("replacement.json")
+    replacement.write_text("{}", encoding="utf-8")
+    with open(env["original"], "w", encoding="utf-8") as file:
+        file.write("modified after baseline creation")
+    baseline_reads = []
+
+    def open_and_replace(path, *args, **kwargs):
+        file = open(path, *args, **kwargs)
+        if path == str(baseline_path):
+            baseline_reads.append(path)
+            if len(baseline_reads) == 1:
+                replacement.replace(baseline_path)
+        return file
+
+    monkeypatch.setattr(integrity, "open", open_and_replace, raising=False)
+    monkeypatch.setattr(integrity, "get_os", lambda: "Linux")
+    monkeypatch.setattr(integrity, "scan_for_copies", lambda baseline: [])
+
+    result = integrity.scan_integrity(profile="critical", silent=True)
+
+    assert result["status"] == "warning"
+    assert result["details"] == [f'{env["original"]} was modified']
+    assert baseline_reads == [str(baseline_path)]

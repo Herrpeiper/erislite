@@ -209,36 +209,53 @@ def _path_in_profile(path: str, profile: str) -> bool:
     return False
 
 
-def check_baseline_integrity(profile: str = "critical") -> dict:
-    """Validate baseline structure, membership, and SHA-256 records."""
-    baseline_path = get_baseline_path(profile)
-
-    if not os.path.exists(baseline_path):
-        return make_result(
-            "error",
-            details=[f"{profile.capitalize()} baseline file missing"],
-            tags=["baseline_missing"],
-        )
-
+def _load_validated_baseline(profile: str) -> Tuple[dict, Optional[dict]]:
+    """Read the baseline once and return its validation result and validated data."""
     try:
-        with open(baseline_path, "r", encoding="utf-8") as file:
+        with open(get_baseline_path(profile), "r", encoding="utf-8") as file:
             data = json.load(
                 file,
                 object_pairs_hook=_reject_duplicate_json_keys,
             )
-    except (ValueError, TypeError) as exc:
-        return make_result(
-            "warning",
-            details=[f"Baseline JSON validation failed: {exc}"],
-            tags=["baseline_tamper"],
+    except FileNotFoundError:
+        return (
+            make_result(
+                "error",
+                details=[f"{profile.capitalize()} baseline file missing"],
+                tags=["baseline_missing"],
+            ),
+            None,
         )
-    except (OSError, UnicodeError) as exc:
-        return make_result(
-            "error",
-            details=[f"Failed to read baseline: {exc}"],
-            tags=["baseline_check_error"],
+    except (ValueError, TypeError) as exc:
+        return (
+            make_result(
+                "warning",
+                details=[f"Baseline JSON validation failed: {exc}"],
+                tags=["baseline_tamper"],
+            ),
+            None,
+        )
+    except OSError as exc:
+        return (
+            make_result(
+                "error",
+                details=[f"Failed to read baseline: {exc}"],
+                tags=["baseline_check_error"],
+            ),
+            None,
         )
 
+    result = _validate_baseline_data(data, profile)
+    return result, data if result["status"] == "ok" else None
+
+
+def check_baseline_integrity(profile: str = "critical") -> dict:
+    """Validate baseline structure, membership, and SHA-256 records."""
+    result, _ = _load_validated_baseline(profile)
+    return result
+
+
+def _validate_baseline_data(data: object, profile: str) -> dict:
     issues = []
 
     if not isinstance(data, dict):
@@ -652,9 +669,9 @@ def scan_integrity(
 
         return make_result("unsupported")
 
-    baseline_path = get_baseline_path(profile)
+    baseline_check, baseline_data = _load_validated_baseline(profile)
 
-    if not os.path.exists(baseline_path):
+    if "baseline_missing" in baseline_check["tags"]:
         if not silent:
             clear_screen()
             _header(
@@ -676,15 +693,9 @@ def scan_integrity(
 
             pause_return()
 
-        return make_result(
-            "error",
-            details=[f"{profile.capitalize()} baseline file missing"],
-            tags=["baseline_missing"],
-        )
+        return baseline_check
 
-    baseline_check = check_baseline_integrity(profile)
-
-    if baseline_check["status"] != "ok":
+    if baseline_data is None:
         if not silent:
             clear_screen()
             _header(
@@ -705,26 +716,11 @@ def scan_integrity(
 
         return baseline_check
 
-    try:
-        with open(
-            baseline_path,
-            "r",
-            encoding="utf-8",
-        ) as file:
-            baseline_data = json.load(file)
-
-        baseline = baseline_data.get("hashes", {})
-        metadata = baseline_data.get("_metadata", {})
-        expected_absent = set(metadata.get("expected_absent", []))
-        baseline_unavailable = _baseline_unavailable_paths(metadata)
-        baseline_monitored = set(metadata.get("monitored", []))
-
-    except Exception as e:
-        return make_result(
-            "error",
-            details=[f"Unable to load baseline: {e}"],
-            tags=["file_integrity_issue"],
-        )
+    baseline = baseline_data["hashes"]
+    metadata = baseline_data["_metadata"]
+    expected_absent = set(metadata.get("expected_absent", []))
+    baseline_unavailable = _baseline_unavailable_paths(metadata)
+    baseline_monitored = set(metadata.get("monitored", []))
 
     targets, target_errors = _collect_targets(profile)
 
