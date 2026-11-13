@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+from typing import NamedTuple, Optional
 
 from rich import box
 from rich.panel import Panel
@@ -102,7 +103,11 @@ def parse_listeners():
             ["ss", "-tulnp"],
         )
 
+        if result.returncode != 0:
+            raise RuntimeError("Listener inspection command failed")
+
         flagged = []
+
         canary_ports = active_canary_ports()
 
         for line in result.stdout.splitlines()[1:]:
@@ -166,6 +171,29 @@ def parse_listeners():
         ]
 
 
+class ListenerCollection(NamedTuple):
+    """Result of a listener collection attempt."""
+
+    observations: list
+    error: Optional[str] = None
+
+
+def collect_listeners() -> ListenerCollection:
+    """Collect listeners with an explicit success/error result."""
+    observations = parse_listeners()
+
+    if observations and observations[0][0] == "error":
+        return ListenerCollection(
+            observations=[],
+            error=observations[0][2],
+        )
+
+    return ListenerCollection(
+        observations=observations,
+        error=None,
+    )
+
+
 def _is_suspicious(flags, is_whitelisted: bool) -> bool:
     has_lolbin = any("LOLBin" in flag for flag in flags)
     has_external = "External Bind" in flags
@@ -177,7 +205,10 @@ def _severity(flags, is_whitelisted: bool) -> str:
     return "[yellow]WARNING[/]" if _is_suspicious(flags, is_whitelisted) else "[green]INFO[/]"
 
 
-def run_listener_scan(silent: bool = False):
+def run_listener_scan(
+    silent: bool = False,
+    collection: Optional[ListenerCollection] = None,
+):
     if get_os() != "Linux":
         if not silent:
             clear_screen()
@@ -195,7 +226,33 @@ def run_listener_scan(silent: bool = False):
 
         return make_result("unsupported")
 
-    flagged = parse_listeners()
+    if collection is None:
+        collection = collect_listeners()
+
+    if collection.error is not None:
+        result = make_result(
+            "error",
+            details=["Listener inspection could not be completed"],
+            tags=["listener_check_failed"],
+        )
+
+        if not silent:
+            clear_screen()
+            _header()
+            console.print(
+                Panel.fit(
+                    "[red]Listener inspection failed.[/]\n"
+                    "[dim]Results are unavailable; "
+                    "the host has not been cleared.[/]",
+                    title="[bold red]INSPECTION ERROR[/]",
+                    border_style="red",
+                )
+            )
+            pause_return()
+
+        return result
+
+    flagged = collection.observations
 
     suspicious = sum(
         1 for _, _, _, flags, is_whitelisted in flagged if _is_suspicious(flags, is_whitelisted)
@@ -302,3 +359,44 @@ def run_listener_scan(silent: bool = False):
         details=[f"{suspicious} suspicious listener(s) detected ({len(flagged)} total notable)"],
         tags=["suspicious_listener"],
     )
+
+
+def run_listener_intelligence(hostname: str):
+    """Return legacy scan results and intelligence findings.
+
+    Collect listener observations once and use the same
+    collection for both consumers.
+    """
+    if get_os() != "Linux":
+        return make_result("unsupported"), []
+
+    collection = collect_listeners()
+
+    result = run_listener_scan(
+        silent=True,
+        collection=collection,
+    )
+
+    if collection.error is not None:
+        return result, []
+
+    from erislite.intelligence.adapters.listeners import (
+        adapt_listeners,
+    )
+
+    try:
+        findings = adapt_listeners(
+            collection.observations,
+            hostname=hostname,
+        )
+    except ValueError:
+        return (
+            make_result(
+                "error",
+                details=["Listener intelligence conversion failed"],
+                tags=["listener_intelligence_failed"],
+            ),
+            [],
+        )
+
+    return result, findings

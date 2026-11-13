@@ -9,6 +9,7 @@
 
 import json
 from datetime import datetime
+from uuid import uuid4
 
 from rich import box
 from rich.panel import Panel
@@ -24,6 +25,8 @@ from erislite.config.settings import (
     SWEEP_PROFILES,
 )
 from erislite.containers import docker
+from erislite.intelligence.adapters.listeners import adapt_listeners
+from erislite.intelligence.evidence import EvidenceSensitivity
 from erislite.network import firewall, hosts, listeners
 from erislite.persistence import backdoors, cron, suid, world_writable
 from erislite.results import make_result, validate_result
@@ -32,6 +35,8 @@ from erislite.system import integrity, kernel_modules, processes
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, get_analyst_id, pause_return
 from erislite.vulnerability import cve_checker
+
+SCORING_SCHEMA_VERSION = 1
 
 RISK_WEIGHTS = {
     "integrity": 20,
@@ -58,6 +63,137 @@ NON_SCORING_MODULES = {"cve"}
 
 # A module that could not run says nothing about risk on this host.
 UNSCORED_STATUSES = {"unsupported"}
+
+
+def assessment_label(
+    risk_percent: int,
+    info_present: bool,
+    coverage: dict,
+) -> tuple:
+    """Select an assessment label without hiding incomplete coverage."""
+    if coverage["failed"] > 0 or coverage.get("partial", 0) > 0:
+        return "yellow", "Incomplete Assessment"
+
+    if coverage["complete"] == 0:
+        return "yellow", "Not Assessed"
+
+    if risk_percent == 0:
+        return (
+            "grey37",
+            "Secure / Informational" if info_present else "Secure",
+        )
+
+    if risk_percent <= 30:
+        return "green", "Low"
+
+    if risk_percent <= 70:
+        return "yellow", "Moderate"
+
+    return "red", "High"
+
+
+def inspection_coverage(module: str, result: dict) -> str:
+    """Classify inspection completeness separately from security risk."""
+    status = result.get("status", "").lower()
+    tags = set(result.get("tags", []))
+
+    if status == "unsupported":
+        return "unsupported"
+
+    if module == "listeners" and status == "error" and "listener_check_failed" in tags:
+        return "failed"
+
+    if module == "integrity":
+        if tags & {
+            "baseline_missing",
+            "baseline_check_error",
+            "baseline_tamper",
+        }:
+            return "failed"
+
+        if "integrity_scan_incomplete" in tags:
+            return "partial"
+
+    if module == "login":
+        if "auth_audit_failed" in tags:
+            return "failed"
+
+        if "auth_audit_incomplete" in tags:
+            return "partial"
+
+    if module == "firewall":
+        if "firewall_permission_denied" in tags:
+            return "partial"
+
+        if "firewall_check_failed" in tags:
+            return "failed"
+
+    # A generic collection failure must belong to this module.
+    if status == "error" and f"{module}_check_failed" in tags:
+        return "failed"
+
+    return "complete"
+
+
+def contributes_detected_risk(module: str, result: dict) -> bool:
+    """Determine whether a module contributes detected risk points."""
+    status = result.get("status", "").lower()
+
+    if status not in {"warning", "error", "issue"}:
+        return False
+
+    coverage = inspection_coverage(module, result)
+
+    if coverage in {"unsupported", "failed"}:
+        return False
+
+    if coverage == "partial":
+        tags = set(result.get("tags", []))
+
+        confirmed_risk_tags = {
+            "integrity": {
+                "file_integrity_issue",
+                "suspicious_file_copy",
+            },
+            "login": {"auth_failures", "uid0_shells"},
+        }
+
+        return bool(tags & confirmed_risk_tags.get(module, set()))
+
+    return True
+
+
+def summarize_inspection_coverage(results: dict) -> dict:
+    """Summarize inspection coverage for scoring modules."""
+    summary = {
+        "complete": 0,
+        "partial": 0,
+        "failed": 0,
+        "unsupported": 0,
+        "total": 0,
+        "partial_modules": [],
+        "failed_modules": [],
+    }
+
+    for module, result in results.items():
+        if module not in RISK_WEIGHTS:
+            continue
+
+        coverage = inspection_coverage(module, result)
+
+        summary["total"] += 1
+        summary[coverage] += 1
+
+        if coverage == "partial":
+            summary["partial_modules"].append(module)
+        elif coverage == "failed":
+            summary["failed_modules"].append(module)
+
+    summary["partial_modules"].sort()
+    summary["failed_modules"].sort()
+
+    return summary
+
 
 # 🧠 Tag-to-Insight Mapping
 THREAT_TAG_MAP = {
@@ -107,38 +243,204 @@ THREAT_TAG_MAP = {
         "Firewall state could not be fully inspected with the current privileges."
     ),
     "firewall_check_failed": "One or more firewall inspection commands failed.",
+    "suspicious_file_copy": (
+        "An exact copy of a monitored file was detected in "
+        "a scanned location; investigate whether it was authorized."
+    ),
     "auth_audit_incomplete": (
         "One or more authentication audit data sources could not be inspected."
     ),
     "kernel_module_inspection_incomplete": (
         "One or more loaded kernel modules could not be fully inspected."
     ),
+    "baseline_missing": (
+        "An integrity baseline is unavailable; file changes "
+        "cannot be assessed until a baseline is created."
+    ),
+    "baseline_check_error": ("The stored integrity baseline could not be validated."),
+    "baseline_tamper": (
+        "Integrity baseline validation reported inconsistencies; "
+        "review the baseline before trusting comparisons."
+    ),
+    "integrity_scan_incomplete": (
+        "Some monitored files could not be inspected; integrity coverage is incomplete."
+    ),
 }
 
 
 def calculate_risk_score(results: dict):
+    """Score verified risk without penalizing unavailable inspections."""
     total_score = 0
     breakdown = {}
     max_score = 0
 
-    for module in results:
-        if module in RISK_WEIGHTS:
-            weight = RISK_WEIGHTS[module]
-            status = results[module].get("status", "").lower()
+    for module, result in results.items():
+        if module not in RISK_WEIGHTS:
+            continue
 
-            if status in UNSCORED_STATUSES:
-                breakdown[module] = 0
-                continue
+        weight = RISK_WEIGHTS[module]
+        coverage = inspection_coverage(module, result)
 
-            max_score += weight
+        if coverage in {"unsupported", "failed"}:
+            breakdown[module] = 0
+            continue
 
-            if status in ("warning", "error", "issue"):
-                total_score += weight
-                breakdown[module] = weight
-            else:
-                breakdown[module] = 0
+        # Unverified portions cannot be treated as assessed.
+        # A partial module with confirmed risk remains in
+        # the score so that its finding is not suppressed.
+        if coverage == "partial" and not contributes_detected_risk(module, result):
+            breakdown[module] = 0
+            continue
+
+        max_score += weight
+
+        if contributes_detected_risk(module, result):
+            total_score += weight
+            breakdown[module] = weight
+        else:
+            breakdown[module] = 0
 
     return total_score, breakdown, max_score
+
+
+def compare_historical_scores(current: dict, previous: dict) -> dict:
+    """Compare risk scores only when their scoring scope matches.
+
+    Older snapshots without coverage metadata remain readable,
+    but their numerical scores are not assumed comparable.
+    """
+    unavailable = {
+        "comparable": False,
+        "reason": None,
+        "previous_percent": None,
+        "current_percent": None,
+        "delta": None,
+    }
+
+    required = (
+        "scoring_schema_version",
+        "scored_modules",
+        "coverage",
+        "risk_score",
+        "risk_max",
+        "risk_percent",
+        "results",
+    )
+
+    if any(key not in snapshot for snapshot in (current, previous) for key in required):
+        return {
+            **unavailable,
+            "reason": "Historical coverage metadata unavailable",
+        }
+
+    if (
+        current["scoring_schema_version"] != SCORING_SCHEMA_VERSION
+        or previous["scoring_schema_version"] != SCORING_SCHEMA_VERSION
+    ):
+        return {
+            **unavailable,
+            "reason": "Scoring methodology differs or is unsupported",
+        }
+
+    current_modules = current["scored_modules"]
+    previous_modules = previous["scored_modules"]
+
+    if (
+        not isinstance(current_modules, list)
+        or not isinstance(previous_modules, list)
+        or any(
+            not isinstance(module, str) or module not in RISK_WEIGHTS
+            for module in current_modules + previous_modules
+        )
+        or len(set(current_modules)) != len(current_modules)
+        or len(set(previous_modules)) != len(previous_modules)
+    ):
+        return {
+            **unavailable,
+            "reason": "Invalid scored-module metadata",
+        }
+
+    if set(current_modules) != set(previous_modules):
+        return {
+            **unavailable,
+            "reason": "Different modules contributed to risk scoring",
+        }
+
+    for snapshot in (current, previous):
+        if not isinstance(snapshot["coverage"], dict):
+            return {
+                **unavailable,
+                "reason": "Invalid coverage metadata",
+            }
+
+        if not isinstance(snapshot["results"], dict):
+            return {
+                **unavailable,
+                "reason": "Invalid module results",
+            }
+
+        expected_coverage = summarize_inspection_coverage(snapshot["results"])
+
+        if snapshot["coverage"] != expected_coverage:
+            return {
+                **unavailable,
+                "reason": "Saved coverage metadata is inconsistent",
+            }
+
+        expected_score, _, expected_max = calculate_risk_score(snapshot["results"])
+
+        if (
+            type(snapshot["risk_score"]) is not int
+            or type(snapshot["risk_max"]) is not int
+            or type(snapshot["risk_percent"]) is not int
+            or snapshot["risk_score"] != expected_score
+            or snapshot["risk_max"] != expected_max
+            or snapshot["risk_percent"]
+            != (round(expected_score / expected_max * 100) if expected_max else 0)
+            or set(snapshot["scored_modules"])
+            != {
+                module
+                for module, result in snapshot["results"].items()
+                if module in RISK_WEIGHTS
+                and inspection_coverage(module, result) not in {"failed", "unsupported"}
+                and (
+                    inspection_coverage(module, result) == "complete"
+                    or contributes_detected_risk(module, result)
+                )
+            }
+        ):
+            return {
+                **unavailable,
+                "reason": "Saved score metadata is inconsistent",
+            }
+
+    current_coverage = {
+        module: inspection_coverage(module, result)
+        for module, result in current["results"].items()
+        if module in RISK_WEIGHTS
+    }
+    previous_coverage = {
+        module: inspection_coverage(module, result)
+        for module, result in previous["results"].items()
+        if module in RISK_WEIGHTS
+    }
+
+    if current_coverage != previous_coverage:
+        return {
+            **unavailable,
+            "reason": "Inspection coverage changed between sweeps",
+        }
+
+    current_percent = current["risk_percent"]
+    previous_percent = previous["risk_percent"]
+
+    return {
+        "comparable": True,
+        "reason": None,
+        "previous_percent": previous_percent,
+        "current_percent": current_percent,
+        "delta": current_percent - previous_percent,
+    }
 
 
 def prioritize_findings(results: dict) -> list:
@@ -160,6 +462,9 @@ def prioritize_findings(results: dict) -> list:
         status = result.get("status", "").lower()
 
         if status not in status_priority:
+            continue
+
+        if not contributes_detected_risk(module, result):
             continue
 
         findings.append(
@@ -224,6 +529,58 @@ def run_module_check(module: str, check) -> dict:
     return result
 
 
+def run_listener_intelligence_check(hostname: str):
+    """Collect listeners once, preserving the legacy result.
+
+    Returns:
+        (module_result, intelligence_findings, conversion_error)
+    """
+    if listeners.get_os() != "Linux":
+        return make_result("unsupported"), [], None
+
+    try:
+        collection = listeners.collect_listeners()
+
+        result = listeners.run_listener_scan(
+            silent=True,
+            collection=collection,
+        )
+    except Exception:
+        return (
+            make_result(
+                "error",
+                details=["Listener inspection failed"],
+                tags=["listener_check_failed"],
+            ),
+            [],
+            None,
+        )
+
+    if not validate_result(result):
+        return (
+            make_result(
+                "error",
+                details=["Listener check returned an invalid result"],
+                tags=["listener_check_failed"],
+            ),
+            [],
+            None,
+        )
+
+    if collection.error is not None:
+        return result, [], None
+
+    try:
+        findings = adapt_listeners(
+            collection.observations,
+            hostname=hostname,
+        )
+    except (ValueError, TypeError):
+        return result, [], "Listener intelligence conversion failed"
+
+    return result, findings, None
+
+
 def run_sweep(user_profile, sweep_profile="standard"):
     clear_screen()
     _render_header(user_profile, sweep_profile)
@@ -233,8 +590,30 @@ def run_sweep(user_profile, sweep_profile="standard"):
     profiles = SWEEP_PROFILES
 
     results = {}
+    intelligence_findings = None
+    intelligence_errors = []
+
+    hostname = user_profile.get(
+        "hostname",
+        "unknown",
+    )
 
     for module in profiles[sweep_profile]:
+        if module == "listeners":
+            (
+                listener_result,
+                listener_findings,
+                conversion_error,
+            ) = run_listener_intelligence_check(hostname)
+
+            results[module] = listener_result
+            intelligence_findings = listener_findings
+
+            if conversion_error:
+                intelligence_errors.append(conversion_error)
+
+            continue
+
         check = SWEEP_CHECKS.get(module)
 
         if check is not None:
@@ -268,12 +647,25 @@ def run_sweep(user_profile, sweep_profile="standard"):
             "resolved": [],
         }
 
+    score_comparison = None
+
+    if previous is not None:
+        current_metadata = build_score_metadata(results)
+
+        score_comparison = compare_historical_scores(
+            current_metadata,
+            previous,
+        )
+
     _display_results(
         results,
         sweep_profile,
         user_profile,
         changes,
         comparison_available=previous is not None,
+        intelligence_findings=intelligence_findings,
+        intelligence_errors=intelligence_errors,
+        score_comparison=score_comparison,
     )
 
     _save_sweep(
@@ -310,24 +702,88 @@ def _finding_signals(results: dict) -> set:
     return signals
 
 
+def _comparison_unavailable(
+    module: str,
+    current_results: dict,
+    previous_results: dict,
+) -> bool:
+    """Identify modules whose historical state cannot be compared."""
+    if module not in current_results or module not in previous_results:
+        return True
+
+    if module in current_results:
+        coverage = inspection_coverage(
+            module,
+            current_results[module],
+        )
+        if coverage != "complete":
+            return True
+
+    if module in previous_results:
+        coverage = inspection_coverage(
+            module,
+            previous_results[module],
+        )
+        if coverage != "complete":
+            return True
+
+    return False
+
+
 def compare_sweep_results(
     current_results: dict,
     previous_results: dict,
 ) -> dict:
-    """
-    Compare two comparable sweeps.
+    """Compare sweeps without treating unavailable data as resolution."""
+    comparable_current = {}
+    comparable_previous = {}
+    unverified = set()
 
-    Returns NEW, PERSISTING, and RESOLVED finding signals.
-    """
-    current = _finding_signals(current_results)
-    previous = _finding_signals(previous_results)
+    modules = set(current_results) | set(previous_results)
 
-    return {
+    for module in modules:
+        if _comparison_unavailable(
+            module,
+            current_results,
+            previous_results,
+        ):
+            # Retain actionable signals from whichever side
+            # actually completed its inspection.
+            if module in current_results:
+                current = current_results[module]
+                if inspection_coverage(module, current) == "complete":
+                    unverified.update(_finding_signals({module: current}))
+
+            if module in previous_results:
+                previous = previous_results[module]
+                if inspection_coverage(module, previous) == "complete":
+                    unverified.update(_finding_signals({module: previous}))
+
+            continue
+
+        if module in current_results:
+            comparable_current[module] = current_results[module]
+
+        if module in previous_results:
+            comparable_previous[module] = previous_results[module]
+
+    current = _finding_signals(comparable_current)
+    previous = _finding_signals(comparable_previous)
+
+    changes = {
         "new": sorted(current - previous),
         "persisting": sorted(current & previous),
         "resolved": sorted(previous - current),
-        "changed": _changed_findings(current_results, previous_results),
+        "changed": _changed_findings(
+            comparable_current,
+            comparable_previous,
+        ),
     }
+
+    if unverified:
+        changes["unverified"] = sorted(unverified)
+
+    return changes
 
 
 def _changed_findings(current_results: dict, previous_results: dict) -> list:
@@ -376,8 +832,17 @@ def _load_previous_comparable_sweep(
     if not SWEEP_LOG_DIR.exists():
         return None
 
+    def history_sort_key(path):
+        timestamp = path.name[: len("sweep_log_YYYYMMDD_HHMMSS")]
+        try:
+            modified_ns = path.stat().st_mtime_ns
+        except OSError:
+            modified_ns = 0
+        return timestamp, modified_ns, path.name
+
     paths = sorted(
         SWEEP_LOG_DIR.glob("sweep_log_*.json"),
+        key=history_sort_key,
         reverse=True,
     )
 
@@ -410,7 +875,16 @@ def _load_previous_comparable_sweep(
     return None
 
 
-def _display_results(results, sweep_profile, user_profile, changes, comparison_available=False):
+def _display_results(
+    results,
+    sweep_profile,
+    user_profile,
+    changes,
+    comparison_available=False,
+    intelligence_findings=None,
+    intelligence_errors=None,
+    score_comparison=None,
+):
     label_map = {
         "integrity": "Integrity",
         "firewall": "Firewall Status",
@@ -461,7 +935,14 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
 
     for module, result in results.items():
         details = result.get("details", [])
-        detail = details[0] if details else "No issues detected"
+        if details:
+            detail = details[0]
+        elif result.get("status") == "unsupported":
+            detail = "Inspection not supported"
+        elif result.get("status") == "error":
+            detail = "Inspection failed"
+        else:
+            detail = "No issues detected"
 
         table.add_row(
             label_map.get(module, module.title()),
@@ -480,23 +961,26 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
         for r in results.values()
     )
 
-    if percent == 0:
-        color = "grey37"
-        risk_label = "Secure / Informational" if info_present else "Secure"
-    elif percent <= 30:
-        color = "green"
-        risk_label = "Low"
-    elif percent <= 70:
-        color = "yellow"
-        risk_label = "Moderate"
-    else:
-        color = "red"
-        risk_label = "High"
+    coverage = summarize_inspection_coverage(results)
+
+    color, risk_label = assessment_label(
+        percent,
+        info_present,
+        coverage,
+    )
 
     risk_body = (
-        f"[dim]Risk Level:[/] [bold {color}]{risk_label}[/]   "
-        f"[dim]Score:[/] [bold {color}]{score}/{max_possible}[/]   "
-        f"[dim]Rating:[/] [bold {color}]{percent}%[/]"
+        f"[dim]Assessment:[/] [bold {color}]{risk_label}[/]   "
+        f"[dim]Detected Risk:[/] [bold {color}]"
+        f"{score}/{max_possible}[/]   "
+        f"[dim]Scored Rating:[/] [bold {color}]{percent}%[/]\n"
+        f"[dim]Coverage:[/] "
+        f"[white]{coverage['complete']}/{coverage['total']}[/] "
+        f"complete   "
+        f"[dim]Partial:[/] [yellow]{coverage['partial']}[/]   "
+        f"[dim]Failed:[/] [yellow]{coverage['failed']}[/]   "
+        f"[dim]Unsupported:[/] "
+        f"[white]{coverage['unsupported']}[/]"
     )
 
     console.print(
@@ -507,6 +991,32 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
             box=box.ROUNDED,
         )
     )
+
+    if coverage["failed"] or coverage["partial"]:
+        coverage_details = []
+
+        if coverage["failed_modules"]:
+            coverage_details.append("Failed: " + ", ".join(coverage["failed_modules"]))
+
+        if coverage["partial_modules"]:
+            coverage_details.append("Partial: " + ", ".join(coverage["partial_modules"]))
+
+        console.print()
+        console.print(
+            Panel.fit(
+                Text(
+                    "One or more security inspections were incomplete.\n"
+                    + "\n".join(coverage_details)
+                    + "\nUnverified conditions are not treated as "
+                    "confirmed security risks. "
+                    "Risk scoring may exclude unavailable checks, "
+                    "and historical findings remain unverified."
+                ),
+                title="[bold yellow]INCOMPLETE COVERAGE[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
 
     contributors = [(module, points) for module, points in breakdown.items() if points > 0]
 
@@ -540,6 +1050,12 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
             )
 
         console.print(breakdown_table)
+
+    if intelligence_findings is not None:
+        _display_intelligence_findings(
+            intelligence_findings,
+            intelligence_errors,
+        )
 
     priorities = prioritize_findings(results)
 
@@ -637,6 +1153,14 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
             ),
         )
 
+        if changes.get("unverified"):
+            change_rows += (
+                (
+                    "[yellow]UNVERIFIED[/]",
+                    changes["unverified"],
+                ),
+            )
+
         for label, signals in change_rows:
             display_signals = ", ".join(signals[:4]) if signals else "None"
 
@@ -650,6 +1174,52 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
             )
 
         console.print(change_table)
+
+    if score_comparison is not None:
+        console.print()
+
+        if score_comparison["comparable"]:
+            previous_percent = score_comparison["previous_percent"]
+            current_percent = score_comparison["current_percent"]
+            delta = score_comparison["delta"]
+
+            if delta > 0:
+                change_description = f"+{delta} percentage points"
+                change_style = "yellow"
+            elif delta < 0:
+                change_description = f"{delta} percentage points"
+                change_style = "green"
+            else:
+                change_description = "No change"
+                change_style = "cyan"
+
+            comparison_text = Text()
+            comparison_text.append(f"Previous: {previous_percent}%   Current: {current_percent}%\n")
+            comparison_text.append(
+                f"Change: {change_description}",
+                style=change_style,
+            )
+
+            console.print(
+                Panel.fit(
+                    comparison_text,
+                    title="[bold cyan]HISTORICAL RISK COMPARISON[/]",
+                    border_style="cyan",
+                    box=box.ROUNDED,
+                )
+            )
+        else:
+            console.print(
+                Panel.fit(
+                    Text(
+                        "Risk percentages cannot be directly compared.\n"
+                        + str(score_comparison["reason"])
+                    ),
+                    title="[bold yellow]SCORE COMPARISON UNAVAILABLE[/]",
+                    border_style="yellow",
+                    box=box.ROUNDED,
+                )
+            )
 
     all_tags = set()
 
@@ -682,6 +1252,190 @@ def _display_results(results, sweep_profile, user_profile, changes, comparison_a
     pause_return()
 
 
+def _display_intelligence_evidence(findings):
+    """Display bounded, sensitivity-aware evidence summaries."""
+    if not findings:
+        return
+
+    details = Table(
+        title="[italic cyan]Intelligence Evidence Details[/]",
+        box=box.SIMPLE_HEAVY,
+        header_style="bold cyan",
+        show_edge=False,
+        padding=(0, 1),
+    )
+
+    details.add_column("#", justify="right", no_wrap=True)
+    details.add_column("Finding", max_width=36)
+    details.add_column("Evidence Summary")
+    details.add_column("Sensitivity", no_wrap=True)
+
+    max_evidence_per_finding = 2
+    max_summary_chars = 180
+
+    for finding_index, finding in enumerate(findings[:20], start=1):
+        evidence_records = finding.evidence
+        finding_title = Text(finding.title[:60])
+
+        if not evidence_records:
+            details.add_row(
+                str(finding_index),
+                finding_title,
+                Text("No evidence attached", style="dim"),
+                "-",
+            )
+            continue
+
+        for evidence in evidence_records[:max_evidence_per_finding]:
+            sensitivity = evidence.sensitivity
+
+            if sensitivity in (
+                EvidenceSensitivity.PUBLIC,
+                EvidenceSensitivity.INTERNAL,
+            ):
+                summary = evidence.summary
+
+                if len(summary) > max_summary_chars:
+                    summary = summary[:max_summary_chars] + "..."
+
+                display_summary = Text(summary)
+                sensitivity_label = sensitivity.value
+            else:
+                # Includes SENSITIVE and any unrecognized level.
+                display_summary = Text(
+                    "Evidence withheld by sensitivity policy",
+                    style="dim",
+                )
+                sensitivity_label = "REDACTED"
+
+            details.add_row(
+                str(finding_index),
+                finding_title,
+                display_summary,
+                sensitivity_label,
+            )
+
+        omitted = len(evidence_records) - max_evidence_per_finding
+
+        if omitted > 0:
+            details.add_row(
+                str(finding_index),
+                finding_title,
+                Text(
+                    f"{omitted} additional evidence record(s) not shown",
+                    style="dim",
+                ),
+                "-",
+            )
+
+    console.print(details)
+
+
+def _display_intelligence_findings(findings, errors=None):
+    """Render structured findings without changing legacy results."""
+    errors = errors or []
+
+    console.print()
+
+    table = Table(
+        title="[bold cyan]Intelligence Findings[/]",
+        box=box.SIMPLE_HEAVY,
+        header_style="bold cyan",
+        show_edge=False,
+        padding=(0, 1),
+    )
+
+    table.add_column(
+        "#",
+        style="cyan",
+        justify="right",
+        no_wrap=True,
+    )
+
+    table.add_column("Severity", no_wrap=True)
+    table.add_column("Confidence", no_wrap=True)
+    table.add_column("Finding")
+    table.add_column("Affected Asset")
+    table.add_column("Evidence", justify="right")
+
+    severity_colors = {
+        "CRITICAL": "red",
+        "HIGH": "red",
+        "MEDIUM": "yellow",
+        "LOW": "green",
+        "INFO": "cyan",
+    }
+
+    for index, finding in enumerate(findings[:20], start=1):
+        severity = finding.severity.value
+
+        table.add_row(
+            str(index),
+            Text(
+                severity,
+                style=severity_colors.get(severity, "white"),
+            ),
+            Text(finding.confidence.value),
+            Text(finding.title),
+            Text(finding.asset),
+            Text(str(len(finding.evidence))),
+        )
+
+    if findings:
+        console.print(table)
+
+        _display_intelligence_evidence(findings)
+
+        if len(findings) > 20:
+            console.print(f"[dim]Showing 20 of {len(findings)} intelligence findings.[/]")
+    elif not errors:
+        console.print(
+            Panel.fit(
+                "[green]No structured intelligence findings "
+                "were generated by the enabled adapters.[/]",
+                title="[bold cyan]Intelligence Findings[/]",
+                border_style="cyan",
+                box=box.ROUNDED,
+            )
+        )
+
+    for error in errors:
+        console.print(
+            Panel.fit(
+                Text(error),
+                title="[bold yellow]INTELLIGENCE INCOMPLETE[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+
+
+def build_score_metadata(results: dict) -> dict:
+    """Build consistent scoring metadata for display and persistence."""
+    score, _, maximum = calculate_risk_score(results)
+
+    scored_modules = sorted(
+        module
+        for module, result in results.items()
+        if module in RISK_WEIGHTS
+        and inspection_coverage(module, result) not in {"failed", "unsupported"}
+        and (
+            inspection_coverage(module, result) == "complete"
+            or contributes_detected_risk(module, result)
+        )
+    )
+
+    return {
+        "scoring_schema_version": SCORING_SCHEMA_VERSION,
+        "scored_modules": scored_modules,
+        "coverage": summarize_inspection_coverage(results),
+        "risk_score": score,
+        "risk_max": maximum,
+        "risk_percent": (round(score / maximum * 100) if maximum else 0),
+        "results": results,
+    }
+
+
 def _save_sweep(results, sweep_profile, user_profile, changes):
     """Persist the latest sweep and a timestamped historical sweep log."""
     try:
@@ -690,32 +1444,25 @@ def _save_sweep(results, sweep_profile, user_profile, changes):
         for result in results.values():
             all_tags.extend(result.get("tags", []))
 
-        score, _, max_possible = calculate_risk_score(results)
-
-        risk_percent = round((score / max_possible) * 100) if max_possible else 0
-
+        score_metadata = build_score_metadata(results)
         priorities = prioritize_findings(results)
 
         summary = {
             "timestamp": datetime.now().isoformat(timespec="seconds"),
-            "hostname": user_profile.get(
-                "hostname",
-                "unknown",
-            ),
+            "hostname": user_profile.get("hostname", "unknown"),
             "profile": sweep_profile,
-            "risk_score": score,
-            "risk_max": max_possible,
-            "risk_percent": risk_percent,
+            **score_metadata,
             "tags": sorted(set(all_tags)),
             "priorities": priorities,
             "changes": changes,
-            "results": results,
         }
 
         write_private_json(LAST_SWEEP_FILE, summary, default=str)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_path = SWEEP_LOG_DIR / f"sweep_log_{timestamp}.json"
+        unique_id = uuid4().hex
+
+        log_path = SWEEP_LOG_DIR / f"sweep_log_{timestamp}_{unique_id}.json"
 
         write_private_json(log_path, summary, default=str)
 

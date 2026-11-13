@@ -219,3 +219,25 @@ def test_python_reverse_shell_on_private_ip_is_flagged():
     assert len(results) == 1
     assert results[0]["proc"] == "python3"
     assert results[0]["remote_ip"] == "10.0.0.20"
+
+
+def test_ipv4_mapped_peer_is_reported_as_ipv4():
+    connections = [
+        Conn("ESTABLISHED", Addr("::ffff:10.0.0.5", 40000), Addr("::ffff:8.8.4.4", 9001), 710)
+    ]
+
+    found = triage.classify_connections(connections, _names({710: "bash"}))
+
+    assert found[0]["remote_ip"] == "8.8.4.4"
+
+
+def test_protected_ip_matches_its_ipv4_mapped_form():
+    connections = [
+        Conn("ESTABLISHED", Addr("::ffff:10.0.0.5", 40000), Addr("::ffff:8.8.4.4", 9001), 720)
+    ]
+
+    found = triage.classify_connections(
+        connections, _names({720: "bash"}), protected_ips={"8.8.4.4"}
+    )
+
+    assert found == []

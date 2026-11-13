@@ -1,12 +1,3 @@
-# Project: ErisLITE
-# Module: test_shell_console.py
-# Author: Liam Piper-Brandon
-# Version: 1.3.0
-# License: MIT
-# Created: 2026-09-18
-# Last Updated: 2026-09-19
-# Description: Tests for interactive shell resolution and launching.
-
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -169,7 +160,7 @@ def test_shell_environment_does_not_copy_arbitrary_variables(monkeypatch):
 
 
 def test_shell_environment_keeps_terminal_and_locale(monkeypatch):
-    monkeypatch.setenv("HOME", "/home/tester")
+    monkeypatch.setattr(shell_console, "effective_home", lambda: "/home/tester")
     monkeypatch.setenv("LANG", "C.UTF-8")
     monkeypatch.setenv("TERM", "xterm-256color")
     monkeypatch.setenv("COLORTERM", "truecolor")
@@ -238,3 +229,33 @@ def test_privilege_label_for_user(monkeypatch):
     )
 
     assert shell_console.get_privilege_label() == "[green]User Session[/]"
+
+
+def test_shell_environment_ignores_inherited_home(monkeypatch):
+    # sudo -E keeps the invoking user's HOME. The root shell must not use it.
+    monkeypatch.setenv("HOME", "/home/attacker")
+    monkeypatch.setattr(shell_console, "effective_home", lambda: "/root")
+
+    env = shell_console.build_shell_environment()
+
+    assert env["HOME"] == "/root"
+
+
+def test_shell_environment_omits_home_when_account_is_unknown(monkeypatch):
+    monkeypatch.setenv("HOME", "/home/attacker")
+    monkeypatch.setattr(shell_console, "effective_home", lambda: None)
+
+    env = shell_console.build_shell_environment()
+
+    assert "HOME" not in env
+
+
+def test_effective_home_reads_account_database(monkeypatch):
+    monkeypatch.setattr(shell_console.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(
+        shell_console.pwd,
+        "getpwuid",
+        lambda uid: SimpleNamespace(pw_dir="/root"),
+    )
+
+    assert shell_console.effective_home() == "/root"

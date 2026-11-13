@@ -27,5 +27,5 @@ def test_failed_logins_ignores_poisoned_path(monkeypatch, tmp_path):
     assert error is None
     assert captured["command"][0] != str(fake_journalctl)
     assert captured["command"][0].endswith("/journalctl")
-    assert captured["command"][1:] == ["-u", "ssh", "-n", "100"]
+    assert captured["command"][1:] == ["--quiet", "-u", "ssh", "-n", "100"]
     assert len(results) == 1

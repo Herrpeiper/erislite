@@ -6,6 +6,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [1.6.0] - 2026-11-09
+
+### Added
+
+- Structured intelligence findings and evidence for network listeners, with numbered finding details and sensitivity-aware JSON export helpers.
+- Threat Sweep inspection coverage and score comparability metadata in saved reports.
+
+### Changed
+
+- Threat Sweep separates confirmed findings from collection failures and reports when earlier results cannot be compared at equivalent coverage.
+- File Integrity reports newly discovered files, expected absences and unavailable paths separately. Confirmed copies appear in structured sweep results.
+
+### Fixed
+
+- File Integrity scans use the same baseline data that passed validation. Baseline creation requires at least one readable hash, and unknown profiles are rejected.
+- An unrelated directory collection error no longer masks a confirmed deletion. Inaccessible copy-scan locations are reported as incomplete coverage.
+- The login audit checks `/var/log/auth.log` when the SSH journal has no failed-password matches.
+- Historical sweep logs have unique names, and logs saved in the same second are ordered by modification time.
+
+### Security
+
+- Integrity baseline validation checks JSON structure, profile membership and SHA-256 records before comparison. File hashing refuses symlinks and avoids blocking on FIFOs.
+
+---
+
 ## [1.5.0] - 2026-10-14
 
 ### Added

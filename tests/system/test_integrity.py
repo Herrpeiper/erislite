@@ -1,6 +1,13 @@
+import hashlib
 import json
+import os
 
 from erislite.system import integrity
+
+
+def _test_digest(content: str) -> str:
+    """Return a deterministic SHA-256 digest for test fixtures."""
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 def _write_baseline(
@@ -40,6 +47,15 @@ def _patch_baseline_path(
     )
 
 
+def _patch_critical_profile(monkeypatch, *paths):
+    """Authorize test-specific paths in the critical scan profile."""
+    monkeypatch.setitem(
+        integrity.SCAN_PROFILES,
+        "critical",
+        [str(path) for path in paths],
+    )
+
+
 def test_get_sha256_success(tmp_path):
     test_file = tmp_path / "sample.txt"
     test_file.write_text("hello world")
@@ -64,7 +80,8 @@ def test_get_sha256_permission_error(monkeypatch):
         raise PermissionError("denied")
 
     monkeypatch.setattr(
-        "builtins.open",
+        integrity.os,
+        "open",
         fail_open,
     )
 
@@ -87,6 +104,29 @@ def test_baseline_paths_are_profile_specific():
     assert critical.endswith("integrity_baseline_critical.json")
     assert system.endswith("integrity_baseline_system.json")
     assert user.endswith("integrity_baseline_user.json")
+
+
+def test_create_baseline_requires_at_least_one_hash(monkeypatch, tmp_path):
+    monitored = tmp_path / "monitored.conf"
+    monitored.write_text("trusted content", encoding="utf-8")
+    baseline_path = tmp_path / "baseline.json"
+    _patch_baseline_path(monkeypatch, baseline_path)
+    _patch_critical_profile(monkeypatch, monitored)
+    monkeypatch.setattr(integrity, "clear_screen", lambda: None)
+    monkeypatch.setattr(integrity, "_header", lambda *args: None)
+    monkeypatch.setattr(integrity, "pause_return", lambda: None)
+
+    integrity.create_baseline()
+    assert integrity.check_baseline_integrity()["status"] == "ok"
+    original = baseline_path.read_bytes()
+
+    monitored.unlink()
+    integrity.create_baseline()
+    assert baseline_path.read_bytes() == original
+
+    baseline_path.unlink()
+    integrity.create_baseline()
+    assert not baseline_path.exists()
 
 
 def test_collect_targets_keeps_missing_explicit_file(
@@ -164,7 +204,7 @@ def test_scan_integrity_missing_file_is_warning(
         baseline_path,
         monitored=[str(monitored_file)],
         hashes={
-            str(monitored_file): "expectedhash",
+            str(monitored_file): _test_digest("expected content"),
         },
     )
 
@@ -172,6 +212,8 @@ def test_scan_integrity_missing_file_is_warning(
         monkeypatch,
         baseline_path,
     )
+
+    _patch_critical_profile(monkeypatch, monitored_file)
 
     monkeypatch.setattr(
         integrity,
@@ -210,7 +252,7 @@ def test_scan_integrity_unreadable_file_is_error(
         baseline_path,
         monitored=[str(monitored_file)],
         hashes={
-            str(monitored_file): "expectedhash",
+            str(monitored_file): _test_digest("expected content"),
         },
     )
 
@@ -218,6 +260,7 @@ def test_scan_integrity_unreadable_file_is_error(
         monkeypatch,
         baseline_path,
     )
+    _patch_critical_profile(monkeypatch, monitored_file)
 
     monkeypatch.setattr(
         integrity,
@@ -270,8 +313,8 @@ def test_scan_integrity_modified_and_incomplete(
             str(unreadable),
         ],
         hashes={
-            str(changed): "oldhash",
-            str(unreadable): "expectedhash",
+            str(changed): _test_digest("original content"),
+            str(unreadable): _test_digest("expected content"),
         },
     )
 
@@ -279,6 +322,7 @@ def test_scan_integrity_modified_and_incomplete(
         monkeypatch,
         baseline_path,
     )
+    _patch_critical_profile(monkeypatch, changed, unreadable)
 
     monkeypatch.setattr(
         integrity,
@@ -300,7 +344,7 @@ def test_scan_integrity_modified_and_incomplete(
 
     def fake_hash(path):
         if path == str(changed):
-            return "newhash", None
+            return _test_digest("modified content"), None
 
         return None, "permission denied"
 
@@ -327,11 +371,13 @@ def test_scan_integrity_target_collection_failure(
 ):
     baseline_path = tmp_path / "baseline.json"
 
+    inaccessible = str(tmp_path / "inaccessible.conf")
+
     _write_baseline(
         baseline_path,
-        monitored=["/etc/example"],
+        monitored=[inaccessible],
         hashes={
-            "/etc/example": "expectedhash",
+            inaccessible: _test_digest("expected content"),
         },
     )
 
@@ -339,6 +385,7 @@ def test_scan_integrity_target_collection_failure(
         monkeypatch,
         baseline_path,
     )
+    _patch_critical_profile(monkeypatch, inaccessible)
 
     monkeypatch.setattr(
         integrity,
@@ -355,6 +402,15 @@ def test_scan_integrity_target_collection_failure(
         ),
     )
 
+    original_lstat = os.lstat
+
+    def lstat_with_permission_error(path, *args, **kwargs):
+        if path == inaccessible:
+            raise PermissionError("Permission denied")
+        return original_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(integrity.os, "lstat", lstat_with_permission_error)
+
     result = integrity.scan_integrity(
         profile="critical",
         silent=True,
@@ -365,6 +421,48 @@ def test_scan_integrity_target_collection_failure(
     assert "integrity_scan_incomplete" in result["tags"]
 
     assert any("target collection incomplete" in detail.lower() for detail in result["details"])
+
+
+def test_scan_integrity_reports_deletion_despite_unrelated_collection_error(
+    monkeypatch,
+    tmp_path,
+):
+    monitored_dir = tmp_path / "monitored"
+    monitored_dir.mkdir()
+    deleted = monitored_dir / "deleted.conf"
+    deleted.write_text("original content", encoding="utf-8")
+    inaccessible_dir = tmp_path / "inaccessible"
+    inaccessible_dir.mkdir()
+    baseline_path = tmp_path / "baseline.json"
+
+    _write_baseline(
+        baseline_path,
+        monitored=[str(deleted)],
+        hashes={str(deleted): _test_digest("original content")},
+    )
+    _patch_baseline_path(monkeypatch, baseline_path)
+    _patch_critical_profile(monkeypatch, f"{monitored_dir}/", f"{inaccessible_dir}/")
+    deleted.unlink()
+    monkeypatch.setattr(integrity, "get_os", lambda: "Linux")
+    monkeypatch.setattr(integrity, "scan_for_copies", lambda baseline: [])
+
+    original_walk = os.walk
+
+    def walk_with_permission_error(path, *, onerror):
+        if path == f"{inaccessible_dir}/":
+            onerror(PermissionError(13, "Permission denied", path))
+            return []
+        return original_walk(path, onerror=onerror)
+
+    monkeypatch.setattr(integrity.os, "walk", walk_with_permission_error)
+
+    result = integrity.scan_integrity(profile="critical", silent=True)
+
+    assert result["status"] == "warning"
+    assert "file_integrity_issue" in result["tags"]
+    assert "integrity_scan_incomplete" in result["tags"]
+    assert f"{deleted} is missing" in result["details"]
+    assert any(str(inaccessible_dir) in detail for detail in result["details"])
 
 
 def test_scan_integrity_expected_absent_is_ok(
@@ -400,6 +498,7 @@ def test_scan_integrity_expected_absent_is_ok(
         monkeypatch,
         baseline_path,
     )
+    _patch_critical_profile(monkeypatch, present, absent)
 
     monkeypatch.setattr(
         integrity,
@@ -462,6 +561,7 @@ def test_scan_integrity_expected_absent_created(
         monkeypatch,
         baseline_path,
     )
+    _patch_critical_profile(monkeypatch, present, appeared)
 
     monkeypatch.setattr(
         integrity,
@@ -527,6 +627,7 @@ def test_scan_integrity_expected_absent_broken_symlink(
         monkeypatch,
         baseline_path,
     )
+    _patch_critical_profile(monkeypatch, present, link)
 
     monkeypatch.setattr(
         integrity,
@@ -570,7 +671,7 @@ def test_baseline_profile_mismatch(
         profile="critical",
         monitored=[str(monitored)],
         hashes={
-            str(monitored): "expectedhash",
+            str(monitored): _test_digest("expected content"),
         },
     )
 
@@ -578,6 +679,7 @@ def test_baseline_profile_mismatch(
         monkeypatch,
         baseline_path,
     )
+    _patch_critical_profile(monkeypatch, monitored)
 
     result = integrity.check_baseline_integrity(profile="system")
 
@@ -585,3 +687,55 @@ def test_baseline_profile_mismatch(
     assert "baseline_tamper" in result["tags"]
 
     assert any("does not match" in detail for detail in result["details"])
+
+
+def _baseline_for(tmp_path, content=b"root:x:0:0:root:/root:/bin/bash\n"):
+    source = tmp_path / "etc_passwd"
+    source.write_bytes(content)
+    digest = integrity.get_sha256(str(source))[0]
+    return {"/etc/passwd": digest}, content
+
+
+def test_scan_for_copies_finds_exact_copy(tmp_path):
+    baseline, content = _baseline_for(tmp_path)
+    root = tmp_path / "scan"
+    (root / "stash").mkdir(parents=True)
+    (root / "stash" / "passwd.bak").write_bytes(content)
+
+    found = integrity.scan_for_copies(baseline, roots=(str(root),))
+
+    assert found == [(str(root / "stash" / "passwd.bak"), "Exact copy of monitored file")]
+
+
+def test_scan_for_copies_does_not_follow_symlink_loops(tmp_path):
+    baseline, content = _baseline_for(tmp_path)
+    root = tmp_path / "scan"
+    root.mkdir()
+    (root / "loop").symlink_to("..")
+    (root / "to_root").symlink_to("/")
+    (root / "passwd_link").symlink_to(tmp_path / "etc_passwd")
+
+    # Completes promptly and ignores symlinked files and directories.
+    assert integrity.scan_for_copies(baseline, roots=(str(root),)) == []
+
+
+def test_scan_for_copies_skips_fifos(tmp_path):
+    baseline, _ = _baseline_for(tmp_path)
+    root = tmp_path / "scan"
+    root.mkdir()
+    os.mkfifo(root / "shadow_pipe")
+
+    assert integrity.scan_for_copies(baseline, roots=(str(root),)) == []
+
+
+def test_scan_for_copies_stops_at_candidate_limit(tmp_path):
+    baseline, _ = _baseline_for(tmp_path)
+    root = tmp_path / "scan"
+    root.mkdir()
+
+    for index in range(5):
+        (root / f"passwd{index}").write_text("x")
+
+    found = integrity.scan_for_copies(baseline, roots=(str(root),), max_candidates=3)
+
+    assert found[-1][1] == "Copy scan stopped after 3 candidate files"

@@ -19,6 +19,7 @@ import psutil
 
 from erislite.network.firewall import (
     build_ip_block_commands,
+    canonical_ip,
     detect_firewall_backend,
 )
 from erislite.response.rapid_response import utils
@@ -244,9 +245,10 @@ def _kill_process(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
 
 
 def _block_ip(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
-    ip = data["remote_ip"]
+    ip = canonical_ip(data["remote_ip"]) or data["remote_ip"]
+    operator_ips = {canonical_ip(addr) or addr for addr in operator_source_ips()}
 
-    if ip in operator_source_ips():
+    if ip in operator_ips:
         entry["result"] = f"Refused: {ip} is the source of the operator's SSH session"
         console.print(f"[red]Refused to block {ip}: it is your own SSH session[/]")
         return False

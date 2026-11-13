@@ -7,14 +7,17 @@
 # Last Updated: 2026-10-14
 # Description: SHA-256 file integrity baseline creation and change detection.
 
-import glob
+import errno
 import hashlib
 import json
 import os
+import re
+import stat
 from datetime import datetime
 from typing import Optional, Tuple
 
 from rich import box
+from rich.markup import escape
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
@@ -32,12 +35,39 @@ from erislite.ui.utils import clear_screen, get_os, pause_return, prompt_option
 
 
 def get_baseline_path(profile: str) -> str:
+    if profile not in SCAN_PROFILES:
+        raise ValueError(f"Unknown integrity profile: {profile!r}")
+
     base_dir = os.path.dirname(INTEGRITY_BASELINE_FILE)
 
     return os.path.join(
         base_dir,
         f"integrity_baseline_{profile}.json",
     )
+
+
+def _baseline_unavailable_paths(metadata: dict) -> set:
+    """Recover paths explicitly marked unavailable at baseline creation."""
+    monitored = metadata.get("monitored", [])
+    entries = metadata.get("unavailable", [])
+
+    if not isinstance(monitored, list) or not isinstance(entries, list):
+        return set()
+
+    paths = set()
+
+    for path in monitored:
+        if not isinstance(path, str):
+            continue
+
+        # Existing baselines store entries as:
+        # "/path/to/file: permission denied: ..."
+        prefix = f"{path}: "
+
+        if any(isinstance(entry, str) and entry.startswith(prefix) for entry in entries):
+            paths.add(path)
+
+    return paths
 
 
 MONITORED_FILES = [
@@ -93,12 +123,35 @@ def _header(title: str, subtitle: str) -> None:
 
 
 def get_sha256(path: str) -> Tuple[Optional[str], Optional[str]]:
+    """Hash a regular file without following symlinks or blocking on FIFOs."""
+    flags = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW
+    fd = -1
+
     try:
+        fd = os.open(path, flags)
+        before = os.fstat(fd)
+
+        if not stat.S_ISREG(before.st_mode):
+            return None, "not a regular file"
+
         digest = hashlib.sha256()
 
-        with open(path, "rb") as file:
-            for chunk in iter(lambda: file.read(65536), b""):
-                digest.update(chunk)
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            digest.update(chunk)
+
+        after = os.fstat(fd)
+
+        if (
+            before.st_dev != after.st_dev
+            or before.st_ino != after.st_ino
+            or before.st_size != after.st_size
+            or before.st_mtime_ns != after.st_mtime_ns
+            or before.st_ctime_ns != after.st_ctime_ns
+        ):
+            return None, "file changed during hashing"
 
         return digest.hexdigest(), None
 
@@ -109,128 +162,369 @@ def get_sha256(path: str) -> Tuple[Optional[str], Optional[str]]:
         return None, f"permission denied: {exc}"
 
     except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            return None, "symbolic link refused"
+
         return None, f"read failed: {exc}"
+
+    finally:
+        if fd != -1:
+            os.close(fd)
+
+
+def _reject_duplicate_json_keys(pairs):
+    """Reject duplicate JSON object keys rather than silently overwriting."""
+    result = {}
+
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate JSON key: {key}")
+        result[key] = value
+
+    return result
+
+
+def _path_in_profile(path: str, profile: str) -> bool:
+    """Check whether a path belongs to a configured integrity profile."""
+    if not isinstance(path, str) or not os.path.isabs(path):
+        return False
+
+    if os.path.normpath(path) != path:
+        return False
+
+    configured = SCAN_PROFILES.get(profile)
+
+    if configured is None:
+        return False
+
+    for entry in configured:
+        if entry.endswith(os.sep):
+            directory = os.path.normpath(entry)
+
+            try:
+                if os.path.commonpath((directory, path)) == directory:
+                    return True
+            except ValueError:
+                continue
+
+        elif path == entry:
+            return True
+
+    return False
+
+
+def _load_validated_baseline(profile: str) -> Tuple[dict, Optional[dict]]:
+    """Read the baseline once and return its validation result and validated data."""
+    try:
+        baseline_path = get_baseline_path(profile)
+    except ValueError as exc:
+        return make_result("error", details=[str(exc)], tags=["baseline_check_error"]), None
+
+    try:
+        with open(baseline_path, "r", encoding="utf-8") as file:
+            data = json.load(
+                file,
+                object_pairs_hook=_reject_duplicate_json_keys,
+            )
+    except FileNotFoundError:
+        return (
+            make_result(
+                "error",
+                details=[f"{profile.capitalize()} baseline file missing"],
+                tags=["baseline_missing"],
+            ),
+            None,
+        )
+    except (ValueError, TypeError) as exc:
+        return (
+            make_result(
+                "warning",
+                details=[f"Baseline JSON validation failed: {exc}"],
+                tags=["baseline_tamper"],
+            ),
+            None,
+        )
+    except OSError as exc:
+        return (
+            make_result(
+                "error",
+                details=[f"Failed to read baseline: {exc}"],
+                tags=["baseline_check_error"],
+            ),
+            None,
+        )
+
+    result = _validate_baseline_data(data, profile)
+    return result, data if result["status"] == "ok" else None
 
 
 def check_baseline_integrity(profile: str = "critical") -> dict:
-    baseline_path = get_baseline_path(profile)
+    """Validate baseline structure, membership, and SHA-256 records."""
+    result, _ = _load_validated_baseline(profile)
+    return result
 
-    if not os.path.exists(baseline_path):
+
+def _validate_baseline_data(data: object, profile: str) -> dict:
+    issues = []
+
+    if not isinstance(data, dict):
         return make_result(
-            "error",
-            details=[f"{profile.capitalize()} baseline file missing"],
-            tags=["baseline_missing"],
+            "warning",
+            details=["Baseline root must be a JSON object"],
+            tags=["baseline_tamper"],
         )
 
-    try:
-        with open(
-            baseline_path,
-            "r",
-            encoding="utf-8",
-        ) as file:
-            data = json.load(file)
+    metadata = data.get("_metadata")
+    hashes = data.get("hashes")
 
-        metadata = data.get("_metadata", {})
-        created_at = metadata.get("created_at")
-        hashes = data.get("hashes")
-        baseline_profile = metadata.get("profile")
+    if not isinstance(metadata, dict):
+        issues.append("Baseline metadata is malformed")
+        metadata = {}
 
-        issues = []
+    if not isinstance(hashes, dict):
+        issues.append("Baseline hash data is malformed")
+        hashes = {}
 
-        if not created_at:
-            issues.append("Baseline creation metadata is missing")
+    if not isinstance(metadata.get("created_at"), str) or not metadata.get("created_at"):
+        issues.append("Baseline creation metadata is missing")
 
-        if not baseline_profile:
-            issues.append("Baseline profile metadata is missing")
-        elif baseline_profile not in SCAN_PROFILES:
-            issues.append(f"Baseline profile is invalid: {baseline_profile}")
-        elif baseline_profile != profile:
-            issues.append(
-                f"Baseline profile '{baseline_profile}' does not match expected profile '{profile}'"
-            )
+    if metadata.get("algorithm") != "SHA-256":
+        issues.append("Baseline hashing algorithm is invalid")
 
-        if not isinstance(hashes, dict):
-            issues.append("Baseline hash data is malformed")
+    baseline_profile = metadata.get("profile")
 
-        monitored = metadata.get("monitored", [])
-        unavailable = metadata.get("unavailable", [])
-        expected_absent = metadata.get("expected_absent", [])
-
-        if not hashes:
-            issues.append("Baseline contains no readable file hashes")
-
-        elif monitored and (
-            len(hashes) + len(unavailable) + len(expected_absent) != len(monitored)
-        ):
-            issues.append("Baseline contents do not match recorded monitored files")
-
-        return make_result(
-            "warning" if issues else "ok",
-            details=issues,
-            tags=["baseline_tamper"] if issues else [],
+    if baseline_profile not in SCAN_PROFILES:
+        issues.append(f"Baseline profile is invalid: {baseline_profile}")
+    elif baseline_profile != profile:
+        issues.append(
+            f"Baseline profile '{baseline_profile}' does not match expected profile '{profile}'"
         )
 
-    except Exception as e:
-        return make_result(
-            "error",
-            details=[f"Failed to validate baseline integrity: {e}"],
-            tags=["baseline_check_error"],
-        )
+    monitored = metadata.get("monitored")
+    expected_absent = metadata.get("expected_absent")
+    unavailable = metadata.get("unavailable")
 
+    if not isinstance(monitored, list):
+        issues.append("Monitored paths must be a list")
+        monitored = []
 
-def scan_for_copies(baseline: dict):
-    shady_locations = [
-        "/tmp",
-        "/dev/shm",
-        "/home",
-        "/run",
-        "/var/tmp",
-    ]
+    if not isinstance(expected_absent, list):
+        issues.append("Expected-absent paths must be a list")
+        expected_absent = []
 
-    keywords = [
-        "passwd",
-        "shadow",
-        "sudoers",
-        "sshd_config",
-        "hosts",
-    ]
+    if not isinstance(unavailable, list):
+        issues.append("Unavailable records must be a list")
+        unavailable = []
 
-    flagged = []
+    if any(not isinstance(p, str) or not p for p in monitored):
+        issues.append("Monitored paths contain invalid entries")
 
-    for root in shady_locations:
-        if not os.path.exists(root):
+    if any(not isinstance(p, str) or not p for p in expected_absent):
+        issues.append("Expected-absent paths contain invalid entries")
+
+    valid_monitored = [p for p in monitored if isinstance(p, str) and p]
+    valid_absent = [p for p in expected_absent if isinstance(p, str) and p]
+
+    if len(valid_monitored) != len(set(valid_monitored)):
+        issues.append("Duplicate monitored paths detected")
+
+    if len(valid_absent) != len(set(valid_absent)):
+        issues.append("Duplicate expected-absent paths detected")
+
+    monitored_set = set(valid_monitored)
+    absent_set = set(valid_absent)
+    hash_paths = set(hashes)
+
+    for path, digest in hashes.items():
+        if not isinstance(digest, str) or re.fullmatch(r"[0-9a-fA-F]{64}", digest) is None:
+            issues.append(f"Invalid SHA-256 digest: {path}")
+
+    if not hash_paths.issubset(monitored_set):
+        issues.append("Hash entries contain unmonitored paths")
+
+    if not absent_set.issubset(monitored_set):
+        issues.append("Expected-absent entries contain unmonitored paths")
+
+    unavailable_paths = set()
+
+    for entry in unavailable:
+        if not isinstance(entry, str):
+            issues.append("Malformed unavailable record")
             continue
 
+        matches = [path for path in monitored_set if entry.startswith(f"{path}: ")]
+
+        if len(matches) != 1:
+            issues.append("Unavailable record has invalid path membership")
+            continue
+
+        path = matches[0]
+
+        if path in unavailable_paths:
+            issues.append(f"Duplicate unavailable record: {path}")
+
+        unavailable_paths.add(path)
+
+    if hash_paths & absent_set or hash_paths & unavailable_paths or absent_set & unavailable_paths:
+        issues.append("Baseline classification sets overlap")
+
+    classified = hash_paths | absent_set | unavailable_paths
+
+    if classified != monitored_set:
+        issues.append("Baseline monitored-path coverage is inconsistent")
+
+    if not hash_paths:
+        issues.append("Baseline contains no readable file hashes")
+
+    for path in monitored_set:
+        if not os.path.isabs(path) or os.path.normpath(path) != path:
+            issues.append(f"Invalid monitored path: {path}")
+        elif not _path_in_profile(path, profile):
+            issues.append(f"Monitored path outside {profile} profile: {path}")
+
+    return make_result(
+        "warning" if issues else "ok",
+        details=issues,
+        tags=["baseline_tamper"] if issues else [],
+    )
+
+
+COPY_SCAN_ROOTS = (
+    "/tmp",
+    "/dev/shm",
+    "/home",
+    "/run",
+    "/var/tmp",
+)
+
+COPY_SCAN_KEYWORDS = (
+    "passwd",
+    "shadow",
+    "sudoers",
+    "sshd_config",
+    "hosts",
+)
+
+# Bound copy scanning to avoid excessive file reads.
+MAX_COPY_BYTES = 4 * 1024 * 1024
+MAX_COPY_CANDIDATES = 2000
+COPY_SCAN_INCOMPLETE_PREFIX = "Copy scan incomplete: "
+
+
+def _hash_regular_file(path: str, max_bytes: int) -> Optional[str]:
+    """Hash a regular file without following symlinks or blocking on FIFOs."""
+
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None
+
+    try:
+        info = os.fstat(fd)
+
+        if not stat.S_ISREG(info.st_mode) or info.st_size > max_bytes:
+            return None
+
+        digest = hashlib.sha256()
+
+        with os.fdopen(fd, "rb") as file:
+            fd = -1
+
+            for chunk in iter(lambda: file.read(65536), b""):
+                digest.update(chunk)
+
+        return digest.hexdigest()
+    except OSError:
+        return None
+    finally:
+        if fd != -1:
+            os.close(fd)
+
+
+def scan_for_copies(
+    baseline: dict,
+    roots=COPY_SCAN_ROOTS,
+    keywords=COPY_SCAN_KEYWORDS,
+    max_candidates: int = MAX_COPY_CANDIDATES,
+):
+    """Find exact copies of monitored files in locations users can write to.
+
+    The walk never follows symlinks and stays on the filesystem of each
+    root. Any account that can write to /tmp could otherwise plant a
+    symlink loop or a link to / and stall the scan indefinitely.
+    """
+
+    wanted = {}
+
+    for base_path, base_hash in baseline.items():
         for keyword in keywords:
-            pattern = os.path.join(
-                root,
-                "**",
-                f"*{keyword}*",
-            )
+            if keyword in base_path.lower() and base_hash:
+                wanted.setdefault(keyword, set()).add(base_hash)
 
-            for path in glob.glob(pattern, recursive=True):
-                if not os.path.isfile(path):
+    if not wanted:
+        return []
+
+    flagged = []
+    examined = 0
+
+    def record_walk_error(exc: OSError) -> None:
+        flagged.append((exc.filename, f"{COPY_SCAN_INCOMPLETE_PREFIX}{exc.strerror}"))
+
+    for root in roots:
+        try:
+            root_dev = os.stat(root).st_dev
+        except OSError as exc:
+            flagged.append((root, f"{COPY_SCAN_INCOMPLETE_PREFIX}{exc.strerror}"))
+            continue
+
+        for current, dirs, files in os.walk(root, followlinks=False, onerror=record_walk_error):
+            # Prune mount points so /home or /run never walks another filesystem.
+            kept = []
+
+            for name in dirs:
+                path = os.path.join(current, name)
+                try:
+                    if os.lstat(path).st_dev == root_dev:
+                        kept.append(name)
+                except OSError as exc:
+                    flagged.append((path, f"{COPY_SCAN_INCOMPLETE_PREFIX}{exc.strerror}"))
+
+            dirs[:] = kept
+
+            for name in files:
+                lowered = name.lower()
+                matched = [keyword for keyword in wanted if keyword in lowered]
+
+                if not matched:
                     continue
 
-                copy_hash, copy_error = get_sha256(path)
+                examined += 1
 
-                if copy_error:
-                    continue
+                if examined > max_candidates:
+                    flagged.append(
+                        (
+                            root,
+                            f"Copy scan stopped after {max_candidates} candidate files",
+                        )
+                    )
+                    return flagged
 
-                for base_path, base_hash in baseline.items():
-                    if (
-                        keyword.lower() in base_path.lower()
-                        and copy_hash
-                        and copy_hash == base_hash
-                    ):
-                        flagged.append((path, "Exact copy of monitored file"))
-                        break
+                path = os.path.join(current, name)
+                copy_hash = _hash_regular_file(path, MAX_COPY_BYTES)
+
+                if copy_hash and any(copy_hash in wanted[keyword] for keyword in matched):
+                    flagged.append((path, "Exact copy of monitored file"))
 
     return flagged
 
 
 def create_baseline(profile: str = "critical") -> None:
-    baseline_path = get_baseline_path(profile)
+    try:
+        baseline_path = get_baseline_path(profile)
+    except ValueError as exc:
+        console.print(Text(str(exc), style="yellow"))
+        pause_return()
+        return
 
     clear_screen()
     _header(
@@ -256,6 +550,18 @@ def create_baseline(profile: str = "critical") -> None:
 
         else:
             unavailable.append(f"{path}: {hash_error or 'unavailable'}")
+
+    if not baseline:
+        console.print(
+            Panel.fit(
+                "[yellow]No readable file hashes were collected. Baseline creation cancelled.[/]",
+                title="[bold yellow]BASELINE CREATION FAILED[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+        pause_return()
+        return
 
     payload = {
         "_metadata": {
@@ -315,7 +621,7 @@ def _collect_targets(profile: str) -> Tuple[list[str], list[str]]:
     def _walk_error(exc: OSError) -> None:
         errors.append(str(exc))
 
-    for item in SCAN_PROFILES.get(profile, MONITORED_FILES):
+    for item in SCAN_PROFILES[profile]:
         if os.path.isdir(item):
             for root, _, files in os.walk(
                 item,
@@ -331,6 +637,44 @@ def _collect_targets(profile: str) -> Tuple[list[str], list[str]]:
             targets.append(item)
 
     return targets, errors
+
+
+def summarize_integrity_rows(rows: list) -> dict:
+    """Summarize observed integrity states from the current scan."""
+    statuses = [status for _, status in rows]
+
+    return {
+        "targets": len(rows),
+        "verified": sum(status in {"UNCHANGED", "MODIFIED"} for status in statuses),
+        "unavailable": statuses.count("UNAVAILABLE"),
+        "changes": sum(
+            status in {"MODIFIED", "MISSING", "CREATED", "BROKEN LINK"} for status in statuses
+        ),
+    }
+
+
+MAX_DISPLAY_ROWS = 60
+
+
+def select_integrity_display_rows(rows: list) -> tuple:
+    """Bound TUI output and identify hidden important results."""
+    priority_statuses = {
+        "MODIFIED",
+        "MISSING",
+        "CREATED",
+        "BROKEN LINK",
+        "UNAVAILABLE",
+    }
+
+    important = [row for row in rows if row[1] in priority_statuses]
+    routine = [row for row in rows if row[1] not in priority_statuses]
+
+    selected = (important + routine)[:MAX_DISPLAY_ROWS]
+
+    hidden_important = max(0, len(important) - MAX_DISPLAY_ROWS)
+    hidden_routine = len(rows) - len(selected) - hidden_important
+
+    return selected, hidden_important, hidden_routine
 
 
 def scan_integrity(
@@ -357,9 +701,9 @@ def scan_integrity(
 
         return make_result("unsupported")
 
-    baseline_path = get_baseline_path(profile)
+    baseline_check, baseline_data = _load_validated_baseline(profile)
 
-    if not os.path.exists(baseline_path):
+    if "baseline_missing" in baseline_check["tags"]:
         if not silent:
             clear_screen()
             _header(
@@ -381,25 +725,19 @@ def scan_integrity(
 
             pause_return()
 
-        return make_result(
-            "error",
-            details=[f"{profile.capitalize()} baseline file missing"],
-            tags=["baseline_missing"],
-        )
+        return baseline_check
 
-    baseline_check = check_baseline_integrity(profile)
-
-    if baseline_check["status"] != "ok":
+    if baseline_data is None:
         if not silent:
             clear_screen()
             _header(
                 "FILE INTEGRITY",
-                f"Validate files against the baseline • Profile: {profile.capitalize()}",
+                f"Validate files against the baseline • Profile: {escape(profile.capitalize())}",
             )
 
             console.print(
                 Panel.fit(
-                    "\n".join(f"[yellow]{detail}[/]" for detail in baseline_check["details"]),
+                    Text("\n".join(baseline_check["details"]), style="yellow"),
                     title="[bold yellow]BASELINE WARNING[/]",
                     border_style="yellow",
                     box=box.ROUNDED,
@@ -410,45 +748,35 @@ def scan_integrity(
 
         return baseline_check
 
-    try:
-        with open(
-            baseline_path,
-            "r",
-            encoding="utf-8",
-        ) as file:
-            baseline_data = json.load(file)
-
-        baseline = baseline_data.get("hashes", {})
-        metadata = baseline_data.get("_metadata", {})
-        expected_absent = set(metadata.get("expected_absent", []))
-
-    except Exception as e:
-        return make_result(
-            "error",
-            details=[f"Unable to load baseline: {e}"],
-            tags=["file_integrity_issue"],
-        )
+    baseline = baseline_data["hashes"]
+    metadata = baseline_data["_metadata"]
+    expected_absent = set(metadata.get("expected_absent", []))
+    baseline_unavailable = _baseline_unavailable_paths(metadata)
+    baseline_monitored = set(metadata.get("monitored", []))
 
     targets, target_errors = _collect_targets(profile)
 
-    if not targets:
-        if target_errors:
-            return make_result(
-                "error",
-                details=[
-                    f"Integrity target collection incomplete: {error}" for error in target_errors
-                ],
-                tags=["integrity_scan_incomplete"],
-            )
-
-        return make_result(
-            "ok",
-            details=["No files found for selected profile"],
-        )
+    current_targets = set(targets)
+    previously_hashed = set(baseline)
 
     rows = []
     issues = []
-    scan_errors = list(target_errors)
+    scan_errors = [f"Integrity target collection incomplete: {error}" for error in target_errors]
+
+    missing_candidates = previously_hashed - current_targets
+
+    for path in sorted(missing_candidates):
+        try:
+            os.lstat(path)
+        except (FileNotFoundError, NotADirectoryError):
+            rows.append((path, "MISSING"))
+            issues.append(f"{path} is missing")
+        except OSError as exc:
+            rows.append((path, "UNAVAILABLE"))
+            scan_errors.append(f"{path} could not be inspected: {exc}")
+        else:
+            rows.append((path, "UNAVAILABLE"))
+            scan_errors.append(f"{path} was not rediscovered during collection")
 
     for path in targets:
         if path in expected_absent:
@@ -475,15 +803,45 @@ def scan_integrity(
 
             continue
 
+        # Existing baseline comparison begins here
         old_hash = baseline.get(path)
 
         if old_hash is None:
-            if os.path.islink(path) and not os.path.exists(path):
+            if path in baseline_unavailable:
+                current_hash, hash_error = get_sha256(path)
+
                 rows.append((path, "UNAVAILABLE"))
-                scan_errors.append(f"{path} is a broken symbolic link")
+
+                if current_hash is not None:
+                    scan_errors.append(
+                        f"{path} was unavailable during baseline creation "
+                        "but is now readable; recreate the baseline "
+                        "to establish a trusted comparison"
+                    )
+                else:
+                    scan_errors.append(
+                        f"{path} was unavailable during baseline creation "
+                        f"and remains unverified: {hash_error or 'unknown error'}"
+                    )
+
+            elif path not in baseline_monitored:
+                new_hash, hash_error = get_sha256(path)
+
+                if hash_error:
+                    rows.append((path, "UNAVAILABLE"))
+                    scan_errors.append(
+                        f"{path} was newly discovered but could not be inspected: {hash_error}"
+                    )
+                else:
+                    rows.append((path, "CREATED"))
+                    issues.append(f"{path} was discovered after baseline creation")
+
             else:
                 rows.append((path, "UNAVAILABLE"))
-                scan_errors.append(f"{path} is not represented in the active baseline")
+                scan_errors.append(
+                    f"{path} was monitored at baseline creation "
+                    "but has no recorded hash or availability state"
+                )
 
             continue
 
@@ -504,24 +862,42 @@ def scan_integrity(
         else:
             rows.append((path, "UNCHANGED"))
 
+    # Run copy detection before constructing the structured result.
+    # Silent mode suppresses presentation, not detection.
+    copy_results = scan_for_copies(baseline)
+
+    copies = []
+    for path, reason in copy_results:
+        if reason.startswith((COPY_SCAN_INCOMPLETE_PREFIX, "Copy scan stopped after ")):
+            scan_errors.append(f"{path}: {reason}")
+        else:
+            copies.append((path, reason))
+
     tags = []
 
     if issues:
         tags.append("file_integrity_issue")
 
+    if copies:
+        tags.append("suspicious_file_copy")
+
     if scan_errors:
         tags.append("integrity_scan_incomplete")
 
-    if issues:
+    if issues or copies:
         status = "warning"
     elif scan_errors:
         status = "error"
     else:
         status = "ok"
 
+    copy_details = [f"Suspicious copy detected: {path} ({reason})" for path, reason in copies]
+
     result = make_result(
         status,
-        details=issues + [f"Integrity inspection incomplete: {error}" for error in scan_errors],
+        details=issues
+        + copy_details
+        + [f"Integrity inspection incomplete: {error}" for error in scan_errors],
         tags=tags,
     )
 
@@ -534,12 +910,17 @@ def scan_integrity(
         f"Validate files against the baseline • Profile: {profile.capitalize()}",
     )
 
+    coverage = summarize_integrity_rows(rows)
+
     console.print(
         Panel.fit(
-            f"[dim]Profile:[/] [white]{profile.capitalize()}[/]   "
-            f"[dim]Checked:[/] [white]{len(rows)}[/]   "
-            f"[dim]Issues:[/] "
-            f"[{'yellow' if issues else 'green'}]{len(issues)}[/]",
+            f"[dim]Profile:[/] [white]{profile.capitalize()}[/]\n"
+            f"[dim]Targets:[/] [white]{coverage['targets']}[/]   "
+            f"[dim]Verified:[/] [green]{coverage['verified']}[/]   "
+            f"[dim]Unavailable:[/] [yellow]{coverage['unavailable']}[/]   "
+            f"[dim]Changes:[/] "
+            f"[{'yellow' if coverage['changes'] else 'green'}]"
+            f"{coverage['changes']}[/]",
             title="[bold cyan]SUMMARY[/]",
             border_style="cyan",
             box=box.ROUNDED,
@@ -557,7 +938,9 @@ def scan_integrity(
     table.add_column("File", style="white")
     table.add_column("Status", no_wrap=True)
 
-    for path, row_status in rows:
+    display_rows, hidden_important, hidden_routine = select_integrity_display_rows(rows)
+
+    for path, row_status in display_rows:
         if row_status == "UNCHANGED":
             rendered = "[green]UNCHANGED[/]"
 
@@ -582,9 +965,32 @@ def scan_integrity(
         table.add_row(path, rendered)
 
     console.print(table)
-    console.print()
 
-    copies = scan_for_copies(baseline)
+    omitted = hidden_important + hidden_routine
+
+    if omitted:
+        console.print(
+            f"[dim]Showing {len(display_rows)} of {len(rows)} "
+            f"file results. Hidden: {hidden_important} requiring review, "
+            f"{hidden_routine} routine. "
+            "Summary counts include all inspected targets.[/]"
+        )
+
+    if hidden_important:
+        console.print(
+            Panel.fit(
+                f"[yellow]{hidden_important} important file result(s) "
+                "were omitted from the terminal display.[/]\n"
+                "[dim]The scan evaluated these files, but their "
+                "individual results are not shown. Additional "
+                "review is required.[/]",
+                title="[bold yellow]HIDDEN FINDINGS[/]",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+
+    console.print()
 
     if copies:
         copy_table = Table(
