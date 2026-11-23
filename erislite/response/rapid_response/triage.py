@@ -260,8 +260,8 @@ def operator_source_ips() -> Set[str]:
 
     try:
         ancestors = psutil.Process().parents()
-    except (psutil.Error, OSError):
-        return ips
+    except (psutil.Error, OSError) as exc:
+        raise RuntimeError("Operator process ancestry inspection failed") from exc
 
     for parent in ancestors:
         try:
@@ -277,8 +277,8 @@ def operator_source_ips() -> Set[str]:
             for conn in connections:
                 if conn.raddr:
                     ips.add(canonical_ip(conn.raddr.ip) or conn.raddr.ip)
-        except (psutil.Error, OSError):
-            continue
+        except (psutil.Error, OSError) as exc:
+            raise RuntimeError("Operator SSH connection inspection incomplete") from exc
 
     return ips
 
@@ -379,7 +379,10 @@ def suspicious_connections(
     protected_ips: Optional[Set[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
     if protected_ips is None:
-        protected_ips = operator_source_ips()
+        try:
+            protected_ips = operator_source_ips()
+        except RuntimeError as exc:
+            return [], f"Operator SSH inspection failed: {exc}"
 
     try:
         connections = psutil.net_connections(kind="inet")

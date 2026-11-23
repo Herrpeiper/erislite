@@ -1,5 +1,6 @@
 from collections import namedtuple
 
+import psutil
 import pytest
 
 from erislite.response.rapid_response import triage
@@ -241,3 +242,51 @@ def test_protected_ip_matches_its_ipv4_mapped_form():
     )
 
     assert found == []
+
+
+def test_operator_source_ips_reports_ancestry_failure(monkeypatch):
+    def fail_ancestry():
+        raise psutil.AccessDenied(pid=4242)
+
+    class FakeProcess:
+        def parents(self):
+            return fail_ancestry()
+
+    monkeypatch.setattr(triage.psutil, "Process", FakeProcess)
+
+    with pytest.raises(RuntimeError, match="ancestry inspection failed"):
+        triage.operator_source_ips()
+
+
+def test_operator_source_ips_reports_partial_ssh_failure(monkeypatch):
+    class FakeSSHParent:
+        def name(self):
+            return "sshd"
+
+        def net_connections(self, kind):
+            raise psutil.AccessDenied(pid=4242)
+
+    class FakeProcess:
+        def parents(self):
+            return [FakeSSHParent()]
+
+    monkeypatch.setattr(triage.psutil, "Process", FakeProcess)
+
+    with pytest.raises(RuntimeError, match="inspection incomplete"):
+        triage.operator_source_ips()
+
+
+def test_suspicious_connections_reports_operator_inspection_failure(monkeypatch):
+    def fail_detection():
+        raise RuntimeError("Operator SSH connection inspection incomplete")
+
+    monkeypatch.setattr(
+        triage,
+        "operator_source_ips",
+        fail_detection,
+    )
+
+    connections, error = triage.suspicious_connections()
+
+    assert connections == []
+    assert "Operator SSH inspection failed" in error

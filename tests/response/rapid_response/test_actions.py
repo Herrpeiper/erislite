@@ -1,8 +1,16 @@
+import psutil
+
 from erislite.response.rapid_response import actions
 
 
 def test_block_ip_uses_detected_backend(monkeypatch):
     log = []
+
+    monkeypatch.setattr(
+        actions,
+        "operator_source_ips",
+        lambda: {"198.51.100.7"},
+    )
 
     action = {
         "type": "block_ip",
@@ -69,6 +77,12 @@ def test_block_ip_uses_detected_backend(monkeypatch):
 def test_block_ip_stores_backend_and_undo(monkeypatch):
     log = []
 
+    monkeypatch.setattr(
+        actions,
+        "operator_source_ips",
+        lambda: {"198.51.100.7"},
+    )
+
     action = {
         "type": "block_ip",
         "data": {
@@ -134,6 +148,12 @@ def test_block_ip_stores_backend_and_undo(monkeypatch):
 def test_block_ip_logs_failure_when_no_backend(monkeypatch):
     log = []
 
+    monkeypatch.setattr(
+        actions,
+        "operator_source_ips",
+        lambda: {"198.51.100.7"},
+    )
+
     action = {
         "type": "block_ip",
         "data": {
@@ -157,6 +177,12 @@ def test_block_ip_logs_failure_when_no_backend(monkeypatch):
 
 def test_block_ip_refuses_unsupported_nftables_mutation(monkeypatch):
     log = []
+
+    monkeypatch.setattr(
+        actions,
+        "operator_source_ips",
+        lambda: {"198.51.100.7"},
+    )
 
     action = {
         "type": "block_ip",
@@ -187,6 +213,12 @@ def test_block_ip_refuses_unsupported_nftables_mutation(monkeypatch):
 
 def test_block_ip_logs_failed_command(monkeypatch):
     log = []
+
+    monkeypatch.setattr(
+        actions,
+        "operator_source_ips",
+        lambda: {"198.51.100.7"},
+    )
 
     action = {
         "type": "block_ip",
@@ -645,7 +677,11 @@ def test_block_ip_refuses_operator_ssh_source(monkeypatch):
 def test_block_ip_runs_setup_then_apply_for_nftables(monkeypatch):
     log = []
     calls = []
-    monkeypatch.setattr(actions, "operator_source_ips", lambda: set())
+    monkeypatch.setattr(
+        actions,
+        "operator_source_ips",
+        lambda: {"198.51.100.7"},
+    )
     monkeypatch.setattr(actions, "detect_firewall_backend", lambda: "nftables")
     monkeypatch.setattr(actions, "run_cmd", lambda command: calls.append(command) or (0, "", ""))
 
@@ -664,7 +700,11 @@ def test_block_ip_tolerates_existing_nftables_objects(monkeypatch):
     log = []
     calls = []
 
-    monkeypatch.setattr(actions, "operator_source_ips", lambda: set())
+    monkeypatch.setattr(
+        actions,
+        "operator_source_ips",
+        lambda: {"198.51.100.7"},
+    )
     monkeypatch.setattr(actions, "detect_firewall_backend", lambda: "nftables")
 
     def fake_run_cmd(command):
@@ -708,7 +748,11 @@ def test_block_ip_tolerates_existing_nftables_objects(monkeypatch):
 def test_block_ip_uses_ufw_fallback_when_insert_fails(monkeypatch):
     log = []
     calls = []
-    monkeypatch.setattr(actions, "operator_source_ips", lambda: set())
+    monkeypatch.setattr(
+        actions,
+        "operator_source_ips",
+        lambda: {"198.51.100.7"},
+    )
     monkeypatch.setattr(actions, "detect_firewall_backend", lambda: "ufw")
 
     def fake_run_cmd(command):
@@ -893,3 +937,52 @@ def test_kill_process_refuses_managed_service(monkeypatch):
     assert result is False
     assert killed == []
     assert "managed service" in log[0]["result"]
+
+
+def test_block_ip_refuses_unknown_operator_ip(monkeypatch):
+    log = []
+
+    monkeypatch.setattr(actions, "operator_source_ips", lambda: set())
+
+    commands = []
+
+    monkeypatch.setattr(
+        actions,
+        "run_cmd",
+        lambda command: commands.append(command) or (0, "", ""),
+    )
+
+    result = actions.execute_action(
+        {
+            "type": "block_ip",
+            "data": {"remote_ip": "203.0.113.10"},
+            "undo": None,
+        },
+        log,
+    )
+
+    assert result is False
+    assert commands == []
+    assert "could not be established" in log[0]["result"]
+    assert log[0]["undo"] is None
+
+
+def test_block_ip_refuses_operator_detection_error(monkeypatch):
+    log = []
+
+    def fail_detection():
+        raise psutil.AccessDenied(pid=4242)
+
+    monkeypatch.setattr(actions, "operator_source_ips", fail_detection)
+
+    result = actions.execute_action(
+        {
+            "type": "block_ip",
+            "data": {"remote_ip": "203.0.113.10"},
+            "undo": None,
+        },
+        log,
+    )
+
+    assert result is False
+    assert "inspection failed" in log[0]["result"]
