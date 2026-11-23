@@ -322,6 +322,18 @@ def run_rapid_response(dry_run: bool = False) -> None:
     success = 0
     failed = 0
     path = log_path()
+    audit_failed = False
+
+    # Establish a persistent audit record before containment.
+    try:
+        _write_response_log(path, action_log, success, failed, len(selected))
+    except OSError as exc:
+        console.print(
+            f"[bold red]Rapid Response aborted: could not initialize audit log {path}: {exc}[/]"
+        )
+        console.print("[yellow]No containment actions were executed.[/]")
+        pause_return()
+        return
 
     for action in selected:
         if execute_action(action, action_log):
@@ -329,19 +341,28 @@ def run_rapid_response(dry_run: bool = False) -> None:
         else:
             failed += 1
 
-        # Write after every action so an interrupt never loses undo records.
         try:
             _write_response_log(path, action_log, success, failed, len(selected))
         except OSError as exc:
-            console.print(f"[bold red]Could not write response log {path}: {exc}[/]")
+            audit_failed = True
+            console.print(f"[bold red]Audit logging failed: {exc}[/]")
+            console.print("[bold red]Halting remaining containment actions.[/]")
+            break
 
     console.print()
     console.print(f"[bold]Complete.[/] [green]{success} succeeded[/], [red]{failed} failed[/].")
-    console.print(f"[dim]Log saved:[/] [white]{path}[/]")
+
+    if audit_failed:
+        console.print("[bold red]WARNING: Audit record may be incomplete.[/]")
+        console.print(
+            "[yellow]Review system state and recovery records before taking further action.[/]"
+        )
+    else:
+        console.print(f"[dim]Log saved:[/] [white]{path}[/]")
 
     if any(action.get("undo") for action in action_log):
         console.print(
-            "\n[dim]Reversible actions can be restored from Rapid Response → Undo Previous Run.[/]"
+            "\n[dim]Reversible actions may be restored from Rapid Response → Undo Previous Run.[/]"
         )
 
     pause_return()
