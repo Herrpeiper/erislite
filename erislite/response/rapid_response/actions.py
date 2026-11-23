@@ -124,6 +124,56 @@ def _same_process(data: Dict[str, Any]) -> Tuple[bool, str]:
     return True, ""
 
 
+def _read_process_cgroup(pid: int) -> str:
+    """Read kernel cgroup membership for a process."""
+    return Path(f"/proc/{pid}/cgroup").read_text(encoding="utf-8")
+
+
+def _process_service_safety(pid: int) -> Tuple[bool, str]:
+    """Allow only processes in identifiable non-service user sessions.
+
+    Fail closed when cgroup ownership is unavailable or ambiguous.
+    """
+    try:
+        content = _read_process_cgroup(pid)
+    except (OSError, UnicodeError) as exc:
+        return False, f"cannot inspect process cgroup: {exc}"
+
+    paths = []
+
+    for line in content.splitlines():
+        parts = line.split(":", 2)
+
+        if len(parts) != 3 or not parts[2].startswith("/"):
+            return False, "invalid cgroup membership data"
+
+        paths.append(parts[2])
+
+    if not paths:
+        return False, "no cgroup membership information"
+
+    for path in paths:
+        components = path.strip("/").split("/")
+
+        if any(component.endswith(".service") for component in components):
+            return False, f"process belongs to a managed service: {path}"
+
+    # Only identifiable login sessions qualify for automatic
+    # process containment. Unknown cgroup layouts require review.
+    for path in paths:
+        components = path.strip("/").split("/")
+
+        if "user.slice" in components and any(
+            component.startswith("session-")
+            and component.endswith(".scope")
+            and component[8:-6].isdigit()
+            for component in components
+        ):
+            return True, ""
+
+    return False, "process is not in a verified user session"
+
+
 # ---------------------------------------------------------------------------
 # Action plan
 # ---------------------------------------------------------------------------
@@ -222,6 +272,13 @@ def _kill_process(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
         console.print(f"[yellow]Skipped PID {pid}: {reason}[/]")
         # A process that already exited is not a failure.
         return reason.startswith("process is gone")
+
+    safe, reason = _process_service_safety(pid)
+
+    if not safe:
+        entry["result"] = f"Refused: PID {pid}: {reason}"
+        console.print(f"[red]Refused to kill PID {pid}: {reason}[/]")
+        return False
 
     try:
         os.kill(pid, 9)

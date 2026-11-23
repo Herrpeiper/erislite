@@ -609,6 +609,11 @@ def test_kill_process_kills_matching_process(monkeypatch):
         lambda pid: {"pid": pid, "name": "x", "exe": "/tmp/x", "create_time": 100.0},
     )
     monkeypatch.setattr(actions.os, "kill", lambda pid, sig: killed.append(pid))
+    monkeypatch.setattr(
+        actions,
+        "_process_service_safety",
+        lambda pid: (True, ""),
+    )
 
     result = actions.execute_action(
         {
@@ -804,3 +809,87 @@ def test_block_ip_refuses_operator_ssh_source_in_mapped_form(monkeypatch):
 
     assert result is False
     assert "operator's SSH session" in log[0]["result"]
+
+
+def test_service_guard_refuses_managed_service(monkeypatch):
+    monkeypatch.setattr(
+        actions,
+        "_read_process_cgroup",
+        lambda pid: "0::/system.slice/nginx.service\n",
+    )
+
+    safe, reason = actions._process_service_safety(4242)
+
+    assert safe is False
+    assert "managed service" in reason
+
+
+def test_service_guard_accepts_user_session(monkeypatch):
+    monkeypatch.setattr(
+        actions,
+        "_read_process_cgroup",
+        lambda pid: "0::/user.slice/user-1000.slice/session-2.scope\n",
+    )
+
+    safe, reason = actions._process_service_safety(4242)
+
+    assert safe is True
+    assert reason == ""
+
+
+def test_service_guard_refuses_unknown_cgroup(monkeypatch):
+    monkeypatch.setattr(
+        actions,
+        "_read_process_cgroup",
+        lambda pid: "0::/\n",
+    )
+
+    safe, reason = actions._process_service_safety(4242)
+
+    assert safe is False
+    assert "not in a verified user session" in reason
+
+
+def test_kill_process_refuses_managed_service(monkeypatch):
+    log = []
+    killed = []
+
+    monkeypatch.setattr(actions, "_protected_pids", lambda: {0, 1})
+    monkeypatch.setattr(
+        actions,
+        "process_identity",
+        lambda pid: {
+            "pid": pid,
+            "name": "nginx",
+            "exe": "/usr/sbin/nginx",
+            "create_time": 100.0,
+        },
+    )
+    monkeypatch.setattr(
+        actions,
+        "_read_process_cgroup",
+        lambda pid: "0::/system.slice/nginx.service\n",
+    )
+    monkeypatch.setattr(
+        actions.os,
+        "kill",
+        lambda pid, sig: killed.append(pid),
+    )
+
+    result = actions.execute_action(
+        {
+            "type": "kill_process",
+            "data": {
+                "pid": 4242,
+                "name": "nginx",
+                "exe": "/usr/sbin/nginx",
+                "create_time": 100.0,
+            },
+            "undo": None,
+        },
+        log,
+    )
+
+    assert result is False
+    assert killed == []
+    assert "managed service" in log[0]["result"]
