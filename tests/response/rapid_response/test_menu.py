@@ -31,8 +31,18 @@ def test_parse_action_selection_invalid(raw):
 
 def _prepare_live_response(monkeypatch, tmp_path):
     actions = [
-        {"type": "test", "label": "First", "undo": None},
-        {"type": "test", "label": "Second", "undo": None},
+        {
+            "type": "test",
+            "label": "First",
+            "data": {"id": 1},
+            "undo": None,
+        },
+        {
+            "type": "test",
+            "label": "Second",
+            "data": {"id": 2},
+            "undo": None,
+        },
     ]
 
     monkeypatch.setattr(menu, "get_os", lambda: "Linux")
@@ -77,13 +87,13 @@ def test_audit_failure_stops_remaining_actions(monkeypatch, tmp_path):
     execute = Mock(side_effect=lambda action, log: log.append({"type": action["type"]}) or True)
     monkeypatch.setattr(menu, "execute_action", execute)
 
-    writes = Mock(side_effect=[None, OSError("disk full")])
+    writes = Mock(side_effect=[None, None, OSError("disk full")])
     monkeypatch.setattr(menu, "_write_response_log", writes)
 
     menu.run_rapid_response()
 
     assert execute.call_count == 1
-    assert writes.call_count == 2
+    assert writes.call_count == 3
 
 
 def test_successful_audit_processes_all_actions(monkeypatch, tmp_path):
@@ -98,4 +108,60 @@ def test_successful_audit_processes_all_actions(monkeypatch, tmp_path):
     menu.run_rapid_response()
 
     assert execute.call_count == 2
-    assert writes.call_count == 3
+    assert writes.call_count == 5
+
+
+def test_pending_audit_failure_prevents_execution(monkeypatch, tmp_path):
+    _prepare_live_response(monkeypatch, tmp_path)
+
+    execute = Mock()
+    monkeypatch.setattr(menu, "execute_action", execute)
+
+    writes = Mock(side_effect=[None, OSError("cannot record intent")])
+    monkeypatch.setattr(menu, "_write_response_log", writes)
+
+    menu.run_rapid_response()
+
+    execute.assert_not_called()
+    assert writes.call_count == 2
+
+
+def test_failed_completion_write_preserves_pending_record(monkeypatch, tmp_path):
+    from copy import deepcopy
+
+    _prepare_live_response(monkeypatch, tmp_path)
+
+    execute = Mock(
+        side_effect=lambda action, log: (
+            log.append(
+                {
+                    "type": action["type"],
+                    "result": "Applied",
+                    "undo": ["example-undo"],
+                }
+            )
+            or True
+        )
+    )
+    monkeypatch.setattr(menu, "execute_action", execute)
+
+    persisted = []
+
+    def simulated_write(path, actions, success, failed, total):
+        if len(persisted) == 2:
+            raise OSError("disk full")
+
+        persisted.append(deepcopy(actions))
+
+    monkeypatch.setattr(menu, "_write_response_log", simulated_write)
+
+    menu.run_rapid_response()
+
+    assert execute.call_count == 1
+    assert len(persisted) == 2
+
+    pending = persisted[-1][0]
+
+    assert pending["status"] == "pending"
+    assert pending["undo"] is None
+    assert pending["type"] == "test"

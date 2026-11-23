@@ -336,6 +336,28 @@ def run_rapid_response(dry_run: bool = False) -> None:
         return
 
     for action in selected:
+        pending = {
+            "time": now(),
+            "type": action["type"],
+            "data": action["data"],
+            "result": "Execution pending; verify system state",
+            "undo": None,
+            "status": "pending",
+        }
+
+        action_log.append(pending)
+
+        try:
+            _write_response_log(path, action_log, success, failed, len(selected))
+        except OSError as exc:
+            action_log.pop()
+            audit_failed = True
+            console.print(f"[bold red]Could not record action intent: {exc}[/]")
+            console.print("[bold red]No further containment actions executed.[/]")
+            break
+
+        action_log.pop()
+
         if execute_action(action, action_log):
             success += 1
         else:
