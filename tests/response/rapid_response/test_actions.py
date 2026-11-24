@@ -1453,3 +1453,88 @@ def test_lock_target_refuses_active_service_account(monkeypatch):
 
     assert valid is False
     assert "example.service" in reason
+
+
+def test_remove_cron_creates_distinct_quarantine_files(monkeypatch, tmp_path):
+    cron_dir = tmp_path / "cron.d"
+    cron_dir.mkdir()
+
+    job = cron_dir / "suspicious"
+    quarantine = tmp_path / "quarantine"
+
+    monkeypatch.setattr(actions, "CRON_DIRS", (str(cron_dir),))
+    monkeypatch.setattr(actions.utils, "QUARANTINE_DIR", quarantine)
+
+    logs = []
+
+    for content in ("first version\n", "second version\n"):
+        job.write_text(content)
+        job.chmod(0o666)
+
+        log = []
+
+        result = actions.execute_action(
+            {
+                "type": "remove_cron",
+                "data": {"path": str(job)},
+                "undo": None,
+            },
+            log,
+        )
+
+        assert result is True
+        assert not job.exists()
+
+        logs.append(log[0])
+
+    saved = list(quarantine.iterdir())
+
+    assert len(saved) == 2
+    assert {file.read_text() for file in saved} == {
+        "first version\n",
+        "second version\n",
+    }
+
+    assert logs[0]["undo"]["source"] != logs[1]["undo"]["source"]
+
+
+def test_remove_cron_backup_failure_preserves_source(monkeypatch, tmp_path):
+    cron_dir = tmp_path / "cron.d"
+    cron_dir.mkdir()
+
+    job = cron_dir / "important"
+    job.write_text("* * * * * root /usr/bin/true\n")
+    job.chmod(0o666)
+
+    monkeypatch.setattr(actions, "CRON_DIRS", (str(cron_dir),))
+    monkeypatch.setattr(
+        actions.utils,
+        "QUARANTINE_DIR",
+        tmp_path / "quarantine",
+    )
+
+    def fail_backup(*args, **kwargs):
+        raise OSError("simulated storage failure")
+
+    monkeypatch.setattr(
+        actions,
+        "write_private_bytes",
+        fail_backup,
+    )
+
+    log = []
+
+    result = actions.execute_action(
+        {
+            "type": "remove_cron",
+            "data": {"path": str(job)},
+            "undo": None,
+        },
+        log,
+    )
+
+    assert result is False
+    assert job.exists()
+    assert job.read_text() == "* * * * * root /usr/bin/true\n"
+    assert log[0]["undo"] is None
+    assert "simulated storage failure" in log[0]["result"]

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import pwd
-import time
+import secrets
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -638,7 +638,7 @@ def _remove_cron(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
         content = read_regular_bytes(path)
 
         quarantine = Path(utils.QUARANTINE_DIR) / (
-            f"{path.strip('/').replace('/', '_')}.{int(time.time())}"
+            f"{path.strip('/').replace('/', '_')}.{secrets.token_hex(16)}"
         )
         write_private_bytes(quarantine, content)
         os.remove(path)
