@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import psutil
@@ -802,7 +803,7 @@ def test_remove_cron_quarantines_outside_cron_dir(monkeypatch, tmp_path):
     assert not job.exists()
     assert list(cron_dir.iterdir()) == []
 
-    saved = list(quarantine.iterdir())
+    saved = [file for file in quarantine.iterdir() if not file.name.endswith(".recovery.json")]
     assert len(saved) == 1
     assert saved[0].read_text() == "* * * * * root /tmp/x\n"
     assert saved[0].stat().st_mode & 0o777 == 0o600
@@ -1487,7 +1488,7 @@ def test_remove_cron_creates_distinct_quarantine_files(monkeypatch, tmp_path):
 
         logs.append(log[0])
 
-    saved = list(quarantine.iterdir())
+    saved = [file for file in quarantine.iterdir() if not file.name.endswith(".recovery.json")]
 
     assert len(saved) == 2
     assert {file.read_text() for file in saved} == {
@@ -1538,3 +1539,94 @@ def test_remove_cron_backup_failure_preserves_source(monkeypatch, tmp_path):
     assert job.read_text() == "* * * * * root /usr/bin/true\n"
     assert log[0]["undo"] is None
     assert "simulated storage failure" in log[0]["result"]
+
+
+def test_remove_cron_creates_recovery_manifest(monkeypatch, tmp_path):
+    import json
+
+    cron_dir = tmp_path / "cron.d"
+    cron_dir.mkdir()
+
+    job = cron_dir / "suspicious"
+    job.write_text("* * * * * root /usr/bin/true\n")
+    job.chmod(0o666)
+
+    quarantine = tmp_path / "quarantine"
+
+    monkeypatch.setattr(actions, "CRON_DIRS", (str(cron_dir),))
+    monkeypatch.setattr(
+        actions.utils,
+        "QUARANTINE_DIR",
+        quarantine,
+    )
+
+    log = []
+
+    result = actions.execute_action(
+        {
+            "type": "remove_cron",
+            "data": {"path": str(job)},
+            "undo": None,
+        },
+        log,
+    )
+
+    assert result is True
+    assert not job.exists()
+
+    manifests = list(quarantine.glob("*.recovery.json"))
+
+    assert len(manifests) == 1
+
+    manifest = json.loads(manifests[0].read_text())
+
+    assert manifest["status"] == "prepared"
+    assert manifest["source"] == str(job)
+    assert manifest["mode"] == 0o666
+    assert manifest["uid"] == job.parent.stat().st_uid
+    assert manifest["backup"] == log[0]["undo"]["source"]
+    assert Path(manifest["backup"]).exists()
+
+
+def test_remove_cron_manifest_failure_preserves_source(monkeypatch, tmp_path):
+    cron_dir = tmp_path / "cron.d"
+    cron_dir.mkdir()
+
+    job = cron_dir / "important"
+    job.write_text("* * * * * root /usr/bin/true\n")
+    job.chmod(0o666)
+
+    quarantine = tmp_path / "quarantine"
+
+    monkeypatch.setattr(actions, "CRON_DIRS", (str(cron_dir),))
+    monkeypatch.setattr(
+        actions.utils,
+        "QUARANTINE_DIR",
+        quarantine,
+    )
+
+    def fail_manifest(*args, **kwargs):
+        raise OSError("simulated manifest failure")
+
+    monkeypatch.setattr(
+        actions,
+        "write_private_json",
+        fail_manifest,
+    )
+
+    log = []
+
+    result = actions.execute_action(
+        {
+            "type": "remove_cron",
+            "data": {"path": str(job)},
+            "undo": None,
+        },
+        log,
+    )
+
+    assert result is False
+    assert job.exists()
+    assert job.read_text() == "* * * * * root /usr/bin/true\n"
+    assert log[0]["undo"] is None
+    assert "simulated manifest failure" in log[0]["result"]

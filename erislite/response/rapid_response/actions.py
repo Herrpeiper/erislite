@@ -30,7 +30,11 @@ from erislite.response.rapid_response.triage import (
     operator_source_ips,
 )
 from erislite.response.rapid_response.utils import have, now, run_cmd
-from erislite.security.safe_io import read_regular_bytes, write_private_bytes
+from erislite.security.safe_io import (
+    read_regular_bytes,
+    write_private_bytes,
+    write_private_json,
+)
 from erislite.ui.console import console
 
 PROTECTED_SHELLS = {
@@ -640,14 +644,40 @@ def _remove_cron(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
         quarantine = Path(utils.QUARANTINE_DIR) / (
             f"{path.strip('/').replace('/', '_')}.{secrets.token_hex(16)}"
         )
+
+        manifest = quarantine.with_name(quarantine.name + ".recovery.json")
+
+        recovery = {
+            "version": 1,
+            "status": "prepared",
+            "action": "remove_cron",
+            "created_at": now(),
+            "source": path,
+            "backup": str(quarantine),
+            "mode": info.st_mode & 0o7777,
+            "uid": info.st_uid,
+            "gid": info.st_gid,
+        }
+
+        # Preserve the file before attempting its removal.
         write_private_bytes(quarantine, content)
+
+        # Persist recovery metadata before deleting the source.
+        # A prepared manifest does not prove deletion succeeded.
+        write_private_json(manifest, recovery)
+
+        # Only remove the original after both writes succeed.
         os.remove(path)
+
     except OSError as exc:
         entry["result"] = f"Failed: {exc}"
         console.print(f"[red]Failed to remove {path}: {exc}[/]")
         return False
 
-    entry["result"] = f"Removed {path} (quarantined copy: {quarantine})"
+    entry["result"] = (
+        f"Removed {path} (quarantined copy: {quarantine}; recovery manifest: {manifest})"
+    )
+
     entry["undo"] = {
         "type": "restore_file",
         "source": str(quarantine),
@@ -658,6 +688,7 @@ def _remove_cron(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
     }
 
     console.print(f"[green]Removed {path} (quarantined copy: {quarantine})[/]")
+
     return True
 
 
