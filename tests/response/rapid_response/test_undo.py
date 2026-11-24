@@ -256,3 +256,231 @@ def test_current_block_undo_commands_validate():
         }
 
         assert undo._validate_command_undo(entry, commands["undo"]) is True
+
+
+def test_restore_file_rejects_corrupted_backup(monkeypatch, tmp_path):
+    import hashlib
+
+    cron_dir = tmp_path / "cron.d"
+    cron_dir.mkdir()
+
+    quarantine = tmp_path / "quarantine"
+    quarantine.mkdir()
+
+    saved = quarantine / "job.backup"
+    saved.write_text("modified job\n")
+
+    destination = cron_dir / "job"
+
+    monkeypatch.setattr(undo, "CRON_DIRS", (str(cron_dir),))
+    monkeypatch.setattr(undo.utils, "QUARANTINE_DIR", quarantine)
+
+    entry = _restore_entry(destination, saved)
+
+    entry["undo"]["sha256"] = hashlib.sha256(b"original job\n").hexdigest()
+
+    success, detail = undo._restore_file(entry, entry["undo"])
+
+    assert success is False
+    assert "SHA-256 mismatch" in detail
+    assert not destination.exists()
+
+
+def test_restore_file_refuses_existing_destination(monkeypatch, tmp_path):
+    import hashlib
+
+    cron_dir = tmp_path / "cron.d"
+    cron_dir.mkdir()
+
+    quarantine = tmp_path / "quarantine"
+    quarantine.mkdir()
+
+    saved = quarantine / "job.backup"
+    saved.write_text("quarantined job\n")
+
+    destination = cron_dir / "job"
+    destination.write_text("replacement job\n")
+
+    monkeypatch.setattr(undo, "CRON_DIRS", (str(cron_dir),))
+    monkeypatch.setattr(undo.utils, "QUARANTINE_DIR", quarantine)
+
+    entry = _restore_entry(destination, saved)
+
+    entry["undo"]["sha256"] = hashlib.sha256(b"quarantined job\n").hexdigest()
+
+    success, detail = undo._restore_file(entry, entry["undo"])
+
+    assert success is False
+    assert "Refusing to overwrite" in detail
+    assert destination.read_text() == "replacement job\n"
+
+
+def test_restore_file_accepts_valid_sha256(monkeypatch, tmp_path):
+    import hashlib
+
+    cron_dir = tmp_path / "cron.d"
+    cron_dir.mkdir()
+
+    quarantine = tmp_path / "quarantine"
+    quarantine.mkdir()
+
+    saved = quarantine / "job.backup"
+    saved.write_text("valid job\n")
+
+    destination = cron_dir / "job"
+
+    monkeypatch.setattr(undo, "CRON_DIRS", (str(cron_dir),))
+    monkeypatch.setattr(undo.utils, "QUARANTINE_DIR", quarantine)
+
+    entry = _restore_entry(destination, saved)
+
+    entry["undo"]["sha256"] = hashlib.sha256(b"valid job\n").hexdigest()
+
+    success, detail = undo._restore_file(entry, entry["undo"])
+
+    assert success is True, detail
+    assert destination.read_text() == "valid job\n"
+
+
+def test_restore_file_staging_failure_preserves_destination(monkeypatch, tmp_path):
+    cron_dir = tmp_path / "cron.d"
+    cron_dir.mkdir()
+
+    quarantine = tmp_path / "quarantine"
+    quarantine.mkdir()
+
+    saved = quarantine / "job.backup"
+    saved.write_text("original job\n")
+
+    destination = cron_dir / "job"
+
+    monkeypatch.setattr(undo, "CRON_DIRS", (str(cron_dir),))
+    monkeypatch.setattr(undo.utils, "QUARANTINE_DIR", quarantine)
+
+    def fail_ownership(*args, **kwargs):
+        raise PermissionError("simulated ownership failure")
+
+    monkeypatch.setattr(undo.os, "fchown", fail_ownership)
+
+    entry = _restore_entry(destination, saved)
+
+    success, detail = undo._restore_file(entry, entry["undo"])
+
+    assert success is False
+    assert "simulated ownership failure" in detail
+    assert not destination.exists()
+    assert list(cron_dir.iterdir()) == []
+
+
+def test_restore_file_refuses_symlink_destination(monkeypatch, tmp_path):
+    cron_dir = tmp_path / "cron.d"
+    cron_dir.mkdir()
+
+    quarantine = tmp_path / "quarantine"
+    quarantine.mkdir()
+
+    saved = quarantine / "job.backup"
+    saved.write_text("quarantined job\n")
+
+    target = tmp_path / "important"
+    target.write_text("original content\n")
+
+    destination = cron_dir / "job"
+    destination.symlink_to(target)
+
+    monkeypatch.setattr(undo, "CRON_DIRS", (str(cron_dir),))
+    monkeypatch.setattr(undo.utils, "QUARANTINE_DIR", quarantine)
+
+    entry = _restore_entry(destination, saved)
+
+    success, detail = undo._restore_file(entry, entry["undo"])
+
+    assert success is False
+    assert "Refusing to overwrite" in detail
+    assert destination.is_symlink()
+    assert target.read_text() == "original content\n"
+    assert list(cron_dir.iterdir()) == [destination]
+
+
+def test_restore_file_publication_failure_preserves_source(monkeypatch, tmp_path):
+    cron_dir = tmp_path / "cron.d"
+    cron_dir.mkdir()
+
+    quarantine = tmp_path / "quarantine"
+    quarantine.mkdir()
+
+    saved = quarantine / "job.backup"
+    saved.write_text("original job\n")
+
+    destination = cron_dir / "job"
+
+    monkeypatch.setattr(undo, "CRON_DIRS", (str(cron_dir),))
+    monkeypatch.setattr(undo.utils, "QUARANTINE_DIR", quarantine)
+
+    def fail_publication(*args, **kwargs):
+        raise OSError("simulated publication failure")
+
+    monkeypatch.setattr(undo.os, "link", fail_publication)
+
+    entry = _restore_entry(destination, saved)
+
+    success, detail = undo._restore_file(entry, entry["undo"])
+
+    assert success is False
+    assert "simulated publication failure" in detail
+    assert not destination.exists()
+    assert saved.read_text() == "original job\n"
+    assert list(cron_dir.iterdir()) == []
+
+
+def test_restore_file_reports_post_publication_sync_failure(monkeypatch, tmp_path):
+    cron_dir = tmp_path / "cron.d"
+    cron_dir.mkdir()
+
+    quarantine = tmp_path / "quarantine"
+    quarantine.mkdir()
+
+    saved = quarantine / "job.backup"
+    saved.write_text("restored job\n")
+
+    destination = cron_dir / "job"
+
+    monkeypatch.setattr(undo, "CRON_DIRS", (str(cron_dir),))
+    monkeypatch.setattr(
+        undo.utils,
+        "QUARANTINE_DIR",
+        quarantine,
+    )
+
+    original_fsync = undo.os.fsync
+    cron_stat = cron_dir.stat()
+
+    def fail_destination_sync(fd):
+        info = undo.os.fstat(fd)
+
+        if info.st_dev == cron_stat.st_dev and info.st_ino == cron_stat.st_ino:
+            raise OSError("simulated directory sync failure")
+
+        return original_fsync(fd)
+
+    monkeypatch.setattr(undo.os, "fsync", fail_destination_sync)
+
+    entry = _restore_entry(destination, saved)
+
+    success, detail = undo._restore_file(
+        entry,
+        entry["undo"],
+    )
+
+    assert success is False
+
+    assert destination.exists()
+    assert destination.read_text() == "restored job\n"
+
+    assert saved.exists()
+
+    assert "published" in detail.lower()
+    assert "durability" in detail.lower()
+    assert "unconfirmed" in detail.lower()
+
+    assert list(cron_dir.iterdir()) == [destination]

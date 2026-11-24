@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import pwd
 import secrets
@@ -640,6 +641,7 @@ def _remove_cron(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
     try:
         info = os.lstat(path)
         content = read_regular_bytes(path)
+        digest = hashlib.sha256(content).hexdigest()
 
         quarantine = Path(utils.QUARANTINE_DIR) / (
             f"{path.strip('/').replace('/', '_')}.{secrets.token_hex(16)}"
@@ -657,6 +659,7 @@ def _remove_cron(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
             "mode": info.st_mode & 0o7777,
             "uid": info.st_uid,
             "gid": info.st_gid,
+            "sha256": digest,
         }
 
         # Preserve the file before attempting its removal.
@@ -685,6 +688,7 @@ def _remove_cron(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
         "mode": info.st_mode & 0o7777,
         "uid": info.st_uid,
         "gid": info.st_gid,
+        "sha256": digest,
     }
 
     console.print(f"[green]Removed {path} (quarantined copy: {quarantine})[/]")

@@ -7,8 +7,11 @@
 # Last Updated: 2026-10-14
 # Description: Rapid Response rollback and undo operations.
 
+import hashlib
 import json
 import os
+import re
+import secrets
 import shlex
 import stat
 from pathlib import Path
@@ -21,7 +24,10 @@ from erislite.network.firewall import build_ip_block_commands
 from erislite.response.rapid_response import utils
 from erislite.response.rapid_response.triage import CRON_DIRS
 from erislite.response.rapid_response.utils import LOG_DIR, run_cmd
-from erislite.security.safe_io import read_regular_bytes, write_private_bytes
+from erislite.security.safe_io import (
+    open_private_dir,
+    read_regular_bytes,
+)
 from erislite.ui.console import console
 from erislite.ui.utils import clear_screen, pause_return
 
@@ -96,6 +102,117 @@ def _is_within(path: Path, directory: Path) -> bool:
     return True
 
 
+def _verify_backup_digest(content: bytes, expected: str) -> tuple[bool, str]:
+    """Verify a quarantined file against its recorded SHA-256 digest."""
+
+    if not isinstance(expected, str):
+        return False, "Invalid backup SHA-256 metadata"
+
+    if re.fullmatch(r"[0-9a-fA-F]{64}", expected) is None:
+        return False, "Invalid backup SHA-256 digest"
+
+    actual = hashlib.sha256(content).hexdigest()
+
+    if actual != expected.lower():
+        return False, "Quarantined backup SHA-256 mismatch"
+
+    return True, ""
+
+
+class RestorePublicationUncertain(OSError):
+    """Restoration was published, but durability could not be confirmed."""
+
+
+def _write_restored_cron_exclusive(
+    destination: str,
+    content: bytes,
+    mode: int,
+    owner: tuple[int, int],
+) -> None:
+    """Stage a complete cron file before publishing it without replacement.
+
+    The temporary file is kept in a private subdirectory so that it is
+    not exposed as a top-level cron entry while being written.
+    """
+
+    path = Path(destination)
+    dir_fd = open_private_dir(path.parent, create=False)
+
+    stage_name = f".erislite-restore-{secrets.token_hex(16)}"
+    stage_fd = None
+    stage_created = False
+    payload_created = False
+
+    try:
+        # A unique private directory keeps the incomplete file separate
+        # from the cron directory's top-level entries.
+        os.mkdir(stage_name, mode=0o700, dir_fd=dir_fd)
+        stage_created = True
+
+        stage_fd = os.open(
+            stage_name,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            dir_fd=dir_fd,
+        )
+
+        payload_fd = os.open(
+            "payload",
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600,
+            dir_fd=stage_fd,
+        )
+        payload_created = True
+
+        with os.fdopen(payload_fd, "wb") as restored:
+            restored.write(content)
+            restored.flush()
+
+            os.fchown(restored.fileno(), owner[0], owner[1])
+            os.fchmod(restored.fileno(), mode)
+            os.fsync(restored.fileno())
+
+        # Persist the staging directory entry before publication.
+        os.fsync(stage_fd)
+
+        # Hard-link publication is atomic and refuses an existing name.
+        # The temporary file and destination share the same filesystem.
+        os.link(
+            "payload",
+            path.name,
+            src_dir_fd=stage_fd,
+            dst_dir_fd=dir_fd,
+            follow_symlinks=False,
+        )
+
+        # The destination is now published. A failure to synchronize
+        # the directory does not mean publication failed.
+        try:
+            os.fsync(dir_fd)
+        except OSError as exc:
+            raise RestorePublicationUncertain(
+                f"Restoration published at {destination}, "
+                f"but directory synchronization failed: {exc}"
+            ) from exc
+
+    finally:
+        if stage_fd is not None:
+            if payload_created:
+                try:
+                    os.unlink("payload", dir_fd=stage_fd)
+                except OSError:
+                    pass
+
+            os.close(stage_fd)
+
+        if stage_created:
+            try:
+                os.rmdir(stage_name, dir_fd=dir_fd)
+            except OSError:
+                pass
+
+        os.close(dir_fd)
+
+
 def _restore_file(entry: dict, undo: dict) -> tuple[bool, str]:
     if undo.get("type") != "restore_file":
         return False, "Unsupported file undo operation"
@@ -124,13 +241,40 @@ def _restore_file(entry: dict, undo: dict) -> tuple[bool, str]:
     except OSError as exc:
         return False, str(exc)
 
+    expected_digest = undo.get("sha256")
+
+    if expected_digest is not None:
+        valid, reason = _verify_backup_digest(content, expected_digest)
+
+        if not valid:
+            return False, reason
+
+    elif str(Path(source).name).endswith(".recovery.json"):
+        return False, "Recovery manifest cannot be used as a backup"
+
     # Restore the job, not the weakness: the world-writable bit that got
     # the file flagged is never put back.
     mode = int(undo.get("mode", 0o644)) & 0o7777 & ~stat.S_IWOTH
     owner = (int(undo.get("uid", 0)), int(undo.get("gid", 0)))
 
     try:
-        write_private_bytes(destination, content, mode=mode, owner=owner, create_dirs=False)
+        _write_restored_cron_exclusive(
+            destination,
+            content,
+            mode,
+            owner,
+        )
+
+    except FileExistsError:
+        return False, f"Refusing to overwrite existing cron file: {destination}"
+
+    except RestorePublicationUncertain as exc:
+        return (
+            False,
+            f"{exc}. Publication occurred, but filesystem durability "
+            "is unconfirmed. Inspect the destination before retrying.",
+        )
+
     except OSError as exc:
         return False, str(exc)
 
