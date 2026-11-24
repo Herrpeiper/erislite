@@ -454,8 +454,41 @@ def _terminate_user_sessions(username: str) -> Tuple[bool, str]:
     return False, err or "no supported session termination command available"
 
 
+def _password_lock_state(username: str) -> Tuple[Optional[str], str]:
+    """Inspect password status without reading or logging password hashes."""
+
+    if not have("passwd"):
+        return None, "passwd utility unavailable"
+
+    rc, output, _ = run_cmd(["passwd", "-S", username])
+
+    if rc != 0:
+        return None, "password status inspection failed"
+
+    fields = output.split()
+
+    if len(fields) < 2 or fields[0] != username:
+        return None, "invalid password status response"
+
+    status = fields[1]
+
+    if status == "P":
+        return "unlocked", ""
+
+    if status == "L":
+        return "locked", ""
+
+    if status == "NP":
+        return "passwordless", ""
+
+    return None, "unrecognized password status"
+
+
 def _lock_user(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
     username = data["username"]
+
+    # Undo must not be available until a new password lock succeeds.
+    entry["undo"] = None
 
     valid, reason = _validate_lock_target(username)
 
@@ -464,9 +497,21 @@ def _lock_user(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
         console.print(f"[red]Cannot contain account {username}: {reason}[/]")
         return False
 
+    state, reason = _password_lock_state(username)
+
+    if state != "unlocked":
+        if state == "locked":
+            reason = "account password was already locked"
+        elif state == "passwordless":
+            reason = "account has no usable password to lock"
+
+        entry["result"] = f"Refused: {reason}"
+        console.print(f"[yellow]Refused to lock {username}: {reason}[/]")
+        return False
+
     if not have("usermod"):
         entry["result"] = "Failed: usermod not available"
-        console.print(f"[red]usermod not available. Cannot lock {username}[/]")
+        console.print("[red]usermod not available.[/]")
         return False
 
     rc, _, err = run_cmd(["usermod", "-L", username])
@@ -475,6 +520,9 @@ def _lock_user(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
         entry["result"] = f"Failed to lock {username}: {err}"
         console.print(f"[red]Failed to lock {username}: {err}[/]")
         return False
+
+    # This account was initially unlocked, and our lock succeeded.
+    entry["undo"] = ["usermod", "-U", username]
 
     terminated, detail = _terminate_user_sessions(username)
 
@@ -488,13 +536,13 @@ def _lock_user(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
     entry["result"] = (
         f"Password authentication locked for {username}; sessions not terminated: {detail}"
     )
+
     console.print(
-        f"[yellow]Locked password authentication for {username}, but active "
-        f"sessions were not terminated: {detail}[/]"
+        f"[yellow]Locked password authentication for {username}, "
+        f"but active sessions were not terminated: {detail}[/]"
     )
     console.print("[yellow]Review SSH keys and other authentication methods for this account.[/]")
 
-    # Locking succeeded, so containment was partial rather than failed.
     return True
 
 

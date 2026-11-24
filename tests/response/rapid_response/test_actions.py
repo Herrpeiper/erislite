@@ -491,6 +491,12 @@ def test_lock_user_logs_partial_containment(monkeypatch):
         ),
     )
 
+    monkeypatch.setattr(
+        actions,
+        "_password_lock_state",
+        lambda username: ("unlocked", ""),
+    )
+
     result = actions.execute_action(action, log)
 
     assert result is True
@@ -986,3 +992,244 @@ def test_block_ip_refuses_operator_detection_error(monkeypatch):
 
     assert result is False
     assert "inspection failed" in log[0]["result"]
+
+
+def test_password_lock_state_parses_unlocked(monkeypatch):
+    monkeypatch.setattr(actions, "have", lambda command: True)
+    monkeypatch.setattr(
+        actions,
+        "run_cmd",
+        lambda command: (0, "testuser P 2026-11-23 0 99999 7 -1", ""),
+    )
+
+    state, reason = actions._password_lock_state("testuser")
+
+    assert state == "unlocked"
+    assert reason == ""
+
+
+def test_password_lock_state_parses_locked(monkeypatch):
+    monkeypatch.setattr(actions, "have", lambda command: True)
+    monkeypatch.setattr(
+        actions,
+        "run_cmd",
+        lambda command: (0, "testuser L 2026-11-23 0 99999 7 -1", ""),
+    )
+
+    state, reason = actions._password_lock_state("testuser")
+
+    assert state == "locked"
+    assert reason == ""
+
+
+def test_lock_user_refuses_previously_locked_account(monkeypatch):
+    log = []
+    commands = []
+
+    monkeypatch.setattr(
+        actions,
+        "_validate_lock_target",
+        lambda username: (True, ""),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "_password_lock_state",
+        lambda username: ("locked", ""),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "run_cmd",
+        lambda command: commands.append(command) or (0, "", ""),
+    )
+
+    result = actions.execute_action(
+        {
+            "type": "lock_user",
+            "data": {"username": "testuser"},
+            "undo": ["usermod", "-U", "testuser"],
+        },
+        log,
+    )
+
+    assert result is False
+    assert commands == []
+    assert log[0]["undo"] is None
+    assert "already locked" in log[0]["result"]
+
+
+def test_lock_user_refuses_passwordless_account(monkeypatch):
+    log = []
+    commands = []
+
+    monkeypatch.setattr(
+        actions,
+        "_validate_lock_target",
+        lambda username: (True, ""),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "_password_lock_state",
+        lambda username: ("passwordless", ""),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "run_cmd",
+        lambda command: commands.append(command) or (0, "", ""),
+    )
+
+    result = actions.execute_action(
+        {
+            "type": "lock_user",
+            "data": {"username": "testuser"},
+            "undo": ["usermod", "-U", "testuser"],
+        },
+        log,
+    )
+
+    assert result is False
+    assert commands == []
+    assert log[0]["undo"] is None
+    assert "no usable password" in log[0]["result"]
+
+
+def test_lock_user_refuses_password_inspection_failure(monkeypatch):
+    log = []
+    commands = []
+
+    monkeypatch.setattr(
+        actions,
+        "_validate_lock_target",
+        lambda username: (True, ""),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "_password_lock_state",
+        lambda username: (
+            None,
+            "password status inspection failed",
+        ),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "run_cmd",
+        lambda command: commands.append(command) or (0, "", ""),
+    )
+
+    result = actions.execute_action(
+        {
+            "type": "lock_user",
+            "data": {"username": "testuser"},
+            "undo": ["usermod", "-U", "testuser"],
+        },
+        log,
+    )
+
+    assert result is False
+    assert commands == []
+    assert log[0]["undo"] is None
+    assert "inspection failed" in log[0]["result"]
+
+
+def test_lock_user_success_records_undo(monkeypatch):
+    log = []
+    commands = []
+
+    monkeypatch.setattr(
+        actions,
+        "_validate_lock_target",
+        lambda username: (True, ""),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "_password_lock_state",
+        lambda username: ("unlocked", ""),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "have",
+        lambda command: command == "usermod",
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "run_cmd",
+        lambda command: commands.append(command) or (0, "", ""),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "_terminate_user_sessions",
+        lambda username: (
+            True,
+            "sessions terminated with loginctl",
+        ),
+    )
+
+    result = actions.execute_action(
+        {
+            "type": "lock_user",
+            "data": {"username": "testuser"},
+            "undo": ["usermod", "-U", "testuser"],
+        },
+        log,
+    )
+
+    assert result is True
+    assert commands == [["usermod", "-L", "testuser"]]
+    assert log[0]["undo"] == [
+        "usermod",
+        "-U",
+        "testuser",
+    ]
+    assert "Password authentication locked" in log[0]["result"]
+
+
+def test_lock_user_failed_command_has_no_undo(monkeypatch):
+    log = []
+    commands = []
+
+    monkeypatch.setattr(
+        actions,
+        "_validate_lock_target",
+        lambda username: (True, ""),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "_password_lock_state",
+        lambda username: ("unlocked", ""),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "have",
+        lambda command: command == "usermod",
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "run_cmd",
+        lambda command: commands.append(command) or (1, "", "permission denied"),
+    )
+
+    result = actions.execute_action(
+        {
+            "type": "lock_user",
+            "data": {"username": "testuser"},
+            "undo": ["usermod", "-U", "testuser"],
+        },
+        log,
+    )
+
+    assert result is False
+    assert commands == [["usermod", "-L", "testuser"]]
+    assert log[0]["undo"] is None
+    assert "permission denied" in log[0]["result"]
