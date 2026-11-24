@@ -25,6 +25,7 @@ from erislite.network.firewall import (
 from erislite.response.rapid_response import utils
 from erislite.response.rapid_response.triage import (
     CRON_DIRS,
+    _login_uid_min,
     is_suspicious_process_name,
     operator_source_ips,
 )
@@ -403,6 +404,12 @@ def _validate_lock_target(username: str) -> Tuple[bool, str]:
 
     if account.pw_shell in PROTECTED_SHELLS:
         return False, f"{username} appears to be a service account"
+
+    if 0 < account.pw_uid < _login_uid_min():
+        return (
+            False,
+            f"{username} is a system account (UID {account.pw_uid})",
+        )
 
     return True, ""
 

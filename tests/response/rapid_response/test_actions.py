@@ -1233,3 +1233,96 @@ def test_lock_user_failed_command_has_no_undo(monkeypatch):
     assert commands == [["usermod", "-L", "testuser"]]
     assert log[0]["undo"] is None
     assert "permission denied" in log[0]["result"]
+
+
+def test_lock_user_refuses_system_uid_with_interactive_shell(monkeypatch):
+    log = []
+    commands = []
+
+    monkeypatch.setattr(
+        actions.pwd,
+        "getpwnam",
+        lambda username: _Account(username, 115, "/bin/bash"),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "operator_identity",
+        lambda: ({"operator"}, {0, 1000}),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "_login_uid_min",
+        lambda: 1000,
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "run_cmd",
+        lambda command: commands.append(command) or (0, "", ""),
+    )
+
+    result = actions.execute_action(
+        {
+            "type": "lock_user",
+            "data": {"username": "postgres"},
+            "undo": ["usermod", "-U", "postgres"],
+        },
+        log,
+    )
+
+    assert result is False
+    assert commands == []
+    assert log[0]["undo"] is None
+    assert "system account" in log[0]["result"]
+
+
+def test_lock_target_allows_regular_uid(monkeypatch):
+    monkeypatch.setattr(
+        actions.pwd,
+        "getpwnam",
+        lambda username: _Account(username, 1500, "/bin/bash"),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "operator_identity",
+        lambda: ({"operator"}, {0, 1000}),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "_login_uid_min",
+        lambda: 1000,
+    )
+
+    valid, reason = actions._validate_lock_target("testuser")
+
+    assert valid is True
+    assert reason == ""
+
+
+def test_lock_target_preserves_uid0_review_path(monkeypatch):
+    monkeypatch.setattr(
+        actions.pwd,
+        "getpwnam",
+        lambda username: _Account(username, 0, "/bin/bash"),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "operator_identity",
+        lambda: ({"operator"}, {0, 1000}),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "_login_uid_min",
+        lambda: 1000,
+    )
+
+    valid, reason = actions._validate_lock_target("toor")
+
+    assert valid is True
+    assert reason == ""
