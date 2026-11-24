@@ -385,6 +385,63 @@ def _block_ip(data: Dict[str, Any], entry: Dict[str, Any]) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _service_account_safety(uid: int) -> Tuple[bool, str]:
+    """Refuse containment when a UID owns a running service process.
+
+    Preserve the existing special handling of UID 0 accounts.
+    Fail closed when process ownership cannot be inspected.
+    """
+    if uid == 0:
+        return True, ""
+
+    try:
+        for proc in psutil.process_iter(["pid", "uids"]):
+            info = proc.info
+            process_uids = info.get("uids")
+
+            if process_uids is None:
+                return False, "cannot establish process ownership"
+
+            owned_uids = {
+                process_uids.real,
+                process_uids.effective,
+                process_uids.saved,
+            }
+
+            if uid not in owned_uids:
+                continue
+
+            pid = info["pid"]
+
+            try:
+                content = _read_process_cgroup(pid)
+            except (OSError, UnicodeError):
+                return False, f"cannot inspect cgroup for PID {pid}"
+
+            if not content.strip():
+                return False, f"missing cgroup information for PID {pid}"
+
+            for line in content.splitlines():
+                parts = line.split(":", 2)
+
+                if len(parts) != 3 or not parts[2].startswith("/"):
+                    return False, f"invalid cgroup information for PID {pid}"
+
+                components = parts[2].strip("/").split("/")
+
+                for component in components:
+                    if component.endswith(".service") and not component.startswith("user@"):
+                        return (
+                            False,
+                            f"UID {uid} owns running service {component} (PID {pid})",
+                        )
+
+    except (psutil.Error, OSError) as exc:
+        return False, f"process ownership inspection failed: {exc}"
+
+    return True, ""
+
+
 def _validate_lock_target(username: str) -> Tuple[bool, str]:
     if not username:
         return False, "username is empty"
@@ -410,6 +467,11 @@ def _validate_lock_target(username: str) -> Tuple[bool, str]:
             False,
             f"{username} is a system account (UID {account.pw_uid})",
         )
+
+    safe, reason = _service_account_safety(account.pw_uid)
+
+    if not safe:
+        return False, reason
 
     return True, ""
 

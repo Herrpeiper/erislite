@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import psutil
 
 from erislite.response.rapid_response import actions
@@ -1326,3 +1328,128 @@ def test_lock_target_preserves_uid0_review_path(monkeypatch):
 
     assert valid is True
     assert reason == ""
+
+
+def test_service_account_guard_refuses_active_service(monkeypatch):
+    process = SimpleNamespace(
+        info={
+            "pid": 4242,
+            "uids": SimpleNamespace(
+                real=1500,
+                effective=1500,
+                saved=1500,
+            ),
+        }
+    )
+
+    monkeypatch.setattr(
+        actions.psutil,
+        "process_iter",
+        lambda attrs: [process],
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "_read_process_cgroup",
+        lambda pid: "0::/system.slice/example.service\n",
+    )
+
+    safe, reason = actions._service_account_safety(1500)
+
+    assert safe is False
+    assert "example.service" in reason
+    assert "UID 1500" in reason
+
+
+def test_service_account_guard_allows_user_session(monkeypatch):
+    process = SimpleNamespace(
+        info={
+            "pid": 4242,
+            "uids": SimpleNamespace(
+                real=1500,
+                effective=1500,
+                saved=1500,
+            ),
+        }
+    )
+
+    monkeypatch.setattr(
+        actions.psutil,
+        "process_iter",
+        lambda attrs: [process],
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "_read_process_cgroup",
+        lambda pid: "0::/user.slice/user-1500.slice/user@1500.service/app.slice/session-2.scope\n",
+    )
+
+    safe, reason = actions._service_account_safety(1500)
+
+    assert safe is True
+    assert reason == ""
+
+
+def test_service_account_guard_refuses_inspection_failure(monkeypatch):
+    process = SimpleNamespace(
+        info={
+            "pid": 4242,
+            "uids": SimpleNamespace(
+                real=1500,
+                effective=1500,
+                saved=1500,
+            ),
+        }
+    )
+
+    monkeypatch.setattr(
+        actions.psutil,
+        "process_iter",
+        lambda attrs: [process],
+    )
+
+    def fail_cgroup(pid):
+        raise PermissionError("access denied")
+
+    monkeypatch.setattr(
+        actions,
+        "_read_process_cgroup",
+        fail_cgroup,
+    )
+
+    safe, reason = actions._service_account_safety(1500)
+
+    assert safe is False
+    assert "cannot inspect cgroup" in reason
+
+
+def test_lock_target_refuses_active_service_account(monkeypatch):
+    monkeypatch.setattr(
+        actions.pwd,
+        "getpwnam",
+        lambda username: _Account(username, 1500, "/bin/bash"),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "operator_identity",
+        lambda: ({"operator"}, {0, 1000}),
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "_login_uid_min",
+        lambda: 1000,
+    )
+
+    monkeypatch.setattr(
+        actions,
+        "_service_account_safety",
+        lambda uid: (False, "UID 1500 owns running service example.service"),
+    )
+
+    valid, reason = actions._validate_lock_target("serviceuser")
+
+    assert valid is False
+    assert "example.service" in reason
